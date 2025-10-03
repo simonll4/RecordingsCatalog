@@ -1,0 +1,111 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: tpfinalv3-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: session_store
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      TZ: UTC
+    ports:
+      - "15432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./services/session-store/migrations:/docker-entrypoint-initdb.d:ro
+      # Sincronización de TZ con el host
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest-ffmpeg
+    container_name: tpfinalv3-mediamtx
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_started
+    environment:
+      TZ: UTC
+    ports:
+      - "8554:8554" # RTSP ingest
+      - "9996:9996" # Playback API (recordings)
+    volumes:
+      - ./services/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+      - ./data/recordings:/recordings
+      # Sincronización de TZ con el host
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+
+  session-store:
+    build:
+      context: ./services/session-store
+    container_name: tpfinalv3-session-store
+    restart: unless-stopped
+    environment:
+      PORT: 8080
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/session_store
+      MEDIAMTX_PLAYBACK_BASE_URL: http://localhost:9996
+      TZ: UTC
+    ports:
+      - "8080:8080"
+    volumes:
+      # Sincronización de TZ con el host
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # edge-agent:
+  #   build:
+  #     context: ./services/edge-agent
+  #   container_name: tpfinalv3-edge-agent
+  #   restart: on-failure
+  #   depends_on:
+  #     mediamtx:
+  #       condition: service_started
+  #     session-store:
+  #       condition: service_started
+  #   environment:
+  #     SESSION_STORE_URL: http://session-store:8080
+  #     MEDIAMTX_HOST: mediamtx
+  #     MEDIAMTX_RTSP_PORT: 8554
+  #     EDGE_DEVICE_ID: cam-local
+  #     CAMERA_DEVICE: /dev/video0
+  #     SESSION_DURATION_SECONDS: 0
+  #     SESSION_POST_ROLL_SECONDS: 5
+  #     CAMERA_FALLBACK: testsrc
+  #     TZ: UTC
+  #   volumes:
+  #     # Sincronización de TZ con el host
+  #     - /etc/timezone:/etc/timezone:ro
+  #     - /etc/localtime:/etc/localtime:ro
+  #   command: ["node", "dist/index.js", "simulate"]
+  #   profiles: [edge]
+
+  web-ui:
+    build:
+      context: ./services/web-ui
+    container_name: tpfinalv3-web-ui
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      SESSION_STORE_URL: http://session-store:8080
+      TZ: UTC
+    volumes:
+      # Sincronización de TZ con el host
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      session-store:
+        condition: service_started
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
