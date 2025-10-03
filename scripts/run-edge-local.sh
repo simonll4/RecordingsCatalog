@@ -36,7 +36,13 @@ done
 # Verificación de build
 if [[ ! -d "$DIST_DIR" ]]; then
     echo "[edge-agent] No se encontró la carpeta dist/." >&2
-    echo "Ejecutá 'npm run build' dentro de services/edge-agent o mantené los binarios." >&2
+    echo "Ejecutá 'npm run build' dentro de services/edge-agent." >&2
+    exit 1
+fi
+
+if [[ ! -f "$DIST_DIR/main.js" ]]; then
+    echo "[edge-agent] No se encontró dist/main.js." >&2
+    echo "Ejecutá 'npm run build' dentro de services/edge-agent." >&2
     exit 1
 fi
 
@@ -46,23 +52,38 @@ pushd "$EDGE_DIR" >/dev/null
 # Variables de entorno que se pasarán al proceso
 ENV_VARS=()
 
+# Variables para conectarse a servicios desde el host
+ENV_VARS+=("MEDIAMTX_HOST=localhost")
+ENV_VARS+=("SESSION_STORE_URL=http://localhost:8080")
+ENV_VARS+=("AI_CLASS_NAMES=person,helmet,vest,vehicle")
+ENV_VARS+=("AI_CLASSES_FILTER=person,helmet")
+
 # Selección de cámara según flags
 if [[ -n "$CUSTOM_CAMERA" ]]; then
     ENV_VARS+=("CAMERA_DEVICE=$CUSTOM_CAMERA")
+    unset SOURCE_RTSP 2>/dev/null || true
 else
     case "$USE_CAMERA" in
         yes)
             ENV_VARS+=("CAMERA_DEVICE=/dev/video0")
+            unset SOURCE_RTSP 2>/dev/null || true
         ;;
         no)
-            ENV_VARS+=("CAMERA_DEVICE=/nonexistent")
-            ENV_VARS+=("CAMERA_FALLBACK=testsrc") # fuente sintética
+            # Sin cámara, no setear nada (usará defaults del .env)
+            :
         ;;
     esac
 fi
 
-# Comando final a ejecutar
-NODE_COMMAND=(node dist/index.js simulate "${NODE_ARGS[@]}")
+# Comando final a ejecutar (ACTUALIZADO: main.js)
+NODE_COMMAND=(node dist/main.js "${NODE_ARGS[@]}")
+
+echo "[edge-agent] Starting Edge Agent v2.0"
+echo "[edge-agent] Command: ${NODE_COMMAND[*]}"
+if [[ "${#ENV_VARS[@]}" -gt 0 ]]; then
+    echo "[edge-agent] Environment: ${ENV_VARS[*]}"
+fi
+echo ""
 
 # Ejecutar con o sin env vars
 if [[ "${#ENV_VARS[@]}" -gt 0 ]]; then

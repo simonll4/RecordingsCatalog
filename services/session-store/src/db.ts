@@ -28,6 +28,22 @@ export interface CloseSessionInput {
   postrollSec?: number;
 }
 
+export interface DetectionRecord {
+  id: number;
+  session_id: string;
+  event_id: string;
+  ts: string;
+  detection_data: any;
+  created_at: string;
+}
+
+export interface DetectionInsertInput {
+  sessionId: string;
+  eventId: string;
+  ts: string;
+  detections: any;
+}
+
 const pool = new Pool({ connectionString: CONFIG.DATABASE_URL });
 
 const tableExists = async (client: PoolClient, tableName: string): Promise<boolean> => {
@@ -200,5 +216,38 @@ export const db = {
       [sessionId]
     );
     return result.rows[0] ?? null;
+  },
+
+  async insertDetection(input: DetectionInsertInput): Promise<DetectionRecord> {
+    const { sessionId, eventId, ts, detections } = input;
+    const result = await pool.query<DetectionRecord>(
+      `INSERT INTO detections (session_id, event_id, ts, detection_data)
+       VALUES ($1, $2, $3::timestamptz, $4::jsonb)
+       ON CONFLICT (event_id) DO NOTHING
+       RETURNING *`,
+      [sessionId, eventId, ts, JSON.stringify(detections)]
+    );
+    return result.rows[0];
+  },
+
+  async getDetectionsBySession(sessionId: string): Promise<DetectionRecord[]> {
+    const result = await pool.query<DetectionRecord>(
+      `SELECT * FROM detections
+       WHERE session_id = $1
+       ORDER BY ts ASC`,
+      [sessionId]
+    );
+    return result.rows;
+  },
+
+  async getDetectionsByTimeRange(from: Date, to: Date, limit = 1000): Promise<DetectionRecord[]> {
+    const result = await pool.query<DetectionRecord>(
+      `SELECT * FROM detections
+       WHERE ts >= $1 AND ts < $2
+       ORDER BY ts ASC
+       LIMIT $3`,
+      [from.toISOString(), to.toISOString(), limit]
+    );
+    return result.rows;
   }
 };

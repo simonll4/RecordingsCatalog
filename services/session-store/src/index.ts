@@ -3,6 +3,7 @@ import cors from 'cors';
 import { CONFIG } from './config.js';
 import { db } from './db.js';
 import { sessionsRouter } from './routes/sessions.js';
+import { detectionsRouter } from './routes/detections.js';
 
 const app = express();
 
@@ -34,6 +35,7 @@ app.get('/health', async (_req, res) => {
 });
 
 app.use('/sessions', sessionsRouter);
+app.use('/detections', detectionsRouter);
 
 type ErrorWithStatus = Error & { status?: number };
 

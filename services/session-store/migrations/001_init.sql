@@ -26,3 +26,17 @@ CREATE TRIGGER trg_sessions_updated_at
 BEFORE UPDATE ON sessions
 FOR EACH ROW
 EXECUTE FUNCTION trg_update_timestamp();
+
+-- Tabla de detecciones
+CREATE TABLE IF NOT EXISTS detections (
+    id SERIAL PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+    event_id TEXT NOT NULL UNIQUE,
+    ts TIMESTAMPTZ NOT NULL,
+    detection_data JSONB NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_detections_session ON detections(session_id);
+CREATE INDEX IF NOT EXISTS idx_detections_ts ON detections(ts);
+CREATE INDEX IF NOT EXISTS idx_detections_event ON detections(event_id);

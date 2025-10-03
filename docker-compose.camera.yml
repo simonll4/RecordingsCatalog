@@ -1,0 +1,11 @@
+# docker-compose.camera.yml
+# Configuración específica para edge-agent con cámara física
+
+services:
+  edge-agent:
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+    group_add:
+      - "44"  # GID del grupo video
+    privileged: true  # Necesario para acceso a dispositivos USB
+

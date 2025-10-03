@@ -61,32 +61,63 @@ services:
       postgres:
         condition: service_healthy
 
-  # edge-agent:
-  #   build:
-  #     context: ./services/edge-agent
-  #   container_name: tpfinalv3-edge-agent
-  #   restart: on-failure
-  #   depends_on:
-  #     mediamtx:
-  #       condition: service_started
-  #     session-store:
-  #       condition: service_started
-  #   environment:
-  #     SESSION_STORE_URL: http://session-store:8080
-  #     MEDIAMTX_HOST: mediamtx
-  #     MEDIAMTX_RTSP_PORT: 8554
-  #     EDGE_DEVICE_ID: cam-local
-  #     CAMERA_DEVICE: /dev/video0
-  #     SESSION_DURATION_SECONDS: 0
-  #     SESSION_POST_ROLL_SECONDS: 5
-  #     CAMERA_FALLBACK: testsrc
-  #     TZ: UTC
-  #   volumes:
-  #     # Sincronización de TZ con el host
-  #     - /etc/timezone:/etc/timezone:ro
-  #     - /etc/localtime:/etc/localtime:ro
-  #   command: ["node", "dist/index.js", "simulate"]
-  #   profiles: [edge]
+  edge-agent:
+    build:
+      context: ./services/edge-agent
+    container_name: tpfinalv3-edge-agent
+    restart: on-failure
+    depends_on:
+      mediamtx:
+        condition: service_started
+      session-store:
+        condition: service_started
+    environment:
+      # Dispositivo
+      EDGE_DEVICE_ID: cam-local
+      
+      # Fuente de video
+      CAMERA_DEVICE: /dev/video0
+      # SOURCE_RTSP: rtsp://cam-ip/stream
+      
+      # MediaMTX
+      MEDIAMTX_HOST: mediamtx
+      MEDIAMTX_RTSP_PORT: 8554
+      EDGE_STREAM_PATH: cam-local
+      
+      # FSM
+      DWELL_MS: 500
+      SILENCE_MS: 3000
+      POST_ROLL_SEC: 5
+      
+      # IA
+      AI_MODEL_NAME: yolov8n.onnx
+      AI_UMBRAL: 0.4
+      AI_WIDTH: 640
+      AI_HEIGHT: 384
+      AI_CLASS_NAMES: person,helmet,vest,vehicle
+      AI_CLASSES_FILTER: person,helmet
+      AI_FPS_IDLE: 5
+      AI_FPS_ACTIVE: 12
+      
+      # Session Store
+      SESSION_STORE_URL: http://session-store:8080
+      SINK_BATCH_MS: 250
+      SINK_MAX_ITEMS: 50
+      
+      TZ: UTC
+    volumes:
+      # Sincronización de TZ con el host
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    # Acceso a cámara - Descomentar para producción con cámara física
+    # NOTA: Requiere Docker Engine nativo (no Docker Desktop)
+    # devices:
+    #   - "/dev/video0:/dev/video0"
+    #   - "/dev/video1:/dev/video1"
+    # group_add:
+    #   - "44"  # GID del grupo video del host (verificar con: getent group video)
+    # privileged: true
+    profiles: [edge]
 
   web-ui:
     build:

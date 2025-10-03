@@ -11,6 +11,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVICES=(
     "services/session-store"
     "services/edge-agent"
+    "services/web-ui"
 )
 
 # Verifica que un comando exista en PATH; si no, sale con error
@@ -42,8 +43,13 @@ for service in "${SERVICES[@]}"; do
     echo "[setup] --> Running: npm install"
     npm install             # instala dependencias (podrías usar 'npm ci' en CI)
     
-    echo "[setup] --> Running: npm run build"
-    npm run build           # compila el servicio (requiere script 'build' en package.json)
+    # Solo ejecutar build si existe el script en package.json
+    if npm run | grep -q "build"; then
+        echo "[setup] --> Running: npm run build"
+        npm run build       # compila el servicio (requiere script 'build' en package.json)
+    else
+        echo "[setup] --> Skipping build (no build script found)"
+    fi
     
     echo "[setup] <- Leaving ${service_path}"
     popd >/dev/null
