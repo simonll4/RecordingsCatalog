@@ -23,5 +23,6 @@ export const CONFIG = {
   PORT: parseInt(env('PORT', '8080'), 10),
   DATABASE_URL: env('DATABASE_URL'),
   MEDIAMTX_PLAYBACK_BASE_URL: env('MEDIAMTX_PLAYBACK_BASE_URL', 'http://mediamtx:9996'),
-  PLAYBACK_EXTRA_SECONDS: Math.max(0, parseIntSafe(env('PLAYBACK_EXTRA_SECONDS', '1'), 1))
+  PLAYBACK_EXTRA_SECONDS: Math.max(0, parseIntSafe(env('PLAYBACK_EXTRA_SECONDS', '1'), 1)),
+  PLAYBACK_START_OFFSET_MS: Math.max(0, parseIntSafe(env('PLAYBACK_START_OFFSET_MS', '1500'), 1500))
 };

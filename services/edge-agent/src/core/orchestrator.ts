@@ -4,7 +4,6 @@ import { Camera } from "../modules/camera.js";
 import { AICapture } from "../modules/capture.js";
 import { Publisher } from "../modules/publisher.js";
 import { SessionIO } from "../modules/sessionio.js";
-import { AIModule } from "../modules/ai.js";
 
 type State = "IDLE" | "DWELL" | "ACTIVE" | "CLOSING";
 
@@ -15,21 +14,13 @@ export class Orchestrator {
   private dwellTimer?: NodeJS.Timeout;
   private sessionId?: string;
   private dwellKeepaliveCount = 0;
-  private onFrame: (frame: Buffer) => void;
 
   constructor(
-    private ai: AIModule,
     private capture: AICapture,
     private camera: Camera,
     private publisher: Publisher,
     private io: SessionIO
-  ) {
-    // Callback tipado para frames
-    this.onFrame = (frame: Buffer): void => {
-      // No bloquear el loop; ignoramos el promise
-      void this.ai.run(frame, CONFIG.ai.classesFilter);
-    };
-  }
+  ) {}
 
   async init(): Promise<void> {
     // Inicia el hub de captura (siempre-encendido)
@@ -47,6 +38,7 @@ export class Orchestrator {
     on("ai.relevant-start", () => this.armDwellWindow());
     on("ai.keepalive", () => this.onKeepalive());
     on("ai.relevant-stop", () => this.toClosing("explicit"));
+    on("stream.started", (evt) => this.onStreamStarted(evt.ts));
     on("ai.detections", (e) => this.io.pushDetections(this.sessionId, e));
     on("stream.stopped", () => {
       if (this.state !== "IDLE") this.toIdle();
@@ -57,7 +49,9 @@ export class Orchestrator {
 
   private armDwellWindow() {
     if (this.state !== "IDLE") {
-      console.log(`[Orchestrator] Ignoring ai.relevant-start (state: ${this.state})`);
+      console.log(
+        `[Orchestrator] Ignoring ai.relevant-start (state: ${this.state})`
+      );
       return;
     }
 
@@ -92,18 +86,42 @@ export class Orchestrator {
     }
   }
 
+  private async onStreamStarted(streamStartTs: string) {
+    // Solo abrir sesión si estamos en ACTIVE y aún no tenemos sessionId
+    if (this.state !== "ACTIVE" || this.sessionId) {
+      return;
+    }
+
+    console.log(
+      "[Orchestrator] Stream started event received, opening session with accurate timestamp"
+    );
+    this.sessionId = await this.io.openSession(streamStartTs);
+    console.log(
+      "[Orchestrator] Session opened:",
+      this.sessionId,
+      "at",
+      streamStartTs
+    );
+  }
+
   private async toActive() {
     if (this.state === "ACTIVE") return;
     console.log("[Orchestrator] → ACTIVE");
     this.state = "ACTIVE";
 
-    this.sessionId = await this.io.openSession();
-    console.log("[Orchestrator] Session opened:", this.sessionId);
+    // Cambiar a FPS activo para mayor frecuencia de detección
+    console.log(
+      `[Orchestrator] Switching to active FPS: ${CONFIG.ai.fps.active}fps`
+    );
+    await this.capture.setFps(CONFIG.ai.fps.active);
 
-    // FPS ya es fijo, no cambiar
-    
-    // Iniciar stream RTSP solo cuando hay sesión activa
+    // Iniciar stream RTSP primero, esperar evento stream.started
+    console.log(
+      "[Orchestrator] Starting publisher, waiting for stream.started event..."
+    );
     this.publisher.start();
+
+    // La sesión se abrirá cuando stream.started se dispare (ver onStreamStarted)
     this.bumpSilence();
   }
 
@@ -131,16 +149,25 @@ export class Orchestrator {
     console.log("[Orchestrator] → IDLE");
     this.state = "IDLE";
 
-    // FPS ya es fijo, no cambiar
-    
+    // Cambiar a FPS idle para ahorro de recursos
+    console.log(
+      `[Orchestrator] Switching to idle FPS: ${CONFIG.ai.fps.idle}fps`
+    );
+    await this.capture.setFps(CONFIG.ai.fps.idle);
+
     // Detener stream RTSP y esperar a que termine
     await this.publisher.stop();
-    
-    // Esperar un poco más para que el socket TCP se libere completamente
+
+    // Esperar un poco para que los recursos se liberen completamente
     await new Promise((res) => setTimeout(res, 500));
 
+    // Flush pendiente y cerrar sesión
+    if (this.sessionId) {
+      await this.io.flushBatch(this.sessionId);
+    }
     await this.io.closeSession(this.sessionId, CONFIG.fsm.postRollSec);
     console.log("[Orchestrator] Session closed:", this.sessionId);
+    
     this.sessionId = undefined;
     clearTimeout(this.silenceTimer);
     clearTimeout(this.postTimer);

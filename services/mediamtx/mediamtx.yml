@@ -30,7 +30,7 @@ paths:
     recordFormat: fmp4
     # Estructura de carpetas con timestamps en el nombre del archivo
     recordPath: /recordings/%path/%Y/%m/%d/%H/%M/%S-%f
-    # Segmentos de 1 hora (ajusta según tu caso de uso)
-    recordSegmentDuration: 1h
-    # Opcional: retención automática (ej: borrar después de 7 días)
-    # recordDeleteAfter: 168h
+    # Segmentos de 5 minutos (ajusta según tu caso de uso)
+    recordSegmentDuration: 5m
+    # Opcional: retención automática (borrar después de 7 días)
+    recordDeleteAfter: 168h

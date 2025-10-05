@@ -1,7 +1,13 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-const arr = (v?: string) => (v ? v.split(",").map(s => s.trim()).filter(Boolean) : []);
+const arr = (v?: string) =>
+  v
+    ? v
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
 
 export const CONFIG = {
   deviceId: process.env.EDGE_DEVICE_ID || "cam-local",
@@ -11,12 +17,11 @@ export const CONFIG = {
     rtspUrl: process.env.SOURCE_RTSP || "rtsp://user:pass@camera/stream",
   },
   capture: {
-    socketPath: process.env.CAPTURE_SOCKET_PATH || "/tmp/cam_raw.sock",
-    tcpPort: Number(process.env.CAPTURE_TCP_PORT || 5000),
+    socketPath: process.env.CAPTURE_SOCKET_PATH || "/dev/shm/cam_raw.sock",
     width: Number(process.env.CAPTURE_WIDTH || 1280),
     height: Number(process.env.CAPTURE_HEIGHT || 720),
     fpsHub: Number(process.env.CAPTURE_FPS || 15),
-    shmSizeMB: Number(process.env.CAPTURE_SHM_SIZE_MB || 64),
+    shmSizeMB: Number(process.env.CAPTURE_SHM_SIZE_MB || 128), // Aumentado para 1280x720
   },
   mediamtx: {
     host: process.env.MEDIAMTX_HOST || "localhost",
@@ -36,7 +41,7 @@ export const CONFIG = {
     classNames: arr(process.env.AI_CLASS_NAMES),
     classesFilter: arr(process.env.AI_CLASSES_FILTER),
     fps: {
-      idle: Number(process.env.AI_FPS_IDLE || 2),
+      idle: Number(process.env.AI_FPS_IDLE || 5),
       active: Number(process.env.AI_FPS_ACTIVE || 8),
     },
   },

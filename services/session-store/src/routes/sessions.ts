@@ -192,6 +192,11 @@ router.get('/:sessionId/clip', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Session timestamps are invalid' });
     }
 
+    // Aplicar offset al timestamp de inicio para compensar delay entre stream.started
+    // y el primer GOP escrito por MediaMTX. Esto evita 404 cuando el start_ts cae
+    // antes del primer segmento disponible.
+    const playbackStartDate = new Date(startDate.getTime() + CONFIG.PLAYBACK_START_OFFSET_MS);
+
     const durationMs = Math.max(0, endDate.getTime() - startDate.getTime());
     const baseSeconds = Math.ceil(durationMs / 1000);
     const marginSeconds = CONFIG.PLAYBACK_EXTRA_SECONDS;
@@ -209,14 +214,14 @@ router.get('/:sessionId/clip', async (req: Request, res: Response) => {
 
     playbackBase.pathname = '/get';
     playbackBase.searchParams.set('path', session.path);
-    playbackBase.searchParams.set('start', startDate.toISOString());
+    playbackBase.searchParams.set('start', playbackStartDate.toISOString());
     playbackBase.searchParams.set('duration', `${totalSeconds}s`);
     playbackBase.searchParams.set('format', format);
 
     res.json({
       sessionId,
       playbackUrl: playbackBase.toString(),
-      start: startDate.toISOString(),
+      start: playbackStartDate.toISOString(),
       durationSeconds: totalSeconds,
       format
     });
