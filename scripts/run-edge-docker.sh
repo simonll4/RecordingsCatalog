@@ -23,7 +23,7 @@ echo ""
 
 # Verificar si hay cambios sin compilar
 EDGE_DIR="${ROOT_DIR}/services/edge-agent"
-if [[ -d "${EDGE_DIR}/src" ]] && [[ ! -f "${EDGE_DIR}/dist/main.js" ]]; then
+if [[ -d "${EDGE_DIR}/src" ]] && [[ ! -f "${EDGE_DIR}/dist/app/main.js" ]]; then
     echo "⚠️  Warning: No build found in edge-agent"
     echo "   Building now..."
     pushd "${EDGE_DIR}" >/dev/null

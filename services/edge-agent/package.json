@@ -4,13 +4,12 @@
   "description": "Edge Agent simple para publicar sesiones en MediaMTX",
   "type": "module",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/main.ts",
+    "dev": "ts-node-dev --respawn --transpile-only src/app/main.ts",
     "build": "tsc",
-    "start": "node dist/main.js"
+    "start": "node dist/app/main.js"
   },
   "dependencies": {
-    "dotenv": "^16.3.1",
-    "net": "^1.0.2"
+    "dotenv": "^16.3.1"
   },
   "devDependencies": {
     "@types/node": "^20.9.0",

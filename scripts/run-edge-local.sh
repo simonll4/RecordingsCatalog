@@ -40,8 +40,8 @@ if [[ ! -d "$DIST_DIR" ]]; then
     exit 1
 fi
 
-if [[ ! -f "$DIST_DIR/main.js" ]]; then
-    echo "[edge-agent] No se encontró dist/main.js." >&2
+if [[ ! -f "$DIST_DIR/app/main.js" ]]; then
+    echo "[edge-agent] No se encontró dist/app/main.js." >&2
     echo "Ejecutá 'npm run build' dentro de services/edge-agent." >&2
     exit 1
 fi
@@ -54,19 +54,17 @@ ENV_VARS=()
 
 # Variables para conectarse a servicios desde el host
 ENV_VARS+=("MEDIAMTX_HOST=localhost")
-ENV_VARS+=("SESSION_STORE_URL=http://localhost:8080")
+ENV_VARS+=("STORE_BASE_URL=http://localhost:8080")
 ENV_VARS+=("AI_CLASS_NAMES=person,helmet,vest,vehicle")
 ENV_VARS+=("AI_CLASSES_FILTER=person,helmet")
 
 # Selección de cámara según flags
 if [[ -n "$CUSTOM_CAMERA" ]]; then
-    ENV_VARS+=("CAMERA_DEVICE=$CUSTOM_CAMERA")
-    unset SOURCE_RTSP 2>/dev/null || true
+    ENV_VARS+=("SOURCE_URI=$CUSTOM_CAMERA")
 else
     case "$USE_CAMERA" in
         yes)
-            ENV_VARS+=("CAMERA_DEVICE=/dev/video0")
-            unset SOURCE_RTSP 2>/dev/null || true
+            ENV_VARS+=("SOURCE_URI=/dev/video0")
         ;;
         no)
             # Sin cámara, no setear nada (usará defaults del .env)
@@ -75,8 +73,8 @@ else
     esac
 fi
 
-# Comando final a ejecutar (ACTUALIZADO: main.js)
-NODE_COMMAND=(node dist/main.js "${NODE_ARGS[@]}")
+# Comando final a ejecutar (ACTUALIZADO: app/main.js)
+NODE_COMMAND=(node dist/app/main.js "${NODE_ARGS[@]}")
 
 echo "[edge-agent] Starting Edge Agent v2.0"
 echo "[edge-agent] Command: ${NODE_COMMAND[*]}"

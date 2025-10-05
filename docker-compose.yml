@@ -72,24 +72,30 @@ services:
       session-store:
         condition: service_started
     environment:
-      # Dispositivo
-      EDGE_DEVICE_ID: cam-local
+      # Device
+      DEVICE_ID: cam-local
       
-      # Fuente de video
-      CAMERA_DEVICE: /dev/video0
-      # SOURCE_RTSP: rtsp://cam-ip/stream
+      # Source
+      SOURCE_KIND: v4l2
+      SOURCE_URI: /dev/video0
+      SOURCE_WIDTH: 1280
+      SOURCE_HEIGHT: 720
+      SOURCE_FPS_HUB: 15
+      SOURCE_SOCKET_PATH: /dev/shm/cam_raw.sock
+      SOURCE_SHM_SIZE_MB: 128
+      # Para RTSP usar: SOURCE_KIND=rtsp y SOURCE_URI=rtsp://cam-ip/stream
       
       # MediaMTX
       MEDIAMTX_HOST: mediamtx
-      MEDIAMTX_RTSP_PORT: 8554
-      EDGE_STREAM_PATH: cam-local
+      MEDIAMTX_PORT: 8554
+      MEDIAMTX_PATH: cam-local
       
       # FSM
-      DWELL_MS: 500
-      SILENCE_MS: 3000
-      POST_ROLL_SEC: 5
+      FSM_DWELL_MS: 500
+      FSM_SILENCE_MS: 3000
+      FSM_POSTROLL_MS: 5000
       
-      # IA
+      # AI
       AI_MODEL_NAME: yolov8n.onnx
       AI_UMBRAL: 0.4
       AI_WIDTH: 640
@@ -100,9 +106,12 @@ services:
       AI_FPS_ACTIVE: 12
       
       # Session Store
-      SESSION_STORE_URL: http://session-store:8080
-      SINK_BATCH_MS: 250
-      SINK_MAX_ITEMS: 50
+      STORE_BASE_URL: http://session-store:8080
+      STORE_BATCH_MAX: 50
+      STORE_FLUSH_INTERVAL_MS: 250
+      
+      # Logging
+      LOG_LEVEL: info
       
       TZ: UTC
     volumes:
