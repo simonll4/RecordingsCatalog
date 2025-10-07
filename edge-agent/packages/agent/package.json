@@ -1,0 +1,25 @@
+{
+  "name": "@edge-agent/agent",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --external opencv4nodejs --external @prisma/client --external onnxruntime-node --external sharp --external @edge-agent/detector --external @edge-agent/common --external @edge-agent/capture --external @edge-agent/db",
+    "dev": "tsup src/index.ts --format esm --dts --watch --external opencv4nodejs --external @prisma/client --external onnxruntime-node --external sharp --external @edge-agent/detector --external @edge-agent/common --external @edge-agent/capture --external @edge-agent/db",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@edge-agent/common": "1.0.0",
+    "@edge-agent/db": "1.0.0",
+    "@edge-agent/detector": "1.0.0",
+    "@edge-agent/capture": "1.0.0",
+    "pino": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "tsup": "^8.0.0",
+    "vitest": "^1.0.0"
+  }
+}

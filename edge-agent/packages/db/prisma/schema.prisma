@@ -1,0 +1,57 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  sessionId    String  @id @map("session_id")
+  name         String
+  segmentIdx   Int     @map("segment_idx")
+  devId        String  @map("dev_id")
+  streamPath   String? @map("stream_path")
+  edgeStartTs  BigInt  @map("edge_start_ts")
+  edgeEndTs    BigInt? @map("edge_end_ts")
+  playlistUrl  String? @map("playlist_url")
+  startPdt     String? @map("start_pdt")
+  endPdt       String? @map("end_pdt")
+  metaUrl      String? @map("meta_url")
+  thumbUrl     String? @map("thumb_url")
+  thumbTs      BigInt? @map("thumb_ts")
+  classes      Json?   @db.JsonB
+  createdAt    BigInt  @map("created_at")
+
+  detections Detection[]
+
+  @@index([devId, createdAt(sort: Desc)], map: "idx_sessions_dev_created")
+  @@index([devId, name], map: "idx_sessions_dev_name")
+  @@map("sessions")
+}
+
+model Detection {
+  detectionId   String  @id @map("detection_id")
+  sessionId     String  @map("session_id")
+  trackId       String  @map("track_id")
+  firstTs       BigInt  @map("first_ts")
+  lastTs        BigInt  @map("last_ts")
+  class         String
+  score         Float   @db.DoublePrecision
+  bb            Json    @db.JsonB
+  frameUrl      String? @map("frame_url")
+  attributes    Json?   @db.JsonB
+  detectionRef  String? @map("detection_ref")
+  trackDetails  Json?   @map("track_details") @db.JsonB
+
+  session Session @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+
+  @@unique([sessionId, trackId], map: "unique_session_track")
+  @@index([sessionId, class], map: "idx_detections_session_class")
+  @@index([sessionId, trackId], map: "idx_detections_session_track")
+  @@map("detections")
+}

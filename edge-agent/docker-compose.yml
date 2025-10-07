@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: edge-agent-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: edge_agent
+      POSTGRES_USER: edge_user
+      POSTGRES_PASSWORD: edge_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    networks:
+      - edge-agent-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edge_user -d edge_agent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Opcional: Adminer para administrar la DB via web
+  adminer:
+    image: adminer:4.8.1
+    container_name: edge-agent-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    networks:
+      - edge-agent-network
+    depends_on:
+      - postgres
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  edge-agent-network:
+    driver: bridge

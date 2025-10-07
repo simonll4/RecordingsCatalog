@@ -1,0 +1,43 @@
+{
+  "name": "edge-agent",
+  "version": "1.0.0",
+  "description": "Edge Agent for video detection with ONNX and PostgreSQL",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "cd apps/cli && npm run dev",
+    "build": "npm run build:common && npm run build:db && npm run build:detector && npm run build:capture && npm run build:agent && npm run build:cli",
+    "build:common": "cd packages/common && npm run build",
+    "build:db": "cd packages/db && npm run build",
+    "build:detector": "cd packages/detector && npm run build",
+    "build:capture": "cd packages/capture && npm run build",
+    "build:agent": "cd packages/agent && npm run build",
+    "build:cli": "cd apps/cli && npm run build",
+    "build:viewer": "cd apps/viewer && npm run build",
+    "viewer:dev": "cd apps/viewer && npm run dev",
+    "test": "cd packages/common && npm test",
+    "db:migrate": "cd packages/db && npx prisma migrate dev",
+    "db:generate": "cd packages/db && npx prisma generate",
+    "db:studio": "cd packages/db && npx prisma studio",
+    "db:sanitize:track-details": "node scripts/sanitize-track-details.js",
+    "setup": "npm install && npm run build",
+    "clean": "rm -rf packages/*/dist apps/*/dist"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "ts-node": "^10.9.2",
+    "tsup": "^8.0.0",
+    "typescript": "^5.6.3",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "pino": "^9.12.0"
+  }
+}
