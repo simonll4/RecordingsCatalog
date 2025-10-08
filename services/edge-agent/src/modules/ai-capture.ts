@@ -1,12 +1,15 @@
 /**
  * AI Capture - Captura y procesamiento de frames para análisis de IA
- * 
+ *
+ * Qué es: Un wrapper sobre GStreamer que extrae frames RGB a una resolución
+ * fija para el motor de IA. Entrega cada frame por callback junto a metadatos.
+ *
  * Arquitectura refactorizada:
- * - Usa buildCapture() de /media/gstreamer para construir pipeline
- * - Callback onFrame para entregar frames RGB
- * - Dual-rate FPS con setMode(idle|active)
- * - Buffering inteligente con cota de seguridad (max 3 frames)
- * - Auto-recovery con backoff exponencial
+ * - Usa `buildCapture()` de /media/gstreamer para construir el pipeline.
+ * - Callback `onFrame` para entregar frames RGB (pixFmt=RGB) + `FrameMeta`.
+ * - Dual‑rate (idle/active) cambiando el FPS y reiniciando el pipeline.
+ * - Buffering acotado (máx. 3 frames) para evitar crecimiento sin control.
+ * - Auto‑recovery con backoff exponencial ante caídas del proceso hijo.
  */
 
 import { ChildProcess } from "child_process";
@@ -19,29 +22,41 @@ import { FrameMeta } from "../types/detections.js";
 type OnFrameFn = (rgb: Buffer, meta: FrameMeta) => void;
 
 export interface AICapture {
+  /** Inicia el pipeline de GStreamer y comienza a emitir frames RGB. */
   start(onFrame: OnFrameFn): Promise<void>;
+  /** Detiene el pipeline y libera recursos del proceso hijo. */
   stop(): Promise<void>;
+  /** Cambia el modo de FPS (idle/active) reiniciando el pipeline si corresponde. */
   setMode(mode: "idle" | "active"): void;
 }
 
 export class AICaptureImpl implements AICapture {
+  /** Proceso hijo (gst-launch) en ejecución. */
   private proc?: ChildProcess;
+  /** Callback de entrega de frames RGB. */
   private onFrame?: OnFrameFn;
+  /** Acumulador de bytes de stdout para rearmar frames completos. */
   private acc: Buffer = Buffer.alloc(0);
+  /** Identificador simple de instancia lanzada (para debugging). */
   private childId = 0;
+  /** Contador de caídas consecutivas para calcular backoff. */
   private consecutiveFailures = 0;
+  /** Límite superior de reintentos automáticos. */
   private maxConsecutiveFailures = 5;
+  /** Modo actual de captura (controla FPS usados). */
   private currentMode: "idle" | "active" = "idle";
+  /** Flag que evita auto‑restart si el stop fue intencional. */
   private stoppedManually = false;
 
+  /** Lanza el pipeline con el FPS adecuado y conecta stdout para frames. */
   async start(onFrame: OnFrameFn): Promise<void> {
     this.onFrame = onFrame;
     this.stoppedManually = false;
     this.consecutiveFailures = 0;
-    
+
     const fps = this.getFps();
     await this.launch(fps);
-    
+
     logger.info("AI capture started", {
       module: "ai-capture",
       fps,
@@ -50,6 +65,10 @@ export class AICaptureImpl implements AICapture {
     });
   }
 
+  /**
+   * Intenta terminar el proceso hijo de forma ordenada (SIGINT) y luego
+   * lo asegura con SIGKILL. Limpia listeners y buffers.
+   */
   async stop(): Promise<void> {
     if (!this.proc) return;
 
@@ -75,6 +94,7 @@ export class AICaptureImpl implements AICapture {
     this.acc = Buffer.alloc(0);
   }
 
+  /** Cambia modo de FPS y reinicia el pipeline si estaba en ejecución. */
   setMode(mode: "idle" | "active"): void {
     if (mode === this.currentMode) {
       logger.debug("Mode already set", { module: "ai-capture", mode });
@@ -103,10 +123,14 @@ export class AICaptureImpl implements AICapture {
 
   // ==================== PRIVATE ====================
 
+  /** FPS deseado según modo actual (idle/active) de CONFIG. */
   private getFps(): number {
-    return this.currentMode === "idle" ? CONFIG.ai.fps.idle : CONFIG.ai.fps.active;
+    return this.currentMode === "idle"
+      ? CONFIG.ai.fps.idle
+      : CONFIG.ai.fps.active;
   }
 
+  /** Construye y lanza el pipeline de GStreamer con el FPS indicado. */
   private async launch(fps: number): Promise<void> {
     const { socketPath } = CONFIG.source;
     const { width: aiWidth, height: aiHeight } = CONFIG.ai;
@@ -130,6 +154,7 @@ export class AICaptureImpl implements AICapture {
         GST_DEBUG: process.env.GST_DEBUG ?? "2",
         GST_DEBUG_NO_COLOR: "1",
       },
+      silentStdout: true, // No loguear stdout (contiene frames binarios)
       onExit: (code, signal) => this.handleExit(code, signal),
     });
 
@@ -144,6 +169,10 @@ export class AICaptureImpl implements AICapture {
     this.acc = Buffer.alloc(0);
   }
 
+  /**
+   * Ensambla frames completos a partir de stdout. Limita el acumulador a
+   * 3× `frameBytes` para evitar desbordes si el consumidor se atrasa.
+   */
   private handleData(chunk: Buffer, frameBytes: number) {
     this.consecutiveFailures = 0;
     this.acc = Buffer.concat([this.acc, chunk]);
@@ -192,6 +221,10 @@ export class AICaptureImpl implements AICapture {
     }
   }
 
+  /**
+   * Gestiona la salida/crash del proceso hijo. Si no fue un stop manual,
+   * programa relanzar con backoff exponencial (hasta 5 intentos).
+   */
   private handleExit(code: number | null, signal: string | null) {
     if (this.stoppedManually) return;
 

@@ -13,7 +13,7 @@ export type Detection = {
 };
 
 export type FrameMeta = {
-  ts: string;         // ISO timestamp
+  ts: string; // ISO timestamp
   width: number;
   height: number;
   pixFmt: "RGB" | "I420";

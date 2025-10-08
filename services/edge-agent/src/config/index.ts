@@ -1,36 +1,36 @@
 /**
  * Config - Configuración Centralizada del Edge Agent
- * 
+ *
  * Este módulo es el PUNTO ÚNICO de acceso a configuración.
  * Lee variables de entorno, valida tipos, y exporta CONFIG singleton.
- * 
+ *
  * Responsabilidades:
- * 
+ *
  * 1. Leer .env y process.env
  * 2. Parsear strings → tipos correctos (numbers, arrays, enums)
  * 3. Validar valores (ej: width/height pares para I420)
  * 4. Proveer defaults sensatos
  * 5. Fallar rápido en startup si falta variable requerida
- * 
+ *
  * Uso:
- * 
+ *
  * ```typescript
  * import { CONFIG } from "./config/index.js";
- * 
+ *
  * console.log(CONFIG.deviceId);        // "edge-dev"
  * console.log(CONFIG.source.uri);      // "/dev/video0"
  * console.log(CONFIG.fsm.dwellMs);     // 500
  * ```
- * 
+ *
  * ¿Por qué singleton?
- * 
+ *
  * - Configuración es global e inmutable (no cambia en runtime)
  * - Evita pasar CONFIG por parámetros en todos lados
  * - Type-safe (AppConfig garantiza estructura correcta)
  * - Fácil de testear (mock process.env antes de import)
- * 
+ *
  * Variables de Entorno:
- * 
+ *
  * Ver .env.example para lista completa de variables.
  * Todas tienen defaults razonables para desarrollo local.
  */
@@ -43,7 +43,7 @@ dotenv.config();
 
 /**
  * getEnv - Lee string de env var con fallback
- * 
+ *
  * @param key - Nombre de la variable (ej: "DEVICE_ID")
  * @param fallback - Valor por defecto (opcional)
  * @returns Valor de la variable
@@ -57,7 +57,7 @@ function getEnv(key: string, fallback?: string): string {
 
 /**
  * getEnvNum - Lee number de env var con fallback
- * 
+ *
  * @param key - Nombre de la variable (ej: "SOURCE_WIDTH")
  * @param fallback - Valor por defecto (opcional)
  * @returns Valor numérico parseado
@@ -76,9 +76,9 @@ function getEnvNum(key: string, fallback?: number): number {
 
 /**
  * getEnvArray - Lee array de strings (CSV) de env var
- * 
+ *
  * Ejemplo: "person,car,truck" → ["person", "car", "truck"]
- * 
+ *
  * @param key - Nombre de la variable (ej: "AI_CLASS_NAMES")
  * @param fallback - Array por defecto (opcional)
  * @returns Array de strings parseado
@@ -95,12 +95,12 @@ function getEnvArray(key: string, fallback?: string[]): string[] {
 
 /**
  * CONFIG - Singleton de configuración
- * 
+ *
  * Objeto inmutable con toda la configuración del Edge Agent.
  * Se construye en startup (import time) y valida todas las env vars.
- * 
+ *
  * Secciones:
- * 
+ *
  * - deviceId: ID único del edge (ej: "edge-dev-001")
  * - logLevel: Nivel de logging (debug/info/warn/error)
  * - source: Configuración de cámara (V4L2/RTSP)
@@ -111,10 +111,10 @@ function getEnvArray(key: string, fallback?: string[]): string[] {
  */
 export const CONFIG: AppConfig = {
   deviceId: getEnv("DEVICE_ID", "edge-dev"),
-  logLevel: (getEnv("LOG_LEVEL", "info") as "debug" | "info" | "warn" | "error"),
-  
+  logLevel: getEnv("LOG_LEVEL", "info") as "debug" | "info" | "warn" | "error",
+
   source: {
-    kind: (getEnv("SOURCE_KIND", "v4l2") as "rtsp" | "v4l2"),
+    kind: getEnv("SOURCE_KIND", "v4l2") as "rtsp" | "v4l2",
     uri: getEnv("SOURCE_URI", "/dev/video0"),
     width: getEnvNum("SOURCE_WIDTH", 640),
     height: getEnvNum("SOURCE_HEIGHT", 480),
@@ -128,11 +128,14 @@ export const CONFIG: AppConfig = {
     umbral: getEnvNum("AI_UMBRAL", 0.5),
     width: getEnvNum("AI_WIDTH", 640),
     height: getEnvNum("AI_HEIGHT", 480),
-    classNames: getEnvArray("AI_CLASS_NAMES", ["person", "car", "truck"]),
-    classesFilter: getEnvArray("AI_CLASSES_FILTER", ["person", "car"]),
+    classesFilter: getEnvArray("AI_CLASSES_FILTER", ["person"]),
     fps: {
       idle: getEnvNum("AI_FPS_IDLE", 5),
       active: getEnvNum("AI_FPS_ACTIVE", 8),
+    },
+    worker: {
+      host: getEnv("AI_WORKER_HOST", "worker-ai"),
+      port: getEnvNum("AI_WORKER_PORT", 7001),
     },
   },
 
@@ -160,7 +163,7 @@ export const CONFIG: AppConfig = {
 
 /**
  * Validaciones de startup
- * 
+ *
  * Fallan rápido si configuración es inválida.
  * Mejor crashear en startup que en runtime con frames corruptos.
  */

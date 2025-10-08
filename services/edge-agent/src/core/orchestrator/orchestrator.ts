@@ -1,49 +1,50 @@
 /**
  * Orchestrator - Coordinador Central del Sistema (FSM)
- * 
+ *
  * El Orchestrator es el "cerebro" del Edge Agent. Implementa una FSM
- * (Finite State Machine) pura que coordina todos los mó * - StartStream: Inicia RTSP hacia MediaMTX
+ * (Finite State Machine) pura que coordina todos los módulos.
+ * - StartStream: Inicia RTSP hacia MediaMTX
  * - StopStream: Detiene RTSP
  * - OpenSession: Crea nueva sesión en store, retorna sessionId
  * - AppendDetections: Envía batch de detecciones a store
  * - CloseSession: Cierra sesión con endTs
  * - SetAIFpsMode: Cambia velocidad de AI (configurable vía CONFIG.ai.fps)basándose
  * en eventos.
- * 
+ *
  * Responsabilidades:
- * 
+ *
  * 1. Escuchar eventos del bus (ai.detection, ai.keepalive, timers, etc.)
  * 2. Ejecutar FSM pura (función reduce) que retorna:
  *    - Nuevo contexto (state + sessionId + otros datos)
  *    - Comandos a ejecutar (side effects)
  * 3. Traducir comandos a llamadas de módulos (adapters)
  * 4. Gestionar timers (dwell/silence/postroll)
- * 
+ *
  * Estados de la FSM:
- * 
+ *
  * - IDLE: Esperando detecciones (AI @ fps idle, sin stream)
  * - DWELL: Ventana de confirmación (configurable, AI @ fps idle)
  * - ACTIVE: Grabando (AI @ fps active, stream ON)
  * - CLOSING: Post-roll (configurable, AI @ fps active, stream ON)
- * 
+ *
  * Flujo típico:
- * 
+ *
  * ```
  * IDLE → (ai.detection con relevant=true) → DWELL
  *      → (dwell timer OK) → ACTIVE
  *      → (silence timer OK) → CLOSING
  *      → (postroll timer OK) → IDLE
  * ```
- * 
+ *
  * Arquitectura:
- * 
+ *
  * - FSM Pura: reduce(ctx, event) → {ctx, commands}
  * - Side Effects: Ejecutados DESPUÉS del reduce (idempotentes)
  * - Timers: Emiten eventos fsm.t.* que re-entran al FSM
  * - Adapters: Abstracciones de módulos (camera, publisher, store, etc.)
- * 
+ *
  * ¿Por qué FSM pura?
- * 
+ *
  * - Testeable: reduce() es función pura (fácil de testear)
  * - Debuggable: Toda la lógica en un solo lugar
  * - Predecible: Mismo evento + mismo state → mismo resultado
@@ -53,36 +54,36 @@
 import { Bus } from "../bus/bus.js";
 import { CameraHub } from "../../modules/camera-hub.js";
 import { AICapture } from "../../modules/ai-capture.js";
-import { AIEngine } from "../../modules/ai-engine-sim.js";
+import { AIEngine } from "../../modules/ai-engine-tcp.js";
 import { Publisher } from "../../modules/publisher.js";
 import { SessionStore } from "../../modules/session-store.js";
 import { CONFIG } from "../../config/index.js";
 import { logger } from "../../shared/logging.js";
 import { metrics } from "../../shared/metrics.js";
 import { reduce } from "./fsm.js";
-import { FSMContext, Command } from "./types.js";
+import { FSMContext, Command, State } from "./types.js";
 import { AllEvents } from "../bus/events.js";
 
 // Módulos que el Orchestrator controla (dependency injection)
 type Adapters = {
-  camera: CameraHub;      // V4L2/RTSP → SHM
-  capture: AICapture;     // SHM → RGB frames (dual-rate)
-  ai: AIEngine;           // Detección de objetos
-  publisher: Publisher;   // SHM → RTSP MediaMTX
-  store: SessionStore;    // API sessions + detections
+  camera: CameraHub; // V4L2/RTSP → SHM
+  capture: AICapture; // SHM → RGB frames (dual-rate)
+  ai: AIEngine; // Detección de objetos
+  publisher: Publisher; // SHM → RTSP MediaMTX
+  store: SessionStore; // API sessions + detections
 };
 
 export class Orchestrator {
   private bus: Bus;
   private adapters: Adapters;
-  
+
   // Contexto de la FSM (state + datos)
   private ctx: FSMContext = { state: "IDLE" };
-  
+
   // Timers para transiciones automáticas
-  private dwellTimer?: NodeJS.Timeout;      // Ventana de confirmación (500ms)
-  private silenceTimer?: NodeJS.Timeout;    // Timeout sin detecciones (3s)
-  private postRollTimer?: NodeJS.Timeout;   // Grabación post-detección (5s)
+  private dwellTimer?: NodeJS.Timeout; // Ventana de confirmación (500ms)
+  private silenceTimer?: NodeJS.Timeout; // Timeout sin detecciones (3s)
+  private postRollTimer?: NodeJS.Timeout; // Grabación post-detección (5s)
 
   constructor(bus: Bus, adapters: Adapters) {
     this.bus = bus;
@@ -91,7 +92,7 @@ export class Orchestrator {
 
   /**
    * Inicializa el Orchestrator
-   * 
+   *
    * - Espera a que camera esté ready (puede tardar en abrir V4L2/RTSP)
    * - Suscribe a todos los eventos relevantes del bus
    * - Queda en estado IDLE esperando primera detección
@@ -113,12 +114,15 @@ export class Orchestrator {
     this.bus.subscribe("fsm.t.silence.ok", (e) => this.handleEvent(e));
     this.bus.subscribe("fsm.t.postroll.ok", (e) => this.handleEvent(e));
 
-    logger.info("Orchestrator ready", { module: "orchestrator", state: this.ctx.state });
+    logger.info("Orchestrator ready", {
+      module: "orchestrator",
+      state: this.ctx.state,
+    });
   }
 
   /**
    * Apaga el Orchestrator de forma ordenada
-   * 
+   *
    * - Limpia todos los timers pendientes
    * - Detiene módulos en orden específico
    * - Cierra sesión activa si existe
@@ -144,7 +148,7 @@ export class Orchestrator {
 
   /**
    * Handler principal de eventos
-   * 
+   *
    * Ejecuta FSM pura (reduce) y procesa comandos resultantes.
    * Log a INFO solo cuando cambia de estado (evita spam).
    */
@@ -157,7 +161,7 @@ export class Orchestrator {
 
     // Guardar estado anterior para detectar cambios
     const prevState = this.ctx.state;
-    
+
     // Ejecutar FSM pura: ctx + event → nuevo ctx + comandos
     const { ctx, commands } = reduce(this.ctx, event);
     this.ctx = ctx;
@@ -182,28 +186,31 @@ export class Orchestrator {
     commands.forEach((cmd) => void this.executeCommand(cmd));
 
     // Manejar timers según estado actual (después de transición)
-    this.manageTimers(event);
+    this.manageTimers(event, prevState);
   }
 
   /**
    * Ejecuta un comando (side effect)
-   * 
+   *
    * Traduce Command abstracto a llamada concreta de módulo.
    * Los commands son generados por la FSM pura (reduce).
-   * 
+   *
    * Comandos disponibles:
-   * 
+   *
    * - StartStream: Inicia RTSP hacia MediaMTX
    * - StopStream: Detiene RTSP
    * - OpenSession: Crea nueva sesión en store, retorna sessionId
    * - AppendDetections: Envía batch de detecciones a store
    * - CloseSession: Cierra sesión con endTs
    * - SetAIFpsMode: Cambia velocidad de AI (idle=5fps, active=12fps)
-   * 
+   *
    * @param cmd - Comando a ejecutar (inmutable)
    */
   private async executeCommand(cmd: Command) {
-    logger.debug("Executing command", { module: "orchestrator", command: cmd.type });
+    logger.debug("Executing command", {
+      module: "orchestrator",
+      command: cmd.type,
+    });
 
     switch (cmd.type) {
       case "StartStream":
@@ -252,46 +259,79 @@ export class Orchestrator {
 
   /**
    * Gestiona timers de la FSM según estado actual
-   * 
+   *
    * Timers son mecanismos de auto-transición (ej: DWELL → ACTIVE).
    * Emiten eventos que re-entran al FSM (fsm.t.*).
-   * 
+   *
    * Lógica por estado:
-   * 
-   * - DWELL: Resetear dwell timer en cada ai.detection (ventana de confirmación)
-   * - ACTIVE: Resetear silence timer en ai.detection/ai.keepalive (mantener sesión)
+   *
+   * - DWELL: Iniciar dwell timer SOLO en la transición de entrada (no resetear)
+   * - ACTIVE: Resetear silence timer en ai.detection RELEVANTE o ai.keepalive
    * - CLOSING: Iniciar postroll timer tras fsm.t.silence.ok (grabación extra)
-   * 
-   * ¿Por qué resetear en ACTIVE?
-   * 
-   * Si AI sigue detectando, la sesión debe mantenerse ACTIVE.
-   * El silence timer se reinicia en cada detección/keepalive.
-   * Solo cuando pasan 3s sin detecciones → CLOSING.
-   * 
+   *
+   * ¿Por qué solo detecciones relevantes?
+   *
+   * Las detecciones no relevantes (ej: detecta "car" pero filtro es "person")
+   * NO deben mantener la sesión activa. Solo las relevantes resetean el timer.
+   * Si pasan silenceMs sin detecciones relevantes → CLOSING.
+   *
    * @param event - Evento que acaba de procesarse
+   * @param prevState - Estado anterior (antes de la transición)
    */
-  private manageTimers(event: AllEvents) {
+  private manageTimers(event: AllEvents, prevState: State) {
     const { state } = this.ctx;
 
+    // Limpiar timers al salir de un estado
+    if (prevState === "DWELL" && state !== "DWELL") {
+      this.clearDwellTimer();
+    }
+    if (prevState === "ACTIVE" && state !== "ACTIVE") {
+      this.clearSilenceTimer();
+    }
+    if (prevState === "CLOSING" && state !== "CLOSING") {
+      this.clearPostRollTimer();
+    }
+
     // === DWELL: Ventana de confirmación ===
-    if (state === "DWELL") {
-      if (event.type === "ai.detection") {
-        // Resetear timer en cada detección (confirmar que no es falso positivo)
-        this.clearDwellTimer();
-        this.dwellTimer = setTimeout(() => {
-          this.bus.publish("fsm.t.dwell.ok", { type: "fsm.t.dwell.ok" });
-        }, CONFIG.fsm.dwellMs);
-      }
+    // Iniciar timer SOLO cuando se ENTRA al estado DWELL (no resetear)
+    if (state === "DWELL" && prevState !== "DWELL") {
+      this.dwellTimer = setTimeout(() => {
+        this.bus.publish("fsm.t.dwell.ok", { type: "fsm.t.dwell.ok" });
+      }, CONFIG.fsm.dwellMs);
+      
+      logger.debug("DWELL timer started", {
+        module: "orchestrator",
+        dwellMs: CONFIG.fsm.dwellMs,
+      });
     }
 
     // === ACTIVE: Grabando sesión ===
     if (state === "ACTIVE") {
-      if (event.type === "ai.detection" || event.type === "ai.keepalive") {
-        // Resetear silence timer (mantener sesión viva mientras hay actividad)
+      // Iniciar silence timer cuando se ENTRA a ACTIVE
+      if (prevState !== "ACTIVE") {
+        this.silenceTimer = setTimeout(() => {
+          this.bus.publish("fsm.t.silence.ok", { type: "fsm.t.silence.ok" });
+        }, CONFIG.fsm.silenceMs);
+        
+        logger.debug("Silence timer started", {
+          module: "orchestrator",
+          silenceMs: CONFIG.fsm.silenceMs,
+        });
+      }
+      
+      // Resetear silence timer SOLO con detecciones relevantes
+      // ai.keepalive NO debe resetear el timer (solo indica que AI está vivo)
+      // Las detecciones no relevantes NO deben mantener la sesión viva
+      if (event.type === "ai.detection" && event.relevant) {
         this.clearSilenceTimer();
         this.silenceTimer = setTimeout(() => {
           this.bus.publish("fsm.t.silence.ok", { type: "fsm.t.silence.ok" });
         }, CONFIG.fsm.silenceMs);
+        
+        logger.debug("Silence timer reset (relevant detection)", {
+          module: "orchestrator",
+          silenceMs: CONFIG.fsm.silenceMs,
+        });
       }
     }
 
@@ -308,7 +348,7 @@ export class Orchestrator {
 
   /**
    * Limpia timer de DWELL (ventana de confirmación)
-   * 
+   *
    * Llamado cuando:
    * - Sale de DWELL (transición a ACTIVE)
    * - Nueva detección en DWELL (resetear timer)
@@ -320,7 +360,7 @@ export class Orchestrator {
 
   /**
    * Limpia timer de SILENCE (timeout sin detecciones)
-   * 
+   *
    * Llamado cuando:
    * - Nueva detección en ACTIVE (resetear timer)
    * - Transición a CLOSING (ya no necesario)
@@ -332,7 +372,7 @@ export class Orchestrator {
 
   /**
    * Limpia timer de POST-ROLL (grabación extra)
-   * 
+   *
    * Llamado cuando:
    * - Transición CLOSING → IDLE (completó post-roll)
    * - Shutdown completo (cancelar post-roll)
@@ -343,7 +383,7 @@ export class Orchestrator {
 
   /**
    * Limpia todos los timers pendientes
-   * 
+   *
    * Usado en shutdown para evitar que timers emitan eventos
    * después de que módulos estén detenidos (edge case).
    */

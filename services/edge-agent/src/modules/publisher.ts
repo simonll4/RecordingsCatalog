@@ -23,9 +23,9 @@ export class PublisherImpl implements Publisher {
 
   async start(): Promise<void> {
     if (this.state !== "idle") {
-      logger.debug("Publisher not idle, skipping start", { 
-        module: "publisher", 
-        state: this.state 
+      logger.debug("Publisher not idle, skipping start", {
+        module: "publisher",
+        state: this.state,
       });
       return;
     }
@@ -38,7 +38,7 @@ export class PublisherImpl implements Publisher {
       socketPath,
       width,
       height,
-      fpsHub,           // Agregar FPS hub
+      fpsHub, // Agregar FPS hub
       CONFIG.mediamtx,
       encoder
     );
@@ -53,6 +53,7 @@ export class PublisherImpl implements Publisher {
       command: "gst-launch-1.0",
       args,
       env: { GST_DEBUG: "2", GST_DEBUG_NO_COLOR: "1" },
+      silentStdout: true, // No loguear stdout (video stream)
       onExit: () => {
         this.proc = undefined;
         if (this.state !== "stopping") {

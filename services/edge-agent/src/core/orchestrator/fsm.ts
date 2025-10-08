@@ -1,25 +1,25 @@
 /**
  * FSM Pura - Máquina de Estados Finita (Finite State Machine)
- * 
+ *
  * Esta es la LÓGICA CENTRAL del Edge Agent. Implementa el patrón
  * Reducer Puro: reduce(state, event) → {newState, commands}
- * 
+ *
  * Características:
- * 
+ *
  * - Función pura: NO side effects, NO async, NO I/O
  * - Testeable: Fácil de testear (input/output determinístico)
  * - Debuggable: Toda la lógica en un solo lugar
  * - Auditeable: Genera comandos explícitos (side effects externalizados)
- * 
+ *
  * Estados:
- * 
+ *
  * - IDLE: Esperando detecciones (AI @ fps idle, sin stream)
  * - DWELL: Ventana de confirmación (CONFIG.fsm.dwellMs, evitar falsos positivos)
  * - ACTIVE: Grabando sesión (AI @ fps active, stream ON, session abierta)
  * - CLOSING: Post-roll (CONFIG.fsm.postRollMs, grabación extra después de última detección)
- * 
+ *
  * Diagrama de Estados:
- * 
+ *
  * ```
  *                    ai.detection (relevant=true)
  *           IDLE ───────────────────────────────────> DWELL
@@ -34,59 +34,62 @@
  *            │                                           │
  *            │                     fsm.t.postroll.ok (CONFIG.fsm.postRollMs)
  *            └───────────────────────────────────────────┘
- * 
+ *
  *            │ CLOSING ─(ai.detection relevante)─> DWELL
  *            │         (re-armar sesión si detecta algo en post-roll)
  * ```
- * 
+ *
  * Eventos Procesados:
- * 
+ *
  * - ai.detection: Detección de AI (con flag `relevant`)
  * - ai.keepalive: Sin detecciones pero AI sigue procesando
  * - fsm.t.dwell.ok: Timer de confirmación expiró
  * - fsm.t.silence.ok: Timer de silencio expiró (sin detecciones)
  * - fsm.t.postroll.ok: Timer de post-roll expiró
  * - session.open: Store retornó sessionId (async)
- * 
+ *
  * Comandos Generados:
- * 
+ *
  * - StartStream: Inicia RTSP → MediaMTX
  * - StopStream: Detiene RTSP
  * - OpenSession: Crea nueva sesión en store
  * - AppendDetections: Envía batch de detecciones
  * - CloseSession: Cierra sesión con endTs
  * - SetAIFpsMode: Cambia velocidad AI (configurable vía CONFIG.ai.fps)
- * 
+ *
  * ¿Por qué FSM Pura?
- * 
+ *
  * - Separación de concerns: Lógica (aquí) vs Side Effects (orchestrator)
  * - Testing: Testear reduce() es trivial (no mocks, no async)
  * - Time-travel debugging: Replay de eventos para reproducir bugs
  * - Auditabilidad: Commands son log completo de qué hizo el sistema
  */
 
-import { State, Command, FSMContext } from "./types.js";
+import { Command, FSMContext } from "./types.js";
 import { AllEvents } from "../bus/events.js";
 import { metrics } from "../../shared/metrics.js";
 
 /**
  * Reduce - Función reductora pura de la FSM
- * 
+ *
  * Toma estado actual + evento y retorna nuevo estado + comandos.
  * NO ejecuta side effects (eso es responsabilidad del orchestrator).
- * 
+ *
  * Pattern:
- * 
+ *
  * ```typescript
  * const {ctx, commands} = reduce(currentCtx, event);
  * // orchestrator ejecuta commands y actualiza ctx
  * ```
- * 
+ *
  * @param ctx - Contexto actual (state + sessionId)
  * @param event - Evento a procesar (del bus)
  * @returns Nuevo contexto + comandos a ejecutar
  */
-export function reduce(ctx: FSMContext, event: AllEvents): { ctx: FSMContext; commands: Command[] } {
+export function reduce(
+  ctx: FSMContext,
+  event: AllEvents
+): { ctx: FSMContext; commands: Command[] } {
   const { state, sessionId } = ctx;
 
   // ==================== IDLE ====================
@@ -114,8 +117,8 @@ export function reduce(ctx: FSMContext, event: AllEvents): { ctx: FSMContext; co
         return {
           ctx: { state: "ACTIVE", sessionId: undefined },
           commands: [
-            { type: "StartStream" },              // Iniciar RTSP
-            { type: "OpenSession" },              // Crear sesión (async → event session.open)
+            { type: "StartStream" }, // Iniciar RTSP
+            { type: "OpenSession" }, // Crear sesión (async → event session.open)
             { type: "SetAIFpsMode", mode: "active" }, // Subir a fps active
           ],
         };
@@ -140,8 +143,8 @@ export function reduce(ctx: FSMContext, event: AllEvents): { ctx: FSMContext; co
                 type: "AppendDetections",
                 sessionId,
                 payload: {
-                  devId: "edge-dev",        // TODO: CONFIG.deviceId
-                  ts: event.meta.ts,        // Timestamp de detección
+                  devId: "edge-dev", // TODO: CONFIG.deviceId
+                  ts: event.meta.ts, // Timestamp de detección
                   detects: event.detections, // Objetos detectados
                 },
               },
@@ -178,7 +181,7 @@ export function reduce(ctx: FSMContext, event: AllEvents): { ctx: FSMContext; co
         return {
           ctx: { state: "IDLE", sessionId: undefined },
           commands: [
-            { type: "StopStream" },                         // Detener RTSP
+            { type: "StopStream" }, // Detener RTSP
             { type: "CloseSession", sessionId: sessionId ?? "" }, // Cerrar sesión en store
           ],
         };

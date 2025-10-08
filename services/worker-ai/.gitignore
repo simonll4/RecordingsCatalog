@@ -1,0 +1,11 @@
+# Python generados
+ai_pb2.py
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Modelos
+*.onnx
+*.pt
+*.pth

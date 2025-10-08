@@ -1,6 +1,6 @@
 /**
  * Camera Hub - Hub de captura de video siempre-encendido
- * 
+ *
  * Arquitectura refactorizada:
  * - Usa buildIngest() de /media/gstreamer para construir pipeline
  * - Usa spawnProcess() de /shared/childproc para manejo limpio de procesos
@@ -133,7 +133,9 @@ export class CameraHubImpl implements CameraHub {
     // Timeout de seguridad
     setTimeout(() => {
       if (this.proc) {
-        logger.warn("Process didn't respond to SIGINT, using SIGKILL", { module: "camera-hub" });
+        logger.warn("Process didn't respond to SIGINT, using SIGKILL", {
+          module: "camera-hub",
+        });
         killProcess(this.proc, "SIGKILL");
       }
       this.cleanupSocket();
@@ -161,8 +163,14 @@ export class CameraHubImpl implements CameraHub {
 
     // Auto-fallback MJPEG → RAW
     if (CONFIG.source.kind === "v4l2" && !this.tryRawFallback) {
-      if (/not negotiated|not-negotiated|could not link|No supported formats/i.test(l)) {
-        logger.warn("Caps negotiation failed, retrying RAW fallback", { module: "camera-hub" });
+      if (
+        /not negotiated|not-negotiated|could not link|No supported formats/i.test(
+          l
+        )
+      ) {
+        logger.warn("Caps negotiation failed, retrying RAW fallback", {
+          module: "camera-hub",
+        });
         this.restartWithRawFallback();
       }
     }
@@ -214,7 +222,9 @@ export class CameraHubImpl implements CameraHub {
     const { width, height, fpsHub, shmSizeMB } = CONFIG.source;
 
     if (width % 2 !== 0 || height % 2 !== 0) {
-      throw new Error(`width and height must be even for I420 (got ${width}x${height})`);
+      throw new Error(
+        `width and height must be even for I420 (got ${width}x${height})`
+      );
     }
 
     if (fpsHub < 1) {
@@ -224,7 +234,11 @@ export class CameraHubImpl implements CameraHub {
     const frameBytes = width * height * 1.5;
     const minMB = Math.ceil((frameBytes * 50) / (1024 * 1024));
     if (shmSizeMB < minMB) {
-      logger.warn("shmSizeMB may be too small", { module: "camera-hub", minMB, shmSizeMB });
+      logger.warn("shmSizeMB may be too small", {
+        module: "camera-hub",
+        minMB,
+        shmSizeMB,
+      });
     }
   }
 

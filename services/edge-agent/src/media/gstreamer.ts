@@ -64,7 +64,7 @@ export function buildIngest(
     // For RAW fallback, use lower resolution (640x480) since YUYV doesn't support 1280x720
     const fallbackWidth = 640;
     const fallbackHeight = 480;
-    
+
     const formatCaps = tryRawFallback
       ? `video/x-raw,width=${fallbackWidth},height=${fallbackHeight}`
       : `image/jpeg,width=${width},height=${height}`;

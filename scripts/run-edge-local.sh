@@ -46,6 +46,14 @@ if [[ ! -f "$DIST_DIR/app/main.js" ]]; then
     exit 1
 fi
 
+# Asegurar que el bundle incluya Protobuf generado
+if [[ ! -f "$DIST_DIR/proto/ai_pb.js" ]]; then
+    echo "[edge-agent] Falta dist/proto/ai_pb.js. Ejecutando build..."
+    pushd "$EDGE_DIR" >/dev/null
+    npm run build
+    popd >/dev/null
+fi
+
 # Entramos a la carpeta del servicio
 pushd "$EDGE_DIR" >/dev/null
 
@@ -55,8 +63,23 @@ ENV_VARS=()
 # Variables para conectarse a servicios desde el host
 ENV_VARS+=("MEDIAMTX_HOST=localhost")
 ENV_VARS+=("STORE_BASE_URL=http://localhost:8080")
-ENV_VARS+=("AI_CLASS_NAMES=person,helmet,vest,vehicle")
-ENV_VARS+=("AI_CLASSES_FILTER=person,helmet")
+
+# AI Classes Filter Configuration
+# AI_CLASSES_FILTER: Clases que dispararán grabación (COCO dataset)
+#
+# Clases comunes de COCO (80 clases disponibles):
+#   person, car, bicycle, motorcycle, bus, truck, boat
+#   bottle, wine glass, cup, fork, knife, spoon, bowl
+#   cat, dog, bird, horse, sheep, cow
+#   backpack, handbag, suitcase, umbrella
+#   laptop, cell phone, keyboard, mouse, tv
+#
+# Ejemplos de uso:
+#   - Solo personas: AI_CLASSES_FILTER=person
+#   - Personas y vehículos: AI_CLASSES_FILTER=person,car,truck,bus
+#   - Todo: AI_CLASSES_FILTER= (vacío = todas las clases son relevantes)
+
+ENV_VARS+=("AI_CLASSES_FILTER=${AI_CLASSES_FILTER:-person}")
 
 # Selección de cámara según flags
 if [[ -n "$CUSTOM_CAMERA" ]]; then

@@ -8,6 +8,8 @@ dist/
 # Logs
 *.log
 npm-debug.log*
+logs/*.log
+!logs/.gitkeep
 
 # Environment
 .env.local
@@ -27,3 +29,7 @@ Thumbs.db
 # Temporary
 *.tmp
 *.temp
+
+# Protobuf generados
+src/proto/ai_pb.js
+src/proto/ai_pb.d.ts

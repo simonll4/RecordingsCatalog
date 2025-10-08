@@ -1,6 +1,6 @@
 /**
  * Session Store - Gestión de sesiones y detecciones
- * 
+ *
  * Arquitectura refactorizada:
  * - Interfaz limpia (open, append, close, flush)
  * - Batching con timer y límite
@@ -144,7 +144,10 @@ export class SessionStoreImpl implements SessionStore {
     const items = this.batch.splice(0, this.batch.length);
     if (!items.length) return;
 
-    logger.debug("Flushing batch", { module: "session-store", count: items.length });
+    logger.debug("Flushing batch", {
+      module: "session-store",
+      count: items.length,
+    });
 
     // Retry con backoff (3 intentos)
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -188,7 +191,9 @@ export class SessionStoreImpl implements SessionStore {
       }
     }
 
-    logger.error("Flush failed after all attempts", { module: "session-store" });
+    logger.error("Flush failed after all attempts", {
+      module: "session-store",
+    });
   }
 
   /**
@@ -196,9 +201,9 @@ export class SessionStoreImpl implements SessionStore {
    */
   async flushAll(): Promise<void> {
     if (this.batch.length > 0 && this.currentSessionId) {
-      logger.info("Flushing all pending data on shutdown", { 
+      logger.info("Flushing all pending data on shutdown", {
         module: "session-store",
-        count: this.batch.length 
+        count: this.batch.length,
       });
       await this.flush(this.currentSessionId);
     }
