@@ -1,15 +1,15 @@
 /**
- * AI Client - Cliente TCP con Protobuf + Backpressure (Ventana 1 + Latest-Wins)
+ * AI Client TCP - Implementación TCP + Protobuf del cliente de IA
  *
- * Qué es: Un cliente binario sobre TCP que envía/recibe mensajes Protobuf
- * con framing length‑prefixed (uint32LE). Implementa control de flujo de
- * ventana 1 (crédito) y política latest‑wins para evitar backlog.
+ * Cliente binario sobre TCP que envía/recibe mensajes Protobuf con framing
+ * length-prefixed (uint32LE). Implementa control de flujo de ventana 1 (crédito)
+ * y política latest-wins para evitar backlog.
  *
- * Responsabilidades:
- * - Conexión TCP al worker de IA con reconexión automática y heartbeat.
- * - Framing length‑prefixed (uint32LE) y serialización con protobufjs.
- * - Backpressure (Ready/Result → concede crédito) + latest‑wins.
- * - Re‑init automático al reconectar con los últimos `InitArgs`.
+ * Características:
+ * - Conexión TCP al worker de IA con reconexión automática y heartbeat
+ * - Framing length-prefixed (uint32LE) y serialización con protobufjs
+ * - Backpressure (Ready/Result → concede crédito) + latest-wins
+ * - Re-init automático al reconectar con los últimos `InitArgs`
  *
  * Estados del cliente:
  * - DISCONNECTED: Sin conexión
@@ -17,42 +17,15 @@
  * - CONNECTED: Socket abierto, esperando InitOk
  * - READY: Modelo inicializado, listo para frames
  * - SHUTDOWN: Cerrando conexión
- *
- * Protocolo (alto nivel):
- * - Envelope { req | res | hb }
- * - Request: { init | frame | shutdown }
- * - Response: { initOk | ready | result | error }
- * - Heartbeat: { tsMonoNs }
  */
 
 import net from "node:net";
-import { EventEmitter } from "node:events";
 import Long from "long";
-import pb from "../proto/ai_pb_wrapper.js";
-import { logger } from "../shared/logging.js";
-import { metrics } from "../shared/metrics.js";
-
-/** Parámetros de inicialización que se envían al worker. */
-export type InitArgs = {
-  modelPath: string;
-  width: number;
-  height: number;
-  conf: number;
-  classes?: number[];
-};
-
-/** Resultado de inferencia normalizado para consumidores en Node. */
-export type Result = {
-  seq: number;
-  tsIso: string;
-  tsMonoNs: bigint;
-  detections: Array<{
-    cls: string;
-    conf: number;
-    bbox: [number, number, number, number];
-    trackId?: string;
-  }>;
-};
+import pb from "../../../proto/ai_pb_wrapper.js";
+import { logger } from "../../../shared/logging.js";
+import { metrics } from "../../../shared/metrics.js";
+import type { AIClient, InitArgs, Result } from "../ports/ai-client.js";
+import { mapProtobufResult } from "../transforms/result-mapper.js";
 
 type ClientState =
   | "DISCONNECTED"
@@ -60,34 +33,6 @@ type ClientState =
   | "CONNECTED"
   | "READY"
   | "SHUTDOWN";
-
-/** API que expone el cliente TCP para el motor de IA. */
-export interface AIClient {
-  /** Abre el socket TCP y deja el cliente listo para `init`. */
-  connect(): Promise<void>;
-  /** Envía configuración del modelo. Válido en CONNECTED o READY. */
-  init(args: InitArgs): Promise<void>;
-  /** Indica si hay crédito para enviar un frame (ventana 1). */
-  canSend(): boolean;
-  /**
-   * Encola/envía un frame RGB (pixFmt=RGB). Si no hay crédito,
-   * aplica latest‑wins y reemplaza el frame pendiente.
-   */
-  sendFrame(
-    seq: number,
-    tsIso: string,
-    tsMonoNs: bigint,
-    w: number,
-    h: number,
-    rgb: Buffer
-  ): void;
-  /** Suscribe callback para resultados de inferencia. */
-  onResult(cb: (r: Result) => void): void;
-  /** Suscribe callback para errores provenientes del worker/cliente. */
-  onError(cb: (err: Error) => void): void;
-  /** Cierra la conexión notificando `shutdown` al worker. */
-  shutdown(): Promise<void>;
-}
 
 export class AIClientTcp implements AIClient {
   /** Dirección del worker TCP. */
@@ -119,7 +64,7 @@ export class AIClientTcp implements AIClient {
   private errorCb?: (err: Error) => void;
 
   // Init guardado para re-init
-  /** Últimos `InitArgs` utilizados (para re‑enviar tras reconectar). */
+  /** Últimos `InitArgs` utilizados (para re-enviar tras reconectar). */
   private lastInit?: InitArgs;
 
   // Reconexión
@@ -128,7 +73,7 @@ export class AIClientTcp implements AIClient {
   private readonly maxReconnectDelay = 30000; // 30s
 
   // Buffer de recepción
-  /** Acumulador de bytes recibidos para rearmar mensajes length‑prefixed. */
+  /** Acumulador de bytes recibidos para rearmar mensajes length-prefixed. */
   private rxBuffer = Buffer.alloc(0);
 
   // Heartbeat
@@ -142,13 +87,13 @@ export class AIClientTcp implements AIClient {
   }
 
   /**
-   * Abre el socket, configura opciones (no‑delay/keepalive) y registra handlers.
+   * Abre el socket, configura opciones (no-delay/keepalive) y registra handlers.
    * Resuelve al conectarse; en caso de error inicial, rechaza.
    */
   async connect(): Promise<void> {
     if (this.state !== "DISCONNECTED") {
       logger.warn("Already connected or connecting", {
-        module: "ai-client",
+        module: "ai-client-tcp",
         state: this.state,
       });
       return;
@@ -168,7 +113,7 @@ export class AIClientTcp implements AIClient {
 
       socket.on("connect", () => {
         logger.info("Connected to AI worker", {
-          module: "ai-client",
+          module: "ai-client-tcp",
           host: this.host,
           port: this.port,
         });
@@ -194,7 +139,7 @@ export class AIClientTcp implements AIClient {
 
       socket.on("error", (err) => {
         logger.error("Socket error", {
-          module: "ai-client",
+          module: "ai-client-tcp",
           error: err.message,
         });
         if (this.errorCb) {
@@ -205,7 +150,7 @@ export class AIClientTcp implements AIClient {
 
       socket.on("close", () => {
         logger.warn("Socket closed", {
-          module: "ai-client",
+          module: "ai-client-tcp",
           state: this.state,
           hadCredit: this.hasCredit,
         });
@@ -239,7 +184,7 @@ export class AIClientTcp implements AIClient {
     this.sendMessage(msg);
 
     logger.info("Sent Init request", {
-      module: "ai-client",
+      module: "ai-client-tcp",
       model: args.modelPath,
       resolution: `${args.width}x${args.height}`,
     });
@@ -253,7 +198,7 @@ export class AIClientTcp implements AIClient {
   /**
    * Encola o envía inmediatamente un frame.
    * Si no hay crédito o hay un frame en vuelo, se guarda en `pendingFrame`
-   * (latest‑wins) y reemplaza cualquier pendiente anterior.
+   * (latest-wins) y reemplaza cualquier pendiente anterior.
    */
   sendFrame(
     seq: number,
@@ -265,7 +210,7 @@ export class AIClientTcp implements AIClient {
   ): void {
     if (this.state !== "READY") {
       logger.debug("Cannot send frame, not ready", {
-        module: "ai-client",
+        module: "ai-client-tcp",
         state: this.state,
       });
       return;
@@ -275,7 +220,10 @@ export class AIClientTcp implements AIClient {
     if (!this.hasCredit || this.inflightSeq !== undefined) {
       this.pendingFrame = { seq, tsIso, tsMonoNs, w, h, rgb };
       metrics.inc("ai_drops_latestwins_total");
-      logger.debug("Frame queued (latest-wins)", { module: "ai-client", seq });
+      logger.debug("Frame queued (latest-wins)", {
+        module: "ai-client-tcp",
+        seq,
+      });
       return;
     }
 
@@ -313,7 +261,7 @@ export class AIClientTcp implements AIClient {
     metrics.inc("ai_frames_sent_total");
     metrics.gauge("ai_frame_inflight", 1);
 
-    logger.debug("Frame sent", { module: "ai-client", seq });
+    logger.debug("Frame sent", { module: "ai-client-tcp", seq });
   }
 
   /** Registra callback para resultados de inferencia. */
@@ -350,7 +298,7 @@ export class AIClientTcp implements AIClient {
       this.socket = undefined;
     }
 
-    logger.info("AI client shutdown", { module: "ai-client" });
+    logger.info("AI client shutdown", { module: "ai-client-tcp" });
   }
 
   // ========================================================================
@@ -363,7 +311,9 @@ export class AIClientTcp implements AIClient {
    */
   private sendMessage(msg: pb.ai.IEnvelope): void {
     if (!this.socket || this.socket.destroyed) {
-      logger.warn("Cannot send, socket not available", { module: "ai-client" });
+      logger.warn("Cannot send, socket not available", {
+        module: "ai-client-tcp",
+      });
       return;
     }
 
@@ -376,7 +326,7 @@ export class AIClientTcp implements AIClient {
   }
 
   /**
-   * Acumula bytes recibidos, rearma mensajes length‑prefixed y los decodifica.
+   * Acumula bytes recibidos, rearma mensajes length-prefixed y los decodifica.
    * Puede procesar varios mensajes por tick si el buffer alcanza.
    */
   private handleData(chunk: Buffer): void {
@@ -398,7 +348,7 @@ export class AIClientTcp implements AIClient {
         this.handleMessage(envelope);
       } catch (err) {
         logger.error("Failed to decode message", {
-          module: "ai-client",
+          module: "ai-client-tcp",
           error: err instanceof Error ? err.message : String(err),
         });
       }
@@ -430,7 +380,7 @@ export class AIClientTcp implements AIClient {
   /** Transición a READY tras recibir InitOk del worker. */
   private handleInitOk(initOk: pb.ai.IInitOk): void {
     logger.info("Received InitOk", {
-      module: "ai-client",
+      module: "ai-client-tcp",
       runtime: initOk.runtime,
       modelVersion: initOk.modelVersion,
       modelId: initOk.modelId,
@@ -446,7 +396,7 @@ export class AIClientTcp implements AIClient {
   private handleReady(ready: pb.ai.IReady): void {
     const seq = Number(ready.seq || 0);
 
-    logger.debug("Received Ready", { module: "ai-client", seq });
+    logger.debug("Received Ready", { module: "ai-client-tcp", seq });
 
     this.hasCredit = true;
     this.inflightSeq = undefined;
@@ -460,49 +410,21 @@ export class AIClientTcp implements AIClient {
     }
   }
 
-  /** Traduce `Result` del worker a `Result` interno y concede crédito. */
+  /** Traduce `Result` del worker a `Result` interno usando mapper y concede crédito. */
   private handleResult(result: pb.ai.IResult): void {
     const seq = Number(result.seq || 0);
     const startTs = Date.now();
 
-    const detections =
-      result.detections?.map((d: any) => ({
-        cls: d.cls || "",
-        conf: d.conf || 0,
-        bbox: [
-          d.bbox?.x || 0,
-          d.bbox?.y || 0,
-          d.bbox?.w || 0,
-          d.bbox?.h || 0,
-        ] as [number, number, number, number],
-        trackId: d.trackId || undefined,
-      })) || [];
-
-    // Convertir tsMonoNs (number | Long) a bigint de forma segura
-    let tsMonoNsBig: bigint = BigInt(0);
-    if (typeof result.tsMonoNs === "number") {
-      tsMonoNsBig = BigInt(result.tsMonoNs);
-    } else if (
-      result.tsMonoNs &&
-      typeof (result.tsMonoNs as Long).toString === "function"
-    ) {
-      tsMonoNsBig = BigInt((result.tsMonoNs as Long).toString());
-    }
-
-    const res: Result = {
-      seq,
-      tsIso: result.tsIso || "",
-      tsMonoNs: tsMonoNsBig,
-      detections,
-    };
+    // Usar mapper puro para conversión
+    const res = mapProtobufResult(result);
 
     logger.debug("Received Result", {
-      module: "ai-client",
+      module: "ai-client-tcp",
       seq,
-      detections: detections.length,
+      detections: res.detections.length,
     });
 
-    metrics.inc("ai_detections_total", detections.length);
+    metrics.inc("ai_detections_total", res.detections.length);
 
     if (this.resultCb) {
       this.resultCb(res);
@@ -527,7 +449,7 @@ export class AIClientTcp implements AIClient {
   /** Propaga error del worker al callback del cliente. */
   private handleError(error: pb.ai.IError): void {
     logger.error("Received Error from worker", {
-      module: "ai-client",
+      module: "ai-client-tcp",
       code: error.code,
       message: error.message,
     });
@@ -542,7 +464,7 @@ export class AIClientTcp implements AIClient {
   /** Marca actividad del socket a partir de heartbeats recibidos. */
   private handleHeartbeat(hb: pb.ai.IHeartbeat): void {
     logger.debug("Received Heartbeat", {
-      module: "ai-client",
+      module: "ai-client-tcp",
       tsMonoNs: hb.tsMonoNs,
     });
   }
@@ -575,7 +497,7 @@ export class AIClientTcp implements AIClient {
     const delay = delays[Math.min(this.reconnectAttempts, delays.length - 1)];
 
     logger.info("Scheduling reconnect", {
-      module: "ai-client",
+      module: "ai-client-tcp",
       attempt: this.reconnectAttempts + 1,
       delayMs: delay,
     });
@@ -585,7 +507,7 @@ export class AIClientTcp implements AIClient {
       this.reconnectAttempts++;
       void this.connect().catch((err) => {
         logger.error("Reconnect failed", {
-          module: "ai-client",
+          module: "ai-client-tcp",
           error: err.message,
         });
       });
@@ -602,7 +524,7 @@ export class AIClientTcp implements AIClient {
       const elapsed = Date.now() - this.lastHeartbeat;
       if (elapsed > this.heartbeatTimeout) {
         logger.warn("Heartbeat timeout, reconnecting", {
-          module: "ai-client",
+          module: "ai-client-tcp",
           elapsedMs: elapsed,
         });
         this.handleDisconnect();

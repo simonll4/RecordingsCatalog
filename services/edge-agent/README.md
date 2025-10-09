@@ -2,6 +2,19 @@
 
 Sistema de captura y análisis de video basado en eventos, optimizado para baja latencia y resiliencia. Usa GStreamer + SHM (memoria compartida) como hub de video y una FSM (Orchestrator) para coordinar AI, streaming RTSP y persistencia de sesiones y detecciones.
 
+## 🚨 Fix Reciente: Detecciones No Relevantes (2025-10-08)
+
+**Problema**: Personas frente a la cámara no se detectaban como relevantes.  
+**Causa**: Umbral de confianza muy alto (`AI_UMBRAL=0.8`).  
+**Solución**: Ajustado a `AI_UMBRAL=0.5` (valor recomendado).
+
+📚 **Ver documentación completa**:
+- 🎯 [Guía Rápida del Fix](QUICK_FIX_GUIDE.md) - Resumen ejecutivo
+- 📖 [Documentación Técnica](docs/FIX_DETECTION_THRESHOLD.md) - Análisis completo
+- 🔧 [Scripts de Diagnóstico](scripts/diagnose-detections.sh) - Herramientas
+
+---
+
 ## Tabla de Contenidos
 - Visión General
 - Arquitectura y Componentes

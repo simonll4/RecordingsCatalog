@@ -1,36 +1,26 @@
 /**
- * AI Capture - Captura y procesamiento de frames para análisis de IA
+ * RGB Capture GStreamer - Implementación GStreamer de captura RGB
  *
- * Qué es: Un wrapper sobre GStreamer que extrae frames RGB a una resolución
- * fija para el motor de IA. Entrega cada frame por callback junto a metadatos.
+ * Wrapper sobre GStreamer que extrae frames RGB a una resolución fija para
+ * el motor de IA. Entrega cada frame por callback junto a metadatos.
  *
- * Arquitectura refactorizada:
- * - Usa `buildCapture()` de /media/gstreamer para construir el pipeline.
- * - Callback `onFrame` para entregar frames RGB (pixFmt=RGB) + `FrameMeta`.
- * - Dual‑rate (idle/active) cambiando el FPS y reiniciando el pipeline.
- * - Buffering acotado (máx. 3 frames) para evitar crecimiento sin control.
- * - Auto‑recovery con backoff exponencial ante caídas del proceso hijo.
+ * Características:
+ * - Usa `buildCapture()` de /media/gstreamer para construir el pipeline
+ * - Callback `onFrame` para entregar frames RGB (pixFmt=RGB) + `FrameMeta`
+ * - Dual-rate (idle/active) cambiando el FPS y reiniciando el pipeline
+ * - Buffering acotado (máx. 3 frames) para evitar crecimiento sin control
+ * - Auto-recovery con backoff exponencial ante caídas del proceso hijo
  */
 
 import { ChildProcess } from "child_process";
-import { CONFIG } from "../config/index.js";
-import { buildCapture } from "../media/gstreamer.js";
-import { spawnProcess } from "../shared/childproc.js";
-import { logger } from "../shared/logging.js";
-import { FrameMeta } from "../types/detections.js";
+import { CONFIG } from "../../../../config/index.js";
+import { buildCapture } from "../../../../media/gstreamer.js";
+import { spawnProcess } from "../../../../shared/childproc.js";
+import { logger } from "../../../../shared/logging.js";
+import { FrameMeta } from "../../../../types/detections.js";
+import { RGBCapture, OnFrameFn } from "../../ports/rgb-capture.js";
 
-type OnFrameFn = (rgb: Buffer, meta: FrameMeta) => void;
-
-export interface AICapture {
-  /** Inicia el pipeline de GStreamer y comienza a emitir frames RGB. */
-  start(onFrame: OnFrameFn): Promise<void>;
-  /** Detiene el pipeline y libera recursos del proceso hijo. */
-  stop(): Promise<void>;
-  /** Cambia el modo de FPS (idle/active) reiniciando el pipeline si corresponde. */
-  setMode(mode: "idle" | "active"): void;
-}
-
-export class AICaptureImpl implements AICapture {
+export class RGBCaptureGst implements RGBCapture {
   /** Proceso hijo (gst-launch) en ejecución. */
   private proc?: ChildProcess;
   /** Callback de entrega de frames RGB. */
@@ -45,7 +35,7 @@ export class AICaptureImpl implements AICapture {
   private maxConsecutiveFailures = 5;
   /** Modo actual de captura (controla FPS usados). */
   private currentMode: "idle" | "active" = "idle";
-  /** Flag que evita auto‑restart si el stop fue intencional. */
+  /** Flag que evita auto-restart si el stop fue intencional. */
   private stoppedManually = false;
 
   /** Lanza el pipeline con el FPS adecuado y conecta stdout para frames. */
@@ -57,8 +47,8 @@ export class AICaptureImpl implements AICapture {
     const fps = this.getFps();
     await this.launch(fps);
 
-    logger.info("AI capture started", {
-      module: "ai-capture",
+    logger.info("RGB capture started", {
+      module: "rgb-capture-gst",
       fps,
       mode: this.currentMode,
       resolution: `${CONFIG.ai.width}x${CONFIG.ai.height}`,
@@ -72,7 +62,7 @@ export class AICaptureImpl implements AICapture {
   async stop(): Promise<void> {
     if (!this.proc) return;
 
-    logger.info("Stopping AI capture", { module: "ai-capture" });
+    logger.info("Stopping RGB capture", { module: "rgb-capture-gst" });
     this.stoppedManually = true;
 
     // Desconectar handlers
@@ -97,12 +87,12 @@ export class AICaptureImpl implements AICapture {
   /** Cambia modo de FPS y reinicia el pipeline si estaba en ejecución. */
   setMode(mode: "idle" | "active"): void {
     if (mode === this.currentMode) {
-      logger.debug("Mode already set", { module: "ai-capture", mode });
+      logger.debug("Mode already set", { module: "rgb-capture-gst", mode });
       return;
     }
 
     logger.info("Changing capture mode", {
-      module: "ai-capture",
+      module: "rgb-capture-gst",
       from: this.currentMode,
       to: mode,
     });
@@ -147,7 +137,7 @@ export class AICaptureImpl implements AICapture {
     );
 
     const child = spawnProcess({
-      module: "ai-capture",
+      module: "rgb-capture-gst",
       command: "gst-launch-1.0",
       args,
       env: {
@@ -155,13 +145,18 @@ export class AICaptureImpl implements AICapture {
         GST_DEBUG_NO_COLOR: "1",
       },
       silentStdout: true, // No loguear stdout (contiene frames binarios)
-      onExit: (code, signal) => this.handleExit(code, signal),
+      onExit: (code: number | null, signal: string | null) =>
+        this.handleExit(code, signal),
     });
 
     // Conectar stdout para recibir frames RGB
     if (child.stdout) {
-      child.stdout.on("data", (chunk) => this.handleData(chunk, frameBytes));
-      logger.info("stdout connected for frame data", { module: "ai-capture" });
+      child.stdout.on("data", (chunk: Buffer) =>
+        this.handleData(chunk, frameBytes)
+      );
+      logger.info("stdout connected for frame data", {
+        module: "rgb-capture-gst",
+      });
     }
 
     this.proc = child;
@@ -180,7 +175,7 @@ export class AICaptureImpl implements AICapture {
     // Log para debugging
     if (this.acc.length >= frameBytes) {
       logger.debug("Frame data received", {
-        module: "ai-capture",
+        module: "rgb-capture-gst",
         chunkSize: chunk.length,
         accSize: this.acc.length,
         frameBytes,
@@ -191,7 +186,7 @@ export class AICaptureImpl implements AICapture {
     const maxAccSize = frameBytes * 3;
     if (this.acc.length > maxAccSize) {
       logger.warn("Buffer overflow, discarding old data", {
-        module: "ai-capture",
+        module: "rgb-capture-gst",
         size: this.acc.length,
         max: maxAccSize,
       });
@@ -214,7 +209,7 @@ export class AICaptureImpl implements AICapture {
         this.onFrame?.(frame, meta);
       } catch (e) {
         logger.error("onFrame callback error", {
-          module: "ai-capture",
+          module: "rgb-capture-gst",
           error: (e as Error).message,
         });
       }
@@ -234,15 +229,15 @@ export class AICaptureImpl implements AICapture {
 
     if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
       logger.error("Max consecutive failures reached, stopping auto-restart", {
-        module: "ai-capture",
+        module: "rgb-capture-gst",
         failures: this.consecutiveFailures,
       });
       return;
     }
 
     const delay = Math.min(250 * this.consecutiveFailures, 2000);
-    logger.warn("AI capture crashed, restarting", {
-      module: "ai-capture",
+    logger.warn("RGB capture crashed, restarting", {
+      module: "rgb-capture-gst",
       delay,
       attempt: this.consecutiveFailures,
     });

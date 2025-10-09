@@ -52,22 +52,23 @@
  */
 
 import { Bus } from "../bus/bus.js";
-import { CameraHub } from "../../modules/camera-hub.js";
-import { AICapture } from "../../modules/ai-capture.js";
-import { AIEngine } from "../../modules/ai-engine-tcp.js";
-import { Publisher } from "../../modules/publisher.js";
-import { SessionStore } from "../../modules/session-store.js";
+// Ports directo: Máxima claridad arquitectónica
+import type { CameraHub } from "../../modules/video/ports/camera-hub.js";
+import type { RGBCapture } from "../../modules/video/ports/rgb-capture.js";
+import type { AIEngine } from "../../modules/ai/ports/ai-engine.js";
+import type { Publisher } from "../../modules/streaming/ports/publisher.js";
+import type { SessionStore } from "../../modules/store/ports/session-store.js";
 import { CONFIG } from "../../config/index.js";
 import { logger } from "../../shared/logging.js";
 import { metrics } from "../../shared/metrics.js";
 import { reduce } from "./fsm.js";
-import { FSMContext, Command, State } from "./types.js";
-import { AllEvents } from "../bus/events.js";
+import type { FSMContext, Command, State } from "./types.js";
+import type { AllEvents } from "../bus/events.js";
 
 // Módulos que el Orchestrator controla (dependency injection)
 type Adapters = {
   camera: CameraHub; // V4L2/RTSP → SHM
-  capture: AICapture; // SHM → RGB frames (dual-rate)
+  capture: RGBCapture; // SHM → RGB frames (dual-rate)
   ai: AIEngine; // Detección de objetos
   publisher: Publisher; // SHM → RTSP MediaMTX
   store: SessionStore; // API sessions + detections
@@ -298,7 +299,7 @@ export class Orchestrator {
       this.dwellTimer = setTimeout(() => {
         this.bus.publish("fsm.t.dwell.ok", { type: "fsm.t.dwell.ok" });
       }, CONFIG.fsm.dwellMs);
-      
+
       logger.debug("DWELL timer started", {
         module: "orchestrator",
         dwellMs: CONFIG.fsm.dwellMs,
@@ -312,13 +313,13 @@ export class Orchestrator {
         this.silenceTimer = setTimeout(() => {
           this.bus.publish("fsm.t.silence.ok", { type: "fsm.t.silence.ok" });
         }, CONFIG.fsm.silenceMs);
-        
+
         logger.debug("Silence timer started", {
           module: "orchestrator",
           silenceMs: CONFIG.fsm.silenceMs,
         });
       }
-      
+
       // Resetear silence timer SOLO con detecciones relevantes
       // ai.keepalive NO debe resetear el timer (solo indica que AI está vivo)
       // Las detecciones no relevantes NO deben mantener la sesión viva
@@ -327,7 +328,7 @@ export class Orchestrator {
         this.silenceTimer = setTimeout(() => {
           this.bus.publish("fsm.t.silence.ok", { type: "fsm.t.silence.ok" });
         }, CONFIG.fsm.silenceMs);
-        
+
         logger.debug("Silence timer reset (relevant detection)", {
           module: "orchestrator",
           silenceMs: CONFIG.fsm.silenceMs,

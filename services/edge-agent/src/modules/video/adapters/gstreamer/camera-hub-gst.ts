@@ -1,7 +1,10 @@
 /**
- * Camera Hub - Hub de captura de video siempre-encendido
+ * Camera Hub GStreamer - Implementación GStreamer del hub de cámara
  *
- * Arquitectura refactorizada:
+ * Hub de captura de video always-on que usa GStreamer para capturar desde
+ * fuentes V4L2/RTSP y exponer frames vía memoria compartida (SHM).
+ *
+ * Características:
  * - Usa buildIngest() de /media/gstreamer para construir pipeline
  * - Usa spawnProcess() de /shared/childproc para manejo limpio de procesos
  * - Política de restart con backoff exponencial
@@ -11,18 +14,13 @@
 
 import fs from "node:fs";
 import { ChildProcess } from "child_process";
-import { CONFIG } from "../config/index.js";
-import { buildIngest } from "../media/gstreamer.js";
-import { spawnProcess, killProcess } from "../shared/childproc.js";
-import { logger } from "../shared/logging.js";
+import { CONFIG } from "../../../../config/index.js";
+import { buildIngest } from "../../../../media/gstreamer.js";
+import { spawnProcess, killProcess } from "../../../../shared/childproc.js";
+import { logger } from "../../../../shared/logging.js";
+import { CameraHub } from "../../ports/camera-hub.js";
 
-export interface CameraHub {
-  start(): Promise<void>;
-  stop(): Promise<void>;
-  ready(timeoutMs?: number): Promise<void>;
-}
-
-export class CameraHubImpl implements CameraHub {
+export class CameraHubGst implements CameraHub {
   private proc?: ChildProcess;
   private readyResolve?: () => void;
   private readyReject?: (err: Error) => void;
@@ -58,7 +56,7 @@ export class CameraHubImpl implements CameraHub {
    */
   async start(): Promise<void> {
     if (this.proc) {
-      logger.warn("Camera hub already running", { module: "camera-hub" });
+      logger.warn("Camera hub already running", { module: "camera-hub-gst" });
       return;
     }
 
@@ -75,14 +73,14 @@ export class CameraHubImpl implements CameraHub {
     const args = buildIngest(CONFIG.source, this.tryRawFallback);
 
     logger.info("Starting camera hub", {
-      module: "camera-hub",
+      module: "camera-hub-gst",
       source: CONFIG.source.kind,
       tryRawFallback: this.tryRawFallback,
     });
 
     // Spawn proceso con logging estructurado
     this.proc = spawnProcess({
-      module: "camera-hub",
+      module: "camera-hub-gst",
       command: "gst-launch-1.0",
       args,
       env: {
@@ -108,7 +106,7 @@ export class CameraHubImpl implements CameraHub {
     this.readyTimeout = setTimeout(() => {
       if (!this.isReady && this.readyReject) {
         logger.error("Camera hub ready timeout (3s)", {
-          module: "camera-hub",
+          module: "camera-hub-gst",
           sawPlaying: this.sawPlaying,
           sawSocket: this.sawSocket,
         });
@@ -125,7 +123,7 @@ export class CameraHubImpl implements CameraHub {
   async stop(): Promise<void> {
     if (!this.proc) return;
 
-    logger.info("Stopping camera hub", { module: "camera-hub" });
+    logger.info("Stopping camera hub", { module: "camera-hub-gst" });
     this.stoppedManually = true;
 
     killProcess(this.proc, "SIGINT");
@@ -134,7 +132,7 @@ export class CameraHubImpl implements CameraHub {
     setTimeout(() => {
       if (this.proc) {
         logger.warn("Process didn't respond to SIGINT, using SIGKILL", {
-          module: "camera-hub",
+          module: "camera-hub-gst",
         });
         killProcess(this.proc, "SIGKILL");
       }
@@ -169,7 +167,7 @@ export class CameraHubImpl implements CameraHub {
         )
       ) {
         logger.warn("Caps negotiation failed, retrying RAW fallback", {
-          module: "camera-hub",
+          module: "camera-hub-gst",
         });
         this.restartWithRawFallback();
       }
@@ -185,7 +183,7 @@ export class CameraHubImpl implements CameraHub {
 
     // Si proc fue limpiado, fallback está manejando el restart
     if (!this.proc) {
-      logger.info("Exit handled by fallback", { module: "camera-hub" });
+      logger.info("Exit handled by fallback", { module: "camera-hub-gst" });
       return;
     }
 
@@ -195,7 +193,7 @@ export class CameraHubImpl implements CameraHub {
 
     const delay = Math.min(2000 * Math.pow(1.5, this.restartAttempts++), 15000);
     logger.warn("Camera hub crashed, restarting", {
-      module: "camera-hub",
+      module: "camera-hub-gst",
       delay,
       attempt: this.restartAttempts,
     });
@@ -211,7 +209,7 @@ export class CameraHubImpl implements CameraHub {
     if (!this.isReady && this.sawPlaying && this.sawSocket) {
       this.isReady = true;
       this.restartAttempts = 0;
-      logger.info("Camera hub ready", { module: "camera-hub" });
+      logger.info("Camera hub ready", { module: "camera-hub-gst" });
       this.readyResolve?.();
       this.readyReject = undefined; // Limpiar reject
       this.cleanupReadyWait();
@@ -235,7 +233,7 @@ export class CameraHubImpl implements CameraHub {
     const minMB = Math.ceil((frameBytes * 50) / (1024 * 1024));
     if (shmSizeMB < minMB) {
       logger.warn("shmSizeMB may be too small", {
-        module: "camera-hub",
+        module: "camera-hub-gst",
         minMB,
         shmSizeMB,
       });
@@ -264,7 +262,7 @@ export class CameraHubImpl implements CameraHub {
   private cleanupSocket() {
     try {
       fs.unlinkSync(CONFIG.source.socketPath);
-      logger.debug("Cleaned up SHM socket", { module: "camera-hub" });
+      logger.debug("Cleaned up SHM socket", { module: "camera-hub-gst" });
     } catch {}
   }
 

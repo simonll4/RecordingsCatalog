@@ -1,30 +1,35 @@
 /**
- * Publisher - Pipeline RTSP con encoder adaptativo
+ * Publisher GStreamer - Implementación GStreamer de streaming RTSP
+ *
+ * Pipeline RTSP con encoder adaptativo que lee desde SHM y publica
+ * hacia MediaMTX server.
+ *
+ * Características:
+ * - Detección automática de encoder H.264 disponible (HW/SW)
+ * - Lee desde SHM (shmsrc) y publica vía rtspclientsink
+ * - Gestión de estados: idle → starting → running → stopping
+ * - Shutdown ordenado con timeout
  */
 
 import { ChildProcess } from "child_process";
-import { CONFIG } from "../config/index.js";
-import { buildPublish } from "../media/gstreamer.js";
-import { detectEncoder } from "../media/encoder.js";
-import { spawnProcess, killProcess } from "../shared/childproc.js";
-import { logger } from "../shared/logging.js";
-import { metrics } from "../shared/metrics.js";
-
-export interface Publisher {
-  start(): Promise<void>;
-  stop(graceMs?: number): Promise<void>;
-}
+import { CONFIG } from "../../../../config/index.js";
+import { buildPublish } from "../../../../media/gstreamer.js";
+import { detectEncoder } from "../../../../media/encoder.js";
+import { spawnProcess, killProcess } from "../../../../shared/childproc.js";
+import { logger } from "../../../../shared/logging.js";
+import { metrics } from "../../../../shared/metrics.js";
+import { Publisher } from "../../ports/publisher.js";
 
 type PublisherState = "idle" | "starting" | "running" | "stopping";
 
-export class PublisherImpl implements Publisher {
+export class PublisherGst implements Publisher {
   private proc?: ChildProcess;
   private state: PublisherState = "idle";
 
   async start(): Promise<void> {
     if (this.state !== "idle") {
       logger.debug("Publisher not idle, skipping start", {
-        module: "publisher",
+        module: "publisher-gst",
         state: this.state,
       });
       return;
@@ -38,18 +43,18 @@ export class PublisherImpl implements Publisher {
       socketPath,
       width,
       height,
-      fpsHub, // Agregar FPS hub
+      fpsHub,
       CONFIG.mediamtx,
       encoder
     );
 
     logger.info("Starting publisher", {
-      module: "publisher",
+      module: "publisher-gst",
       encoder: encoder.element,
     });
 
     this.proc = spawnProcess({
-      module: "publisher",
+      module: "publisher-gst",
       command: "gst-launch-1.0",
       args,
       env: { GST_DEBUG: "2", GST_DEBUG_NO_COLOR: "1" },
@@ -68,17 +73,17 @@ export class PublisherImpl implements Publisher {
 
   async stop(graceMs: number = 1500): Promise<void> {
     if (this.state === "idle") {
-      logger.debug("Publisher already idle", { module: "publisher" });
+      logger.debug("Publisher already idle", { module: "publisher-gst" });
       return;
     }
 
     if (this.state === "stopping") {
-      logger.debug("Publisher already stopping", { module: "publisher" });
+      logger.debug("Publisher already stopping", { module: "publisher-gst" });
       return;
     }
 
     this.state = "stopping";
-    logger.info("Stopping publisher", { module: "publisher" });
+    logger.info("Stopping publisher", { module: "publisher-gst" });
 
     const proc = this.proc;
     this.proc = undefined;
@@ -95,7 +100,7 @@ export class PublisherImpl implements Publisher {
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => {
         logger.warn("Publisher didn't stop gracefully, forcing kill", {
-          module: "publisher",
+          module: "publisher-gst",
         });
         killProcess(proc, "SIGKILL");
         resolve();
@@ -104,7 +109,7 @@ export class PublisherImpl implements Publisher {
       proc.once("exit", () => {
         clearTimeout(timeout);
         this.state = "idle";
-        logger.info("Publisher stopped", { module: "publisher" });
+        logger.info("Publisher stopped", { module: "publisher-gst" });
         resolve();
       });
     });

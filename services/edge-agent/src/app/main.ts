@@ -29,11 +29,12 @@
 import { CONFIG } from "../config/index.js";
 import { Bus } from "../core/bus/bus.js";
 import { Orchestrator } from "../core/orchestrator/orchestrator.js";
-import { CameraHubImpl } from "../modules/camera-hub.js";
-import { AICaptureImpl } from "../modules/ai-capture.js";
-import { AIEngineTcp } from "../modules/ai-engine-tcp.js";
-import { PublisherImpl } from "../modules/publisher.js";
-import { SessionStoreImpl } from "../modules/session-store.js";
+import { CameraHubGst } from "../modules/video/adapters/gstreamer/camera-hub-gst.js";
+import { RGBCaptureGst } from "../modules/video/adapters/gstreamer/rgb-capture-gst.js";
+import { AIEngineTcp } from "../modules/ai/engine/ai-engine-tcp.js";
+import { AIClientTcp } from "../modules/ai/client/ai-client-tcp.js";
+import { PublisherGst } from "../modules/streaming/adapters/gstreamer/publisher-gst.js";
+import { SessionStoreHttp } from "../modules/store/adapters/http/session-store-http.js";
 import { logger } from "../shared/logging.js";
 import { FrameMeta } from "../types/detections.js";
 
@@ -51,10 +52,11 @@ async function main() {
 
   // === 3. Crear Módulos ===
   // Cada módulo es independiente y se comunica vía el bus
-  const camera = new CameraHubImpl(); // V4L2/RTSP → SHM (always-on)
-  const ai = new AIEngineTcp(bus, CONFIG.ai.worker.host, CONFIG.ai.worker.port); // Motor de IA (TCP)
-  const publisher = new PublisherImpl(); // SHM → RTSP MediaMTX (on-demand)
-  const store = new SessionStoreImpl(); // API sessions + detections batch
+  const camera = new CameraHubGst(); // V4L2/RTSP → SHM (always-on)
+  const aiClient = new AIClientTcp(CONFIG.ai.worker.host, CONFIG.ai.worker.port); // Cliente TCP
+  const ai = new AIEngineTcp(bus, aiClient); // Motor de IA (TCP)
+  const publisher = new PublisherGst(); // SHM → RTSP MediaMTX (on-demand)
+  const store = new SessionStoreHttp(); // API sessions + detections batch
 
   // Configurar motor de IA con parámetros del modelo
   await ai.setModel({
@@ -71,7 +73,7 @@ async function main() {
     void ai.run(frame, meta); // Async sin await (fire-and-forget)
   };
 
-  const capture = new AICaptureImpl(); // SHM → RGB frames (dual-rate FPS)
+  const capture = new RGBCaptureGst(); // SHM → RGB frames (dual-rate FPS)
 
   // === 4. Orchestrator (FSM) ===
   // Coordina todo el sistema basado en eventos del bus

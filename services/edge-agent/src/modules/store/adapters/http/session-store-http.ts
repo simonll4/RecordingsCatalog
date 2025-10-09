@@ -1,18 +1,22 @@
 /**
- * Session Store - Gestión de sesiones y detecciones
+ * Session Store HTTP - Implementación HTTP del store de sesiones
  *
- * Arquitectura refactorizada:
+ * Cliente HTTP que persiste sesiones y detecciones en un backend REST API.
+ *
+ * Características:
  * - Interfaz limpia (open, append, close, flush)
- * - Batching con timer y límite
- * - Retry con exponencial backoff
+ * - Batching con timer y límite de tamaño
+ * - Retry con exponencial backoff (hasta 3 intentos)
  * - Timeout en requests (5s)
+ * - FlushAll para shutdown ordenado
  */
 
 import crypto from "crypto";
-import { CONFIG } from "../config/index.js";
-import { logger } from "../shared/logging.js";
-import { metrics } from "../shared/metrics.js";
-import { Detection } from "../types/detections.js";
+import { CONFIG } from "../../../../config/index.js";
+import { logger } from "../../../../shared/logging.js";
+import { metrics } from "../../../../shared/metrics.js";
+import { Detection } from "../../../../types/detections.js";
+import { SessionStore } from "../../ports/session-store.js";
 
 // Tipo para items del batch
 type DetectionItem = {
@@ -21,18 +25,7 @@ type DetectionItem = {
   detections: Detection[];
 };
 
-export interface SessionStore {
-  open(startTs?: string): Promise<string>;
-  append(
-    sessionId: string,
-    payload: { devId: string; ts: string; detects: Detection[] }
-  ): Promise<void>;
-  close(sessionId: string, endTs?: string): Promise<void>;
-  flush(sessionId: string): Promise<void>;
-  flushAll(): Promise<void>; // Para shutdown
-}
-
-export class SessionStoreImpl implements SessionStore {
+export class SessionStoreHttp implements SessionStore {
   private batch: DetectionItem[] = [];
   private timer?: NodeJS.Timeout;
   private sessionCounter = 0;
@@ -43,7 +36,7 @@ export class SessionStoreImpl implements SessionStore {
     const actualStartTs = startTs ?? new Date().toISOString();
 
     this.currentSessionId = sessionId;
-    logger.info("Opening session", { module: "session-store", sessionId });
+    logger.info("Opening session", { module: "session-store-http", sessionId });
 
     try {
       const res = await fetch(`${CONFIG.store.baseUrl}/sessions/open`, {
@@ -60,14 +53,14 @@ export class SessionStoreImpl implements SessionStore {
 
       if (!res.ok) {
         logger.warn("Session open returned non-2xx", {
-          module: "session-store",
+          module: "session-store-http",
           status: res.status,
           statusText: res.statusText,
         });
       }
     } catch (err) {
       logger.error("Failed to open session", {
-        module: "session-store",
+        module: "session-store-http",
         error: (err as Error).message,
       });
     }
@@ -103,7 +96,7 @@ export class SessionStoreImpl implements SessionStore {
   }
 
   async close(sessionId: string, endTs?: string): Promise<void> {
-    logger.info("Closing session", { module: "session-store", sessionId });
+    logger.info("Closing session", { module: "session-store-http", sessionId });
 
     // Flush antes de cerrar
     await this.flush(sessionId);
@@ -124,14 +117,14 @@ export class SessionStoreImpl implements SessionStore {
 
       if (!res.ok) {
         logger.warn("Session close returned non-2xx", {
-          module: "session-store",
+          module: "session-store-http",
           status: res.status,
           statusText: res.statusText,
         });
       }
     } catch (err) {
       logger.error("Failed to close session", {
-        module: "session-store",
+        module: "session-store-http",
         error: (err as Error).message,
       });
     }
@@ -145,7 +138,7 @@ export class SessionStoreImpl implements SessionStore {
     if (!items.length) return;
 
     logger.debug("Flushing batch", {
-      module: "session-store",
+      module: "session-store-http",
       count: items.length,
     });
 
@@ -173,12 +166,12 @@ export class SessionStoreImpl implements SessionStore {
           throw new Error(`HTTP ${res.status}: ${res.statusText}`);
         }
 
-        logger.debug("Flush successful", { module: "session-store" });
+        logger.debug("Flush successful", { module: "session-store-http" });
         metrics.inc("store_flush_ok_total");
         return;
       } catch (err) {
         logger.error("Flush attempt failed", {
-          module: "session-store",
+          module: "session-store-http",
           attempt,
           error: (err as Error).message,
         });
@@ -192,7 +185,7 @@ export class SessionStoreImpl implements SessionStore {
     }
 
     logger.error("Flush failed after all attempts", {
-      module: "session-store",
+      module: "session-store-http",
     });
   }
 
@@ -202,7 +195,7 @@ export class SessionStoreImpl implements SessionStore {
   async flushAll(): Promise<void> {
     if (this.batch.length > 0 && this.currentSessionId) {
       logger.info("Flushing all pending data on shutdown", {
-        module: "session-store",
+        module: "session-store-http",
         count: this.batch.length,
       });
       await this.flush(this.currentSessionId);

@@ -1,15 +1,15 @@
 /**
  * AI Engine TCP - Motor de IA remoto vía TCP + Protobuf
  *
- * Qué es: Adaptador entre el orquestador y el worker de IA (Python) que
- * habla TCP binario (Protobuf). Mantiene una interfaz simple `AIEngine`
- * para el resto del sistema.
+ * Implementación del motor de IA que se comunica con un worker Python vía TCP.
+ * Actúa como adaptador entre el orquestador y el cliente TCP, aplicando filtrado
+ * de relevancia y publicando eventos al bus.
  *
  * Responsabilidades principales:
- * - Implementa `AIEngine` (métodos `setModel` y `run`).
- * - Delega la inferencia al worker vía `AIClient` (TCP + Protobuf + backpressure).
- * - Traduce respuestas del worker en eventos del bus: `ai.detection`/`ai.keepalive`.
- * - Aplica filtrado de relevancia en Node (umbral/clases) antes de publicar.
+ * - Implementa `AIEngine` (métodos `setModel` y `run`)
+ * - Delega la inferencia al worker vía `AIClient` (TCP + Protobuf + backpressure)
+ * - Traduce respuestas del worker en eventos del bus: `ai.detection`/`ai.keepalive`
+ * - Aplica filtrado de relevancia en Node (umbral/clases) antes de publicar
  *
  * Flujo resumido:
  *   1) main.ts llama `setModel` → enviamos `Init` al worker
@@ -18,36 +18,18 @@
  *   4) Si no hay actividad reciente, emitimos `ai.keepalive` periódicamente
  */
 
-import { Bus } from "../core/bus/bus.js";
-import { logger } from "../shared/logging.js";
-import { metrics } from "../shared/metrics.js";
-import { FrameMeta, Detection } from "../types/detections.js";
-import { AIClient, AIClientTcp, Result } from "./ai-client.js";
-
-/** Interfaz que debe cumplir cualquier motor de IA utilizado por el orquestador. */
-export interface AIEngine {
-  /**
-   * Configura el modelo de IA en el worker remoto.
-   * - `modelName`: path/nombre del modelo (interpretado por el worker)
-   * - `umbral`: confianza mínima para validar detecciones
-   * - `width`/`height`: resolución de inferencia (ej: 640x640)
-   * - `classesFilter`: clases a filtrar (solo estas serán consideradas relevantes)
-   */
-  setModel(opts: {
-    modelName: string;
-    umbral: number;
-    width: number;
-    height: number;
-    classesFilter?: string[];
-  }): Promise<void>;
-
-  /**
-   * Envía un frame RGB al worker para inferencia.
-   * Respeta backpressure: si `AIClient` indica que no hay crédito,
-   * no envía el frame (latest-wins se maneja en el cliente TCP).
-   */
-  run(frame: Buffer, meta: FrameMeta): Promise<void>;
-}
+import { Bus } from "../../../core/bus/bus.js";
+import { logger } from "../../../shared/logging.js";
+import { metrics } from "../../../shared/metrics.js";
+import { FrameMeta, Detection } from "../../../types/detections.js";
+import type { AIEngine } from "../ports/ai-engine.js";
+import type { AIClient, Result } from "../ports/ai-client.js";
+import {
+  filterDetections,
+  calculateScore,
+  isRelevant,
+  type FilterConfig,
+} from "../filters/detection-filter.js";
 
 export class AIEngineTcp implements AIEngine {
   /** Bus de eventos del sistema (publica ai.* para el orquestador). */
@@ -66,8 +48,12 @@ export class AIEngineTcp implements AIEngine {
 
   /** Contador monotónico local para correlacionar resultados. */
   private frameSeq = 0;
-  /** Filtro opcional de clases a nivel Node. */
-  private classesFilter: Set<string> = new Set();
+
+  /** Configuración de filtrado de detecciones. */
+  private filterConfig: FilterConfig = {
+    umbral: 0,
+    classesFilter: new Set(),
+  };
 
   // Métricas
   /** Marca temporal (ms) de la última detección relevante. */
@@ -79,9 +65,9 @@ export class AIEngineTcp implements AIEngine {
   private connectPromise: Promise<void>;
 
   /** Crea el motor de IA TCP con el bus y la configuración del worker. */
-  constructor(bus: Bus, host: string, port: number) {
+  constructor(bus: Bus, client: AIClient) {
     this.bus = bus;
-    this.client = new AIClientTcp(host, port);
+    this.client = client;
 
     // Iniciar conexión (se completa en background)
     this.connectPromise = this.client.connect();
@@ -112,14 +98,17 @@ export class AIEngineTcp implements AIEngine {
 
     // Configurar filtro de clases (si se especifica)
     if (opts.classesFilter && opts.classesFilter.length > 0) {
-      this.classesFilter = new Set(opts.classesFilter);
+      this.filterConfig.classesFilter = new Set(opts.classesFilter);
       logger.info("AI classes filter configured", {
         module: "ai-engine-tcp",
-        filter: Array.from(this.classesFilter),
+        filter: Array.from(this.filterConfig.classesFilter),
       });
     } else {
-      this.classesFilter = new Set(); // Sin filtro = todas las clases
+      this.filterConfig.classesFilter = new Set(); // Sin filtro = todas las clases
     }
+
+    // Configurar umbral
+    this.filterConfig.umbral = opts.umbral;
 
     // Esperar conexión inicial si aún no completó
     await this.connectPromise;
@@ -186,24 +175,34 @@ export class AIEngineTcp implements AIEngine {
   private async handleResult(result: Result): Promise<void> {
     if (!this.setup) return;
 
-    const { detections } = result;
-
-    logger.debug("Received AI result", {
+    logger.debug("Received AI result (raw)", {
       module: "ai-engine-tcp",
       seq: result.seq,
-      detections: detections.length,
+      detectionsRaw: result.detections.length,
+      detections: result.detections.map((d) => ({
+        cls: d.cls,
+        conf: d.conf.toFixed(3),
+      })),
+      filterConfig: {
+        umbral: this.filterConfig.umbral,
+        classes: Array.from(this.filterConfig.classesFilter),
+      },
     });
 
-    // Filtrar por umbral y clases (lógica en Node)
-    const filtered = detections.filter((d) => {
-      if (d.conf < this.setup!.umbral) return false;
-      if (this.classesFilter.size > 0 && !this.classesFilter.has(d.cls)) {
-        return false;
-      }
-      return true;
+    // Aplicar filtrado puro (umbral + clases)
+    const filtered = filterDetections(result, this.filterConfig);
+
+    logger.debug("After filtering", {
+      module: "ai-engine-tcp",
+      seq: result.seq,
+      detectionsFiltered: filtered.length,
+      filtered: filtered.map((d) => ({
+        cls: d.cls,
+        conf: d.conf.toFixed(3),
+      })),
     });
 
-    if (filtered.length > 0) {
+    if (isRelevant(filtered)) {
       // Detección relevante → publicar al bus
       this.lastDetectionTime = Date.now();
 
@@ -214,8 +213,8 @@ export class AIEngineTcp implements AIEngine {
         trackId: d.trackId,
       }));
 
-      // Calcular score global (máxima confianza de las detecciones)
-      const score = Math.max(...filtered.map((d) => d.conf));
+      // Calcular score global usando función pura
+      const score = calculateScore(filtered);
 
       this.bus.emit("ai.detection", {
         type: "ai.detection",
