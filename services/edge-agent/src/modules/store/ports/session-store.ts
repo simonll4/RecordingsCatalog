@@ -1,11 +1,12 @@
 /**
- * Session Store Port - Interfaz para persistencia de sesiones y detecciones
+ * Session Store Port - Interfaz para persistencia de sesiones
  *
- * Define el contrato para gestionar sesiones de grabación y almacenar detecciones.
+ * Define el contrato para gestionar sesiones de grabación.
  * Abstrae el backend (HTTP API, DB local, S3, etc.) del resto del sistema.
+ * 
+ * NOTA: El envío de detecciones ahora se maneja directamente por el AI Engine
+ * vía FrameIngester (/ingest endpoint), NO por este store.
  */
-
-import { Detection } from "../../../types/detections.js";
 
 export interface SessionStore {
   /** 
@@ -16,30 +17,9 @@ export interface SessionStore {
   open(startTs?: string): Promise<string>;
   
   /** 
-   * Agrega detecciones a una sesión existente (con batching interno).
-   * @param sessionId - ID de la sesión
-   * @param payload - Datos a agregar (deviceId, timestamp, detecciones)
-   */
-  append(
-    sessionId: string,
-    payload: { devId: string; ts: string; detects: Detection[] }
-  ): Promise<void>;
-  
-  /** 
    * Cierra una sesión de grabación.
    * @param sessionId - ID de la sesión
    * @param endTs - Timestamp ISO de fin (opcional, se genera si no se provee)
    */
   close(sessionId: string, endTs?: string): Promise<void>;
-  
-  /** 
-   * Fuerza el flush del batch para una sesión específica.
-   * @param sessionId - ID de la sesión
-   */
-  flush(sessionId: string): Promise<void>;
-  
-  /** 
-   * Fuerza el flush de todos los batches pendientes (usado en shutdown).
-   */
-  flushAll(): Promise<void>;
 }

@@ -29,19 +29,28 @@ export interface CloseSessionInput {
 }
 
 export interface DetectionRecord {
-  id: number;
   session_id: string;
-  event_id: string;
-  ts: string;
-  detection_data: any;
+  track_id: string;
+  cls: string;
+  conf: number;
+  bbox: any; // {x, y, w, h}
+  url_frame: string | null;
+  first_ts: string;
+  last_ts: string;
+  capture_ts: string;
+  ingest_ts: string;
   created_at: string;
+  updated_at: string;
 }
 
 export interface DetectionInsertInput {
   sessionId: string;
-  eventId: string;
-  ts: string;
-  detections: any;
+  trackId: string;
+  cls: string;
+  conf: number;
+  bbox: { x: number; y: number; w: number; h: number };
+  captureTs: string;
+  urlFrame?: string;
 }
 
 const pool = new Pool({ connectionString: CONFIG.DATABASE_URL });
@@ -71,60 +80,109 @@ const columnExists = async (client: PoolClient, columnName: string): Promise<boo
 const ensureSchema = async (): Promise<void> => {
   const client = await pool.connect();
   try {
-    const hasTable = await tableExists(client, 'sessions');
-    if (!hasTable) {
-      return;
-    }
-
     await client.query('BEGIN');
 
-    if (!(await columnExists(client, 'path')) && (await columnExists(client, 'stream_path'))) {
-      await client.query('ALTER TABLE sessions RENAME COLUMN stream_path TO path');
+    // Crear extensión UUID
+    await client.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
+
+    // Crear tabla sessions si no existe
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        session_id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        start_ts TIMESTAMPTZ NOT NULL,
+        end_ts TIMESTAMPTZ,
+        postroll_sec INTEGER,
+        reason TEXT,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Crear función de trigger para updated_at
+    await client.query(`
+      CREATE OR REPLACE FUNCTION trg_update_timestamp()
+      RETURNS TRIGGER AS $$
+      BEGIN
+        NEW.updated_at = CURRENT_TIMESTAMP;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql
+    `);
+
+    // Trigger para sessions
+    await client.query('DROP TRIGGER IF EXISTS trg_sessions_updated_at ON sessions');
+    await client.query(`
+      CREATE TRIGGER trg_sessions_updated_at
+      BEFORE UPDATE ON sessions
+      FOR EACH ROW
+      EXECUTE FUNCTION trg_update_timestamp()
+    `);
+
+    // Crear tabla detections (nueva estructura con PK compuesta)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS detections (
+        session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+        track_id TEXT NOT NULL,
+        cls TEXT NOT NULL,
+        conf NUMERIC NOT NULL CHECK (conf >= 0 AND conf <= 1),
+        bbox JSONB NOT NULL,
+        url_frame TEXT,
+        first_ts TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_ts TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        capture_ts TIMESTAMPTZ NOT NULL,
+        ingest_ts TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (session_id, track_id)
+      )
+    `);
+
+    // Índices para detections
+    await client.query('CREATE INDEX IF NOT EXISTS idx_detections_session ON detections(session_id)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_detections_last_ts ON detections(last_ts)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_detections_cls ON detections(cls)');
+
+    // Trigger para detections
+    await client.query('DROP TRIGGER IF EXISTS trg_detections_updated_at ON detections');
+    await client.query(`
+      CREATE TRIGGER trg_detections_updated_at
+      BEFORE UPDATE ON detections
+      FOR EACH ROW
+      EXECUTE FUNCTION trg_update_timestamp()
+    `);
+
+    // Migraciones incrementales de sessions (si existen columnas viejas)
+    const hasTable = await tableExists(client, 'sessions');
+    if (hasTable) {
+      if (!(await columnExists(client, 'path')) && (await columnExists(client, 'stream_path'))) {
+        await client.query('ALTER TABLE sessions RENAME COLUMN stream_path TO path');
+      }
+
+      if (await columnExists(client, 'edge_start_ts')) {
+        await client.query(
+          `UPDATE sessions
+           SET start_ts = TO_TIMESTAMP(edge_start_ts / 1000.0)
+           WHERE edge_start_ts IS NOT NULL AND (start_ts IS NULL OR start_ts = 'epoch')`
+        );
+      }
+
+      if (await columnExists(client, 'edge_end_ts')) {
+        await client.query(
+          `UPDATE sessions
+           SET end_ts = TO_TIMESTAMP(edge_end_ts / 1000.0)
+           WHERE edge_end_ts IS NOT NULL AND end_ts IS NULL`
+        );
+      }
+
+      // Limpiar columnas obsoletas
+      await client.query('ALTER TABLE sessions DROP COLUMN IF EXISTS edge_start_ts');
+      await client.query('ALTER TABLE sessions DROP COLUMN IF EXISTS edge_end_ts');
+      await client.query('ALTER TABLE sessions DROP COLUMN IF EXISTS playlist_url');
+      await client.query('ALTER TABLE sessions DROP COLUMN IF EXISTS notes');
     }
-
-    if (!(await columnExists(client, 'start_ts'))) {
-      await client.query('ALTER TABLE sessions ADD COLUMN start_ts TIMESTAMPTZ');
-    }
-
-    if (await columnExists(client, 'edge_start_ts')) {
-      await client.query(
-        `UPDATE sessions
-         SET start_ts = TO_TIMESTAMP(edge_start_ts / 1000.0)
-         WHERE edge_start_ts IS NOT NULL AND (start_ts IS NULL OR start_ts = 'epoch')`
-      );
-    }
-
-    await client.query(
-      `UPDATE sessions SET start_ts = created_at
-       WHERE start_ts IS NULL`
-    );
-
-    await client.query('ALTER TABLE sessions ALTER COLUMN start_ts SET NOT NULL');
-
-    if (!(await columnExists(client, 'end_ts'))) {
-      await client.query('ALTER TABLE sessions ADD COLUMN end_ts TIMESTAMPTZ');
-    }
-
-    if (await columnExists(client, 'edge_end_ts')) {
-      await client.query(
-        `UPDATE sessions
-         SET end_ts = TO_TIMESTAMP(edge_end_ts / 1000.0)
-         WHERE edge_end_ts IS NOT NULL AND end_ts IS NULL`
-      );
-    }
-
-    if (!(await columnExists(client, 'postroll_sec'))) {
-      await client.query('ALTER TABLE sessions ADD COLUMN postroll_sec INTEGER');
-    }
-
-    if (!(await columnExists(client, 'reason'))) {
-      await client.query('ALTER TABLE sessions ADD COLUMN reason TEXT');
-    }
-
-    await client.query('ALTER TABLE sessions DROP COLUMN IF EXISTS edge_start_ts');
-    await client.query('ALTER TABLE sessions DROP COLUMN IF EXISTS edge_end_ts');
-    await client.query('ALTER TABLE sessions DROP COLUMN IF EXISTS playlist_url');
-    await client.query('ALTER TABLE sessions DROP COLUMN IF EXISTS notes');
 
     await client.query('COMMIT');
   } catch (error) {
@@ -218,23 +276,40 @@ export const db = {
     return result.rows[0] ?? null;
   },
 
-  async insertDetection(input: DetectionInsertInput): Promise<DetectionRecord> {
-    const { sessionId, eventId, ts, detections } = input;
+  async insertDetection(input: DetectionInsertInput): Promise<DetectionRecord | null> {
+    const { sessionId, trackId, cls, conf, bbox, captureTs, urlFrame } = input;
     const result = await pool.query<DetectionRecord>(
-      `INSERT INTO detections (session_id, event_id, ts, detection_data)
-       VALUES ($1, $2, $3::timestamptz, $4::jsonb)
-       ON CONFLICT (event_id) DO NOTHING
+      `INSERT INTO detections (session_id, track_id, cls, conf, bbox, capture_ts, url_frame, first_ts, last_ts)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6::timestamptz, $7, $6::timestamptz, $6::timestamptz)
+       ON CONFLICT (session_id, track_id) DO UPDATE
+       SET conf = CASE
+           WHEN EXCLUDED.conf > detections.conf THEN EXCLUDED.conf
+           ELSE detections.conf
+         END,
+         bbox = CASE
+           WHEN EXCLUDED.conf > detections.conf THEN EXCLUDED.bbox
+           ELSE detections.bbox
+         END,
+         cls = CASE
+           WHEN EXCLUDED.conf > detections.conf THEN EXCLUDED.cls
+           ELSE detections.cls
+         END,
+         url_frame = CASE
+           WHEN EXCLUDED.conf > detections.conf THEN EXCLUDED.url_frame
+           ELSE detections.url_frame
+         END,
+         last_ts = EXCLUDED.last_ts
        RETURNING *`,
-      [sessionId, eventId, ts, JSON.stringify(detections)]
+      [sessionId, trackId, cls, conf, JSON.stringify(bbox), captureTs, urlFrame ?? null]
     );
-    return result.rows[0];
+    return result.rows[0] ?? null;
   },
 
   async getDetectionsBySession(sessionId: string): Promise<DetectionRecord[]> {
     const result = await pool.query<DetectionRecord>(
       `SELECT * FROM detections
        WHERE session_id = $1
-       ORDER BY ts ASC`,
+       ORDER BY last_ts ASC`,
       [sessionId]
     );
     return result.rows;
@@ -243,8 +318,8 @@ export const db = {
   async getDetectionsByTimeRange(from: Date, to: Date, limit = 1000): Promise<DetectionRecord[]> {
     const result = await pool.query<DetectionRecord>(
       `SELECT * FROM detections
-       WHERE ts >= $1 AND ts < $2
-       ORDER BY ts ASC
+       WHERE last_ts >= $1 AND last_ts < $2
+       ORDER BY last_ts ASC
        LIMIT $3`,
       [from.toISOString(), to.toISOString(), limit]
     );

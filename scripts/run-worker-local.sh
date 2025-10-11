@@ -1,54 +1,68 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-# Script para ejecutar el AI Worker localmente (para testing)
+# Directorios base
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WORKER_DIR="$ROOT_DIR/services/worker-ai"
 
-WORKER_DIR="$(cd "$(dirname "$0")/../services/worker-ai" && pwd)"
-
-echo "[worker-ai] Starting Python AI Worker locally"
-echo "[worker-ai] Working directory: $WORKER_DIR"
-echo ""
-
-cd "$WORKER_DIR"
-
-# Check if model exists
-if [ ! -f "yolov8n.onnx" ]; then
-  echo "[worker-ai] WARNING: yolov8n.onnx not found!"
-  echo "[worker-ai] Download it with:"
-  echo ""
-  echo "  wget https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8n.onnx -P services/worker-ai/"
-  echo ""
-  echo "[worker-ai] Or place your own ONNX model in: $WORKER_DIR/yolov8n.onnx"
-  echo ""
+# Verificar que exista worker.py
+if [[ ! -f "$WORKER_DIR/worker.py" ]]; then
+    echo "[worker-ai] Error: No se encontró worker.py" >&2
+    exit 1
 fi
 
-# Check if virtual environment exists
-if [ ! -d "venv" ]; then
-  echo "[worker-ai] Creating Python virtual environment..."
-  python3 -m venv venv
-  echo "[worker-ai] Installing dependencies..."
-  source venv/bin/activate
-  pip install --upgrade pip
-  pip install -r requirements.txt
+# Verificar que existan los protobuf generados
+if [[ ! -f "$WORKER_DIR/ai_pb2.py" ]]; then
+    echo "[worker-ai] Generando protobuf para ai.proto..."
+    pushd "$WORKER_DIR" >/dev/null
+    python3 -m grpc_tools.protoc -I../../proto --python_out=. ../../proto/ai.proto
+    popd >/dev/null
+fi
+
+# Entrar al directorio del worker
+pushd "$WORKER_DIR" >/dev/null
+
+# Variables de entorno
+ENV_VARS=()
+
+# Configuración del servidor
+ENV_VARS+=("BIND_HOST=${BIND_HOST:-0.0.0.0}")
+ENV_VARS+=("BIND_PORT=${BIND_PORT:-7001}")
+ENV_VARS+=("IDLE_TIMEOUT_SEC=${IDLE_TIMEOUT_SEC:-60}")
+
+# Bootstrap del modelo (opcional)
+# Si se definen estas variables, el modelo se carga al iniciar
+if [[ -n "${BOOTSTRAP_MODEL_PATH:-}" ]]; then
+    ENV_VARS+=("BOOTSTRAP_MODEL_PATH=$BOOTSTRAP_MODEL_PATH")
+    ENV_VARS+=("BOOTSTRAP_WIDTH=${BOOTSTRAP_WIDTH:-640}")
+    ENV_VARS+=("BOOTSTRAP_HEIGHT=${BOOTSTRAP_HEIGHT:-480}")
+    ENV_VARS+=("BOOTSTRAP_CONF=${BOOTSTRAP_CONF:-0.35}")
+fi
+
+# Comando
+PYTHON_COMMAND=(python3 worker.py)
+
+echo "[worker-ai] Starting AI Worker"
+echo "[worker-ai] Command: ${PYTHON_COMMAND[*]}"
+if [[ "${#ENV_VARS[@]}" -gt 0 ]]; then
+    echo "[worker-ai] Environment: ${ENV_VARS[*]}"
+fi
+echo ""
+echo "[worker-ai] Protocol Features:"
+echo "  - Native NV12/I420 support (no RGB conversion)"
+echo "  - Window-based backpressure control"
+echo "  - Dynamic window auto-tuning"
+echo "  - Protocol version validation"
+echo "  - Heartbeat with auto-reconnect"
+echo ""
+echo "[worker-ai] Server listening on ${BIND_HOST:-0.0.0.0}:${BIND_PORT:-7001}"
+echo ""
+
+# Ejecutar
+if [[ "${#ENV_VARS[@]}" -gt 0 ]]; then
+    env "${ENV_VARS[@]}" "${PYTHON_COMMAND[@]}"
 else
-  source venv/bin/activate
+    "${PYTHON_COMMAND[@]}"
 fi
 
-# Set environment variables for local testing
-export BIND_HOST=${BIND_HOST:-0.0.0.0}
-export BIND_PORT=${BIND_PORT:-7001}
-export LOG_LEVEL=${LOG_LEVEL:-info}
-export ENABLE_VISUALIZATION=${ENABLE_VISUALIZATION:-true}  # Habilitar visualización por defecto en local
-
-echo "[worker-ai] Configuration:"
-echo "  Host: $BIND_HOST"
-echo "  Port: $BIND_PORT"
-echo "  Log Level: $LOG_LEVEL"
-echo "  Visualization: $ENABLE_VISUALIZATION"
-echo ""
-echo "[worker-ai] Starting worker..."
-echo "============================================"
-echo ""
-
-# Run worker
-python worker.py
+popd >/dev/null

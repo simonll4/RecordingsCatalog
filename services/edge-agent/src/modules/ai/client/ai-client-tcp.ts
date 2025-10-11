@@ -1,22 +1,12 @@
 /**
- * AI Client TCP - Implementación TCP + Protobuf del cliente de IA
+ * AI Client TCP - Protocol v1 implementation (canonical)
  *
- * Cliente binario sobre TCP que envía/recibe mensajes Protobuf con framing
- * length-prefixed (uint32LE). Implementa control de flujo de ventana 1 (crédito)
- * y política latest-wins para evitar backlog.
- *
- * Características:
- * - Conexión TCP al worker de IA con reconexión automática y heartbeat
- * - Framing length-prefixed (uint32LE) y serialización con protobufjs
- * - Backpressure (Ready/Result → concede crédito) + latest-wins
- * - Re-init automático al reconectar con los últimos `InitArgs`
- *
- * Estados del cliente:
- * - DISCONNECTED: Sin conexión
- * - CONNECTING: Intentando conectar
- * - CONNECTED: Socket abierto, esperando InitOk
- * - READY: Modelo inicializado, listo para frames
- * - SHUTDOWN: Cerrando conexión
+ * Binary TCP client with protocol v1:
+ * - Length-prefixed framing (uint32LE)
+ * - Protocol version validation
+ * - Handshake (Init/InitOk)
+ * - Window-based flow control
+ * - Heartbeat and reconnection
  */
 
 import net from "node:net";
@@ -24,8 +14,7 @@ import Long from "long";
 import pb from "../../../proto/ai_pb_wrapper.js";
 import { logger } from "../../../shared/logging.js";
 import { metrics } from "../../../shared/metrics.js";
-import type { AIClient, InitArgs, Result } from "../ports/ai-client.js";
-import { mapProtobufResult } from "../transforms/result-mapper.js";
+import type { AIFeeder } from "../ai-feeder.js";
 
 type ClientState =
   | "DISCONNECTED"
@@ -34,62 +23,45 @@ type ClientState =
   | "READY"
   | "SHUTDOWN";
 
-export class AIClientTcp implements AIClient {
-  /** Dirección del worker TCP. */
+export class AIClientTcp {
   private host: string;
-  /** Puerto del worker TCP. */
   private port: number;
   private socket?: net.Socket;
   private state: ClientState = "DISCONNECTED";
+  private feeder?: AIFeeder;
+  private streamId?: string; // Constant stream_id per connection
 
-  // Backpressure (ventana 1)
-  /** Crédito disponible (true cuando el worker envía Ready/Result). */
-  private hasCredit = false;
-  /** Secuencia actualmente en vuelo (sin confirmar). */
-  private inflightSeq?: number;
-
-  // Latest-wins
-  /** Frame pendiente (se reemplaza si llega uno nuevo sin crédito). */
-  private pendingFrame?: {
-    seq: number;
-    tsIso: string;
-    tsMonoNs: bigint;
-    w: number;
-    h: number;
-    rgb: Buffer;
-  };
-
-  // Callbacks
-  private resultCb?: (r: Result) => void;
-  private errorCb?: (err: Error) => void;
-
-  // Init guardado para re-init
-  /** Últimos `InitArgs` utilizados (para re-enviar tras reconectar). */
-  private lastInit?: InitArgs;
-
-  // Reconexión
+  // Reconnection
   private reconnectAttempts = 0;
   private reconnectTimer?: NodeJS.Timeout;
   private readonly maxReconnectDelay = 30000; // 30s
 
-  // Buffer de recepción
-  /** Acumulador de bytes recibidos para rearmar mensajes length-prefixed. */
+  // Buffer
   private rxBuffer = Buffer.alloc(0);
 
   // Heartbeat
   private heartbeatTimer?: NodeJS.Timeout;
   private lastHeartbeat = 0;
-  private readonly heartbeatTimeout = 10000; // 10s sin mensajes → reconectar
+  private readonly heartbeatInterval = 2000; // 2s
+  private readonly heartbeatTimeout = 10000; // 10s
+
+  // Message counters
+  private txCount = 0n;
+  private rxCount = 0n;
+  private lastFrameId = 0n;
 
   constructor(host: string, port: number) {
     this.host = host;
     this.port = port;
   }
 
-  /**
-   * Abre el socket, configura opciones (no-delay/keepalive) y registra handlers.
-   * Resuelve al conectarse; en caso de error inicial, rechaza.
-   */
+  setFeeder(feeder: AIFeeder): void {
+    this.feeder = feeder;
+    feeder.setSendFunction((envelope) => {
+      this.sendMessage(envelope);
+    });
+  }
+
   async connect(): Promise<void> {
     if (this.state !== "DISCONNECTED") {
       logger.warn("Already connected or connecting", {
@@ -100,9 +72,6 @@ export class AIClientTcp implements AIClient {
     }
 
     this.state = "CONNECTING";
-    this.hasCredit = false;
-    this.inflightSeq = undefined;
-    this.pendingFrame = undefined;
 
     return new Promise((resolve, reject) => {
       const socket = new net.Socket();
@@ -120,13 +89,14 @@ export class AIClientTcp implements AIClient {
 
         this.state = "CONNECTED";
         this.reconnectAttempts = 0;
+        this.streamId = `edge-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
         this.startHeartbeat();
-
         metrics.inc("ai_reconnects_total");
 
-        // Auto re-init si teníamos config previa
-        if (this.lastInit) {
-          void this.init(this.lastInit);
+        if (this.feeder) {
+          this.feeder.setStreamId(this.streamId);
+          const initMsg = this.feeder.buildInitMessage();
+          this.sendMessage(initMsg);
         }
 
         resolve();
@@ -142,9 +112,6 @@ export class AIClientTcp implements AIClient {
           module: "ai-client-tcp",
           error: err.message,
         });
-        if (this.errorCb) {
-          this.errorCb(err);
-        }
         reject(err);
       });
 
@@ -152,7 +119,6 @@ export class AIClientTcp implements AIClient {
         logger.warn("Socket closed", {
           module: "ai-client-tcp",
           state: this.state,
-          hadCredit: this.hasCredit,
         });
         this.handleDisconnect();
       });
@@ -161,202 +127,114 @@ export class AIClientTcp implements AIClient {
     });
   }
 
-  /** Envía el mensaje `Init` con la configuración del modelo. */
-  async init(args: InitArgs): Promise<void> {
-    if (this.state !== "CONNECTED" && this.state !== "READY") {
-      throw new Error(`Cannot init in state ${this.state}`);
+  async shutdown(): Promise<void> {
+    if (this.state === "SHUTDOWN") return;
+    this.state = "SHUTDOWN";
+    this.stopHeartbeat();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
     }
-
-    this.lastInit = args;
-
-    const msg = pb.ai.Envelope.create({
-      req: {
-        init: {
-          modelPath: args.modelPath,
-          width: args.width,
-          height: args.height,
-          confThreshold: args.conf,
-          classesFilter: args.classes || [],
-        },
-      },
-    });
-
-    this.sendMessage(msg);
-
-    logger.info("Sent Init request", {
-      module: "ai-client-tcp",
-      model: args.modelPath,
-      resolution: `${args.width}x${args.height}`,
-    });
+    if (this.socket) {
+      if (this.streamId) {
+        const endMsg: pb.ai.IEnvelope = {
+          protocolVersion: 1,
+          streamId: this.streamId,
+          msgType: pb.ai.MsgType.MT_END,
+          req: { end: {} },
+        };
+        this.sendMessage(endMsg);
+      }
+      await new Promise((res) => setTimeout(res, 100));
+      this.socket.destroy();
+      this.socket = undefined;
+    }
+    logger.info("AI client shutdown", { module: "ai-client-tcp" });
   }
 
-  /** Retorna true si el cliente está READY y con crédito disponible. */
-  canSend(): boolean {
-    return this.state === "READY" && this.hasCredit && !this.inflightSeq;
-  }
-
-  /**
-   * Encola o envía inmediatamente un frame.
-   * Si no hay crédito o hay un frame en vuelo, se guarda en `pendingFrame`
-   * (latest-wins) y reemplaza cualquier pendiente anterior.
-   */
-  sendFrame(
-    seq: number,
-    tsIso: string,
-    tsMonoNs: bigint,
-    w: number,
-    h: number,
-    rgb: Buffer
-  ): void {
-    if (this.state !== "READY") {
-      logger.debug("Cannot send frame, not ready", {
+  private sendMessage(envelope: pb.ai.IEnvelope): void {
+    if (!this.socket) {
+      logger.warn("Cannot send message, socket is null", { module: "ai-client-tcp" });
+      return;
+    }
+    
+    // Allow sending in both CONNECTED and READY states
+    // CONNECTED: Initial connection established
+    // READY: After receiving InitOk from worker
+    if (this.state !== "CONNECTED" && this.state !== "READY") {
+      logger.warn("Cannot send message, invalid state", { 
         module: "ai-client-tcp",
         state: this.state,
       });
       return;
     }
 
-    // Latest-wins: si no hay crédito, reemplazar pending
-    if (!this.hasCredit || this.inflightSeq !== undefined) {
-      this.pendingFrame = { seq, tsIso, tsMonoNs, w, h, rgb };
-      metrics.inc("ai_drops_latestwins_total");
-      logger.debug("Frame queued (latest-wins)", {
+    try {
+      const encodeStart = Date.now();
+      const buf = pb.ai.Envelope.encode(envelope).finish();
+      const encodeEnd = Date.now();
+      
+      // Track encoding time
+      const encodeMs = encodeEnd - encodeStart;
+      if (encodeMs > 0) {
+        metrics.gauge("ai_encode_ms", encodeMs);
+      }
+
+      const length = buf.length;
+      const header = Buffer.allocUnsafe(4);
+      header.writeUInt32LE(length, 0);
+
+      this.socket.write(header);
+      this.socket.write(buf);
+
+      this.txCount++;
+      
+      // Track lastFrameId for heartbeat
+      if (envelope.req?.frame) {
+        const fid = envelope.req.frame.frameId || 0;
+        this.lastFrameId = typeof fid === 'number' ? BigInt(fid) : BigInt(fid.toString());
+      }
+    } catch (err) {
+      logger.error("Failed to send message", {
         module: "ai-client-tcp",
-        seq,
+        error: (err as Error).message,
       });
-      return;
     }
-
-    this.doSendFrame(seq, tsIso, tsMonoNs, w, h, rgb);
   }
 
-  /** Serializa y envía un frame al worker (marca crédito en uso). */
-  private doSendFrame(
-    seq: number,
-    tsIso: string,
-    tsMonoNs: bigint,
-    w: number,
-    h: number,
-    rgb: Buffer
-  ): void {
-    const msg = pb.ai.Envelope.create({
-      req: {
-        frame: {
-          seq,
-          tsIso,
-          // Protobufjs usa Long para uint64; convertimos desde bigint
-          tsMonoNs: Long.fromString(tsMonoNs.toString()),
-          width: w,
-          height: h,
-          pixFmt: "RGB",
-          data: rgb,
-        },
-      },
-    });
-
-    this.sendMessage(msg);
-    this.hasCredit = false;
-    this.inflightSeq = seq;
-
-    metrics.inc("ai_frames_sent_total");
-    metrics.gauge("ai_frame_inflight", 1);
-
-    logger.debug("Frame sent", { module: "ai-client-tcp", seq });
-  }
-
-  /** Registra callback para resultados de inferencia. */
-  onResult(cb: (r: Result) => void): void {
-    this.resultCb = cb;
-  }
-
-  /** Registra callback para errores. */
-  onError(cb: (err: Error) => void): void {
-    this.errorCb = cb;
-  }
-
-  /** Envía `shutdown`, cierra el socket y limpia timers/reintentos. */
-  async shutdown(): Promise<void> {
-    if (this.state === "SHUTDOWN") return;
-
-    this.state = "SHUTDOWN";
-    this.stopHeartbeat();
-
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = undefined;
-    }
-
-    if (this.socket) {
-      const msg = pb.ai.Envelope.create({
-        req: { shutdown: {} },
-      });
-      this.sendMessage(msg);
-
-      await new Promise((res) => setTimeout(res, 100));
-
-      this.socket.destroy();
-      this.socket = undefined;
-    }
-
-    logger.info("AI client shutdown", { module: "ai-client-tcp" });
-  }
-
-  // ========================================================================
-  // Internos
-  // ========================================================================
-
-  /**
-   * Serializa un `Envelope` y lo escribe con prefijo de longitud (uint32LE).
-   * Un mensaje puede dividirse en dos writes: [len][payload].
-   */
-  private sendMessage(msg: pb.ai.IEnvelope): void {
-    if (!this.socket || this.socket.destroyed) {
-      logger.warn("Cannot send, socket not available", {
-        module: "ai-client-tcp",
-      });
-      return;
-    }
-
-    const buf = pb.ai.Envelope.encode(msg).finish();
-    const len = Buffer.allocUnsafe(4);
-    len.writeUInt32LE(buf.length, 0);
-
-    this.socket.write(len);
-    this.socket.write(buf);
-  }
-
-  /**
-   * Acumula bytes recibidos, rearma mensajes length-prefixed y los decodifica.
-   * Puede procesar varios mensajes por tick si el buffer alcanza.
-   */
   private handleData(chunk: Buffer): void {
     this.rxBuffer = Buffer.concat([this.rxBuffer, chunk]);
-
     while (this.rxBuffer.length >= 4) {
       const len = this.rxBuffer.readUInt32LE(0);
-
-      if (this.rxBuffer.length < 4 + len) {
-        // Mensaje incompleto
-        break;
+      if (len === 0 || len > 50 * 1024 * 1024) {
+        logger.error("Invalid message length", { module: "ai-client-tcp", length: len });
+        this.handleDisconnect();
+        return;
       }
-
+      if (this.rxBuffer.length < 4 + len) break;
       const msgBuf = this.rxBuffer.subarray(4, 4 + len);
       this.rxBuffer = this.rxBuffer.subarray(4 + len);
-
       try {
         const envelope = pb.ai.Envelope.decode(msgBuf);
+        this.rxCount++;
         this.handleMessage(envelope);
       } catch (err) {
-        logger.error("Failed to decode message", {
-          module: "ai-client-tcp",
-          error: err instanceof Error ? err.message : String(err),
-        });
+        logger.error("Failed to decode message", { module: "ai-client-tcp", error: err instanceof Error ? err.message : String(err) });
       }
     }
   }
 
-  /** Demultiplexa el `Envelope` entrante en res (responses) o hb (heartbeat). */
   private handleMessage(envelope: pb.ai.IEnvelope): void {
+    if (envelope.protocolVersion !== 1) {
+      logger.error("Unsupported protocol version - closing connection", { module: "ai-client-tcp", version: envelope.protocolVersion });
+      this.handleDisconnect();
+      return;
+    }
+    if (envelope.res && envelope.msgType !== this.getExpectedMsgType(envelope.res)) {
+      logger.error("msg_type mismatch - closing connection", { module: "ai-client-tcp", msgType: envelope.msgType, actual: this.getExpectedMsgType(envelope.res) });
+      this.handleDisconnect();
+      return;
+    }
     if (envelope.res) {
       this.handleResponse(envelope.res);
     } else if (envelope.hb) {
@@ -364,12 +242,19 @@ export class AIClientTcp implements AIClient {
     }
   }
 
-  /** Rutea la respuesta a su handler específico (InitOk/Ready/Result/Error). */
+  private getExpectedMsgType(res: pb.ai.IResponse): pb.ai.MsgType {
+    if (res.initOk) return pb.ai.MsgType.MT_INIT_OK;
+    if (res.windowUpdate) return pb.ai.MsgType.MT_WINDOW_UPDATE;
+    if (res.result) return pb.ai.MsgType.MT_RESULT;
+    if (res.error) return pb.ai.MsgType.MT_ERROR;
+    return pb.ai.MsgType.MT_UNKNOWN;
+  }
+
   private handleResponse(res: pb.ai.IResponse): void {
     if (res.initOk) {
       this.handleInitOk(res.initOk);
-    } else if (res.ready) {
-      this.handleReady(res.ready);
+    } else if (res.windowUpdate) {
+      this.handleWindowUpdate(res.windowUpdate);
     } else if (res.result) {
       this.handleResult(res.result);
     } else if (res.error) {
@@ -377,162 +262,98 @@ export class AIClientTcp implements AIClient {
     }
   }
 
-  /** Transición a READY tras recibir InitOk del worker. */
   private handleInitOk(initOk: pb.ai.IInitOk): void {
-    logger.info("Received InitOk", {
-      module: "ai-client-tcp",
-      runtime: initOk.runtime,
-      modelVersion: initOk.modelVersion,
-      modelId: initOk.modelId,
-      providers: initOk.providers,
-      maxFrameBytes: initOk.maxFrameBytes,
-    });
-
+    logger.info("Received InitOk", { module: "ai-client-tcp", chosen: initOk.chosen, maxFrameBytes: initOk.maxFrameBytes });
     this.state = "READY";
     metrics.inc("ai_init_ok_total");
+    if (this.feeder) this.feeder.handleInitOk(initOk);
   }
 
-  /** Concede crédito (ventana 1) y limpia frame en vuelo si aplica. */
-  private handleReady(ready: pb.ai.IReady): void {
-    const seq = Number(ready.seq || 0);
-
-    logger.debug("Received Ready", { module: "ai-client-tcp", seq });
-
-    this.hasCredit = true;
-    this.inflightSeq = undefined;
-    metrics.gauge("ai_frame_inflight", 0);
-
-    // Si hay frame pending, enviarlo ahora
-    if (this.pendingFrame) {
-      const { seq, tsIso, tsMonoNs, w, h, rgb } = this.pendingFrame;
-      this.pendingFrame = undefined;
-      this.doSendFrame(seq, tsIso, tsMonoNs, w, h, rgb);
-    }
+  private handleWindowUpdate(update: pb.ai.IWindowUpdate): void {
+    logger.debug("Received WindowUpdate", { module: "ai-client-tcp", newWindowSize: update.newWindowSize });
+    if (this.feeder) this.feeder.handleWindowUpdate(update);
   }
 
-  /** Traduce `Result` del worker a `Result` interno usando mapper y concede crédito. */
   private handleResult(result: pb.ai.IResult): void {
-    const seq = Number(result.seq || 0);
-    const startTs = Date.now();
-
-    // Usar mapper puro para conversión
-    const res = mapProtobufResult(result);
-
-    logger.debug("Received Result", {
-      module: "ai-client-tcp",
-      seq,
-      detections: res.detections.length,
-    });
-
-    metrics.inc("ai_detections_total", res.detections.length);
-
-    if (this.resultCb) {
-      this.resultCb(res);
+    logger.debug("Received Result", { module: "ai-client-tcp", frameId: result.frameId?.toString() });
+    metrics.inc("ai_results_total");
+    
+    // Track latencies
+    if (result.lat) {
+      if (result.lat.totalMs) metrics.gauge("ai_total_latency_ms", result.lat.totalMs);
+      if (result.lat.inferMs) metrics.gauge("ai_infer_latency_ms", result.lat.inferMs);
+      if (result.lat.preMs) metrics.gauge("ai_pre_latency_ms", result.lat.preMs);
+      if (result.lat.postMs) metrics.gauge("ai_post_latency_ms", result.lat.postMs);
     }
-
-    // Dar crédito (Result implica Ready)
-    this.hasCredit = true;
-    this.inflightSeq = undefined;
-    metrics.gauge("ai_frame_inflight", 0);
-
-    const latency = Date.now() - startTs;
-    metrics.observe("ai_result_latency_ms", latency);
-
-    // Si hay frame pending, enviarlo ahora
-    if (this.pendingFrame) {
-      const { seq, tsIso, tsMonoNs, w, h, rgb } = this.pendingFrame;
-      this.pendingFrame = undefined;
-      this.doSendFrame(seq, tsIso, tsMonoNs, w, h, rgb);
-    }
+    
+    if (this.feeder) this.feeder.handleResult(result);
   }
 
-  /** Propaga error del worker al callback del cliente. */
   private handleError(error: pb.ai.IError): void {
-    logger.error("Received Error from worker", {
-      module: "ai-client-tcp",
-      code: error.code,
-      message: error.message,
-    });
-
-    if (this.errorCb) {
-      this.errorCb(
-        new Error(`AI Worker Error ${error.code}: ${error.message}`)
-      );
-    }
+    logger.error("Received Error from worker", { module: "ai-client-tcp", code: error.code, message: error.message });
+    if (this.feeder) this.feeder.handleError(error);
   }
 
-  /** Marca actividad del socket a partir de heartbeats recibidos. */
   private handleHeartbeat(hb: pb.ai.IHeartbeat): void {
-    logger.debug("Received Heartbeat", {
-      module: "ai-client-tcp",
-      tsMonoNs: hb.tsMonoNs,
-    });
+    logger.debug("Received Heartbeat", { module: "ai-client-tcp", lastFrameId: hb.lastFrameId?.toString() });
   }
 
-  /** Limpia estado y programa reconexión si no fue un `shutdown` explícito. */
   private handleDisconnect(): void {
     const wasShutdown = this.state === "SHUTDOWN";
     this.state = "DISCONNECTED";
-    this.hasCredit = false;
-    this.inflightSeq = undefined;
-    this.pendingFrame = undefined;
     this.stopHeartbeat();
-
+    this.streamId = undefined;
     if (this.socket) {
       this.socket.destroy();
       this.socket = undefined;
     }
-
-    if (!wasShutdown) {
-      this.scheduleReconnect();
-    }
+    if (!wasShutdown) this.scheduleReconnect();
   }
 
-  /** Programa reconexión con backoff exponencial (0.5s → 30s). */
   private scheduleReconnect(): void {
     if (this.reconnectTimer) return;
-
-    // Backoff exponencial: 0.5s → 2s → 5s → 10s → 30s
     const delays = [500, 2000, 5000, 10000, 30000];
     const delay = delays[Math.min(this.reconnectAttempts, delays.length - 1)];
-
-    logger.info("Scheduling reconnect", {
-      module: "ai-client-tcp",
-      attempt: this.reconnectAttempts + 1,
-      delayMs: delay,
-    });
-
+    logger.info("Scheduling reconnect", { module: "ai-client-tcp", attempt: this.reconnectAttempts + 1, delayMs: delay });
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;
       this.reconnectAttempts++;
       void this.connect().catch((err) => {
-        logger.error("Reconnect failed", {
-          module: "ai-client-tcp",
-          error: err.message,
-        });
+        logger.error("Reconnect failed", { module: "ai-client-tcp", error: err.message });
       });
     }, delay);
   }
 
-  /**
-   * Inicia watchdog de heartbeat. Si no llega tráfico por >10s,
-   * se fuerza una desconexión para intentar reconectar.
-   */
   private startHeartbeat(): void {
     this.lastHeartbeat = Date.now();
     this.heartbeatTimer = setInterval(() => {
       const elapsed = Date.now() - this.lastHeartbeat;
       if (elapsed > this.heartbeatTimeout) {
-        logger.warn("Heartbeat timeout, reconnecting", {
-          module: "ai-client-tcp",
-          elapsedMs: elapsed,
-        });
+        logger.warn("Heartbeat timeout, reconnecting", { module: "ai-client-tcp", elapsedMs: elapsed });
         this.handleDisconnect();
+        return;
       }
-    }, 2000);
+      
+      // Only send heartbeat if stream_id is set (connection established)
+      if (!this.streamId) {
+        logger.debug("Skipping heartbeat, stream_id not set", { module: "ai-client-tcp" });
+        return;
+      }
+      
+      const hbMsg: pb.ai.IEnvelope = {
+        protocolVersion: 1,
+        streamId: this.streamId,
+        msgType: pb.ai.MsgType.MT_HEARTBEAT,
+        hb: {
+          lastFrameId: this.lastFrameId ? Long.fromString(this.lastFrameId.toString()) : Long.fromString("0"),
+          tx: Long.fromString(this.txCount.toString()),
+          rx: Long.fromString(this.rxCount.toString()),
+        },
+      };
+      this.sendMessage(hbMsg);
+    }, this.heartbeatInterval);
   }
 
-  /** Detiene el watchdog de heartbeat. */
   private stopHeartbeat(): void {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
@@ -540,3 +361,4 @@ export class AIClientTcp implements AIClient {
     }
   }
 }
+

@@ -1,14 +1,19 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
 import { CONFIG } from './config.js';
 import { db } from './db.js';
 import { sessionsRouter } from './routes/sessions.js';
 import { detectionsRouter } from './routes/detections.js';
+import { ingestRouter } from './routes/ingest.js';
 
 const app = express();
 
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: '1mb' }));
+
+// Servir frames estáticos (solo lectura)
+app.use('/frames', express.static('/data/frames'));
 
 app.use((req, res, next) => {
   const started = Date.now();
@@ -36,6 +41,7 @@ app.get('/health', async (_req, res) => {
 
 app.use('/sessions', sessionsRouter);
 app.use('/detections', detectionsRouter);
+app.use('/ingest', ingestRouter);
 
 type ErrorWithStatus = Error & { status?: number };
 

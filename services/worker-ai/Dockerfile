@@ -12,7 +12,7 @@ COPY requirements.txt .
 # Instalar dependencias de Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar código (incluye Protobuf ya generado por scripts/generate-proto.sh)
+# Copiar código (incluye Protobuf ya generado)
 COPY ai_pb2.py .
 COPY worker.py .
 COPY healthcheck.py .

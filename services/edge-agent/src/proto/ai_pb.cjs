@@ -24,6 +24,9 @@ $root.ai = (function() {
          * Properties of an Envelope.
          * @memberof ai
          * @interface IEnvelope
+         * @property {number|null} [protocolVersion] Envelope protocolVersion
+         * @property {string|null} [streamId] Envelope streamId
+         * @property {ai.MsgType|null} [msgType] Envelope msgType
          * @property {ai.IRequest|null} [req] Envelope req
          * @property {ai.IResponse|null} [res] Envelope res
          * @property {ai.IHeartbeat|null} [hb] Envelope hb
@@ -43,6 +46,30 @@ $root.ai = (function() {
                     if (properties[keys[i]] != null)
                         this[keys[i]] = properties[keys[i]];
         }
+
+        /**
+         * Envelope protocolVersion.
+         * @member {number} protocolVersion
+         * @memberof ai.Envelope
+         * @instance
+         */
+        Envelope.prototype.protocolVersion = 0;
+
+        /**
+         * Envelope streamId.
+         * @member {string} streamId
+         * @memberof ai.Envelope
+         * @instance
+         */
+        Envelope.prototype.streamId = "";
+
+        /**
+         * Envelope msgType.
+         * @member {ai.MsgType} msgType
+         * @memberof ai.Envelope
+         * @instance
+         */
+        Envelope.prototype.msgType = 0;
 
         /**
          * Envelope req.
@@ -106,12 +133,18 @@ $root.ai = (function() {
         Envelope.encode = function encode(message, writer) {
             if (!writer)
                 writer = $Writer.create();
+            if (message.protocolVersion != null && Object.hasOwnProperty.call(message, "protocolVersion"))
+                writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.protocolVersion);
+            if (message.streamId != null && Object.hasOwnProperty.call(message, "streamId"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.streamId);
+            if (message.msgType != null && Object.hasOwnProperty.call(message, "msgType"))
+                writer.uint32(/* id 3, wireType 0 =*/24).int32(message.msgType);
             if (message.req != null && Object.hasOwnProperty.call(message, "req"))
-                $root.ai.Request.encode(message.req, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                $root.ai.Request.encode(message.req, writer.uint32(/* id 10, wireType 2 =*/82).fork()).ldelim();
             if (message.res != null && Object.hasOwnProperty.call(message, "res"))
-                $root.ai.Response.encode(message.res, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                $root.ai.Response.encode(message.res, writer.uint32(/* id 11, wireType 2 =*/90).fork()).ldelim();
             if (message.hb != null && Object.hasOwnProperty.call(message, "hb"))
-                $root.ai.Heartbeat.encode(message.hb, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                $root.ai.Heartbeat.encode(message.hb, writer.uint32(/* id 12, wireType 2 =*/98).fork()).ldelim();
             return writer;
         };
 
@@ -149,14 +182,26 @@ $root.ai = (function() {
                     break;
                 switch (tag >>> 3) {
                 case 1: {
-                        message.req = $root.ai.Request.decode(reader, reader.uint32());
+                        message.protocolVersion = reader.uint32();
                         break;
                     }
                 case 2: {
-                        message.res = $root.ai.Response.decode(reader, reader.uint32());
+                        message.streamId = reader.string();
                         break;
                     }
                 case 3: {
+                        message.msgType = reader.int32();
+                        break;
+                    }
+                case 10: {
+                        message.req = $root.ai.Request.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 11: {
+                        message.res = $root.ai.Response.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 12: {
                         message.hb = $root.ai.Heartbeat.decode(reader, reader.uint32());
                         break;
                     }
@@ -196,6 +241,27 @@ $root.ai = (function() {
             if (typeof message !== "object" || message === null)
                 return "object expected";
             var properties = {};
+            if (message.protocolVersion != null && message.hasOwnProperty("protocolVersion"))
+                if (!$util.isInteger(message.protocolVersion))
+                    return "protocolVersion: integer expected";
+            if (message.streamId != null && message.hasOwnProperty("streamId"))
+                if (!$util.isString(message.streamId))
+                    return "streamId: string expected";
+            if (message.msgType != null && message.hasOwnProperty("msgType"))
+                switch (message.msgType) {
+                default:
+                    return "msgType: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                case 3:
+                case 4:
+                case 5:
+                case 6:
+                case 7:
+                case 8:
+                    break;
+                }
             if (message.req != null && message.hasOwnProperty("req")) {
                 properties.msg = 1;
                 {
@@ -239,6 +305,54 @@ $root.ai = (function() {
             if (object instanceof $root.ai.Envelope)
                 return object;
             var message = new $root.ai.Envelope();
+            if (object.protocolVersion != null)
+                message.protocolVersion = object.protocolVersion >>> 0;
+            if (object.streamId != null)
+                message.streamId = String(object.streamId);
+            switch (object.msgType) {
+            default:
+                if (typeof object.msgType === "number") {
+                    message.msgType = object.msgType;
+                    break;
+                }
+                break;
+            case "MT_UNKNOWN":
+            case 0:
+                message.msgType = 0;
+                break;
+            case "MT_INIT":
+            case 1:
+                message.msgType = 1;
+                break;
+            case "MT_INIT_OK":
+            case 2:
+                message.msgType = 2;
+                break;
+            case "MT_WINDOW_UPDATE":
+            case 3:
+                message.msgType = 3;
+                break;
+            case "MT_FRAME":
+            case 4:
+                message.msgType = 4;
+                break;
+            case "MT_RESULT":
+            case 5:
+                message.msgType = 5;
+                break;
+            case "MT_HEARTBEAT":
+            case 6:
+                message.msgType = 6;
+                break;
+            case "MT_ERROR":
+            case 7:
+                message.msgType = 7;
+                break;
+            case "MT_END":
+            case 8:
+                message.msgType = 8;
+                break;
+            }
             if (object.req != null) {
                 if (typeof object.req !== "object")
                     throw TypeError(".ai.Envelope.req: object expected");
@@ -270,6 +384,17 @@ $root.ai = (function() {
             if (!options)
                 options = {};
             var object = {};
+            if (options.defaults) {
+                object.protocolVersion = 0;
+                object.streamId = "";
+                object.msgType = options.enums === String ? "MT_UNKNOWN" : 0;
+            }
+            if (message.protocolVersion != null && message.hasOwnProperty("protocolVersion"))
+                object.protocolVersion = message.protocolVersion;
+            if (message.streamId != null && message.hasOwnProperty("streamId"))
+                object.streamId = message.streamId;
+            if (message.msgType != null && message.hasOwnProperty("msgType"))
+                object.msgType = options.enums === String ? $root.ai.MsgType[message.msgType] === undefined ? message.msgType : $root.ai.MsgType[message.msgType] : message.msgType;
             if (message.req != null && message.hasOwnProperty("req")) {
                 object.req = $root.ai.Request.toObject(message.req, options);
                 if (options.oneofs)
@@ -317,6 +442,118 @@ $root.ai = (function() {
         return Envelope;
     })();
 
+    /**
+     * MsgType enum.
+     * @name ai.MsgType
+     * @enum {number}
+     * @property {number} MT_UNKNOWN=0 MT_UNKNOWN value
+     * @property {number} MT_INIT=1 MT_INIT value
+     * @property {number} MT_INIT_OK=2 MT_INIT_OK value
+     * @property {number} MT_WINDOW_UPDATE=3 MT_WINDOW_UPDATE value
+     * @property {number} MT_FRAME=4 MT_FRAME value
+     * @property {number} MT_RESULT=5 MT_RESULT value
+     * @property {number} MT_HEARTBEAT=6 MT_HEARTBEAT value
+     * @property {number} MT_ERROR=7 MT_ERROR value
+     * @property {number} MT_END=8 MT_END value
+     */
+    ai.MsgType = (function() {
+        var valuesById = {}, values = Object.create(valuesById);
+        values[valuesById[0] = "MT_UNKNOWN"] = 0;
+        values[valuesById[1] = "MT_INIT"] = 1;
+        values[valuesById[2] = "MT_INIT_OK"] = 2;
+        values[valuesById[3] = "MT_WINDOW_UPDATE"] = 3;
+        values[valuesById[4] = "MT_FRAME"] = 4;
+        values[valuesById[5] = "MT_RESULT"] = 5;
+        values[valuesById[6] = "MT_HEARTBEAT"] = 6;
+        values[valuesById[7] = "MT_ERROR"] = 7;
+        values[valuesById[8] = "MT_END"] = 8;
+        return values;
+    })();
+
+    /**
+     * PixelFormat enum.
+     * @name ai.PixelFormat
+     * @enum {number}
+     * @property {number} PF_UNKNOWN=0 PF_UNKNOWN value
+     * @property {number} PF_I420=1 PF_I420 value
+     * @property {number} PF_NV12=2 PF_NV12 value
+     * @property {number} PF_RGB8=3 PF_RGB8 value
+     */
+    ai.PixelFormat = (function() {
+        var valuesById = {}, values = Object.create(valuesById);
+        values[valuesById[0] = "PF_UNKNOWN"] = 0;
+        values[valuesById[1] = "PF_I420"] = 1;
+        values[valuesById[2] = "PF_NV12"] = 2;
+        values[valuesById[3] = "PF_RGB8"] = 3;
+        return values;
+    })();
+
+    /**
+     * Codec enum.
+     * @name ai.Codec
+     * @enum {number}
+     * @property {number} CODEC_UNKNOWN=0 CODEC_UNKNOWN value
+     * @property {number} CODEC_NONE=1 CODEC_NONE value
+     * @property {number} CODEC_JPEG=2 CODEC_JPEG value
+     * @property {number} CODEC_H264=3 CODEC_H264 value
+     */
+    ai.Codec = (function() {
+        var valuesById = {}, values = Object.create(valuesById);
+        values[valuesById[0] = "CODEC_UNKNOWN"] = 0;
+        values[valuesById[1] = "CODEC_NONE"] = 1;
+        values[valuesById[2] = "CODEC_JPEG"] = 2;
+        values[valuesById[3] = "CODEC_H264"] = 3;
+        return values;
+    })();
+
+    /**
+     * Policy enum.
+     * @name ai.Policy
+     * @enum {number}
+     * @property {number} POLICY_UNKNOWN=0 POLICY_UNKNOWN value
+     * @property {number} LATEST_WINS=1 LATEST_WINS value
+     * @property {number} FIFO=2 FIFO value
+     */
+    ai.Policy = (function() {
+        var valuesById = {}, values = Object.create(valuesById);
+        values[valuesById[0] = "POLICY_UNKNOWN"] = 0;
+        values[valuesById[1] = "LATEST_WINS"] = 1;
+        values[valuesById[2] = "FIFO"] = 2;
+        return values;
+    })();
+
+    /**
+     * ErrorCode enum.
+     * @name ai.ErrorCode
+     * @enum {number}
+     * @property {number} ERR_UNKNOWN=0 ERR_UNKNOWN value
+     * @property {number} VERSION_UNSUPPORTED=1 VERSION_UNSUPPORTED value
+     * @property {number} BAD_MESSAGE=2 BAD_MESSAGE value
+     * @property {number} BAD_SEQUENCE=3 BAD_SEQUENCE value
+     * @property {number} UNSUPPORTED_FORMAT=4 UNSUPPORTED_FORMAT value
+     * @property {number} INVALID_FRAME=5 INVALID_FRAME value
+     * @property {number} FRAME_TOO_LARGE=6 FRAME_TOO_LARGE value
+     * @property {number} MODEL_NOT_READY=7 MODEL_NOT_READY value
+     * @property {number} OOM=8 OOM value
+     * @property {number} BACKPRESSURE_TIMEOUT=9 BACKPRESSURE_TIMEOUT value
+     * @property {number} INTERNAL=10 INTERNAL value
+     */
+    ai.ErrorCode = (function() {
+        var valuesById = {}, values = Object.create(valuesById);
+        values[valuesById[0] = "ERR_UNKNOWN"] = 0;
+        values[valuesById[1] = "VERSION_UNSUPPORTED"] = 1;
+        values[valuesById[2] = "BAD_MESSAGE"] = 2;
+        values[valuesById[3] = "BAD_SEQUENCE"] = 3;
+        values[valuesById[4] = "UNSUPPORTED_FORMAT"] = 4;
+        values[valuesById[5] = "INVALID_FRAME"] = 5;
+        values[valuesById[6] = "FRAME_TOO_LARGE"] = 6;
+        values[valuesById[7] = "MODEL_NOT_READY"] = 7;
+        values[valuesById[8] = "OOM"] = 8;
+        values[valuesById[9] = "BACKPRESSURE_TIMEOUT"] = 9;
+        values[valuesById[10] = "INTERNAL"] = 10;
+        return values;
+    })();
+
     ai.Request = (function() {
 
         /**
@@ -325,7 +562,7 @@ $root.ai = (function() {
          * @interface IRequest
          * @property {ai.IInit|null} [init] Request init
          * @property {ai.IFrame|null} [frame] Request frame
-         * @property {ai.IShutdown|null} [shutdown] Request shutdown
+         * @property {ai.IEnd|null} [end] Request end
          */
 
         /**
@@ -360,24 +597,24 @@ $root.ai = (function() {
         Request.prototype.frame = null;
 
         /**
-         * Request shutdown.
-         * @member {ai.IShutdown|null|undefined} shutdown
+         * Request end.
+         * @member {ai.IEnd|null|undefined} end
          * @memberof ai.Request
          * @instance
          */
-        Request.prototype.shutdown = null;
+        Request.prototype.end = null;
 
         // OneOf field names bound to virtual getters and setters
         var $oneOfFields;
 
         /**
          * Request kind.
-         * @member {"init"|"frame"|"shutdown"|undefined} kind
+         * @member {"init"|"frame"|"end"|undefined} kind
          * @memberof ai.Request
          * @instance
          */
         Object.defineProperty(Request.prototype, "kind", {
-            get: $util.oneOfGetter($oneOfFields = ["init", "frame", "shutdown"]),
+            get: $util.oneOfGetter($oneOfFields = ["init", "frame", "end"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -409,8 +646,8 @@ $root.ai = (function() {
                 $root.ai.Init.encode(message.init, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
             if (message.frame != null && Object.hasOwnProperty.call(message, "frame"))
                 $root.ai.Frame.encode(message.frame, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
-            if (message.shutdown != null && Object.hasOwnProperty.call(message, "shutdown"))
-                $root.ai.Shutdown.encode(message.shutdown, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+            if (message.end != null && Object.hasOwnProperty.call(message, "end"))
+                $root.ai.End.encode(message.end, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
             return writer;
         };
 
@@ -456,7 +693,7 @@ $root.ai = (function() {
                         break;
                     }
                 case 3: {
-                        message.shutdown = $root.ai.Shutdown.decode(reader, reader.uint32());
+                        message.end = $root.ai.End.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -513,14 +750,14 @@ $root.ai = (function() {
                         return "frame." + error;
                 }
             }
-            if (message.shutdown != null && message.hasOwnProperty("shutdown")) {
+            if (message.end != null && message.hasOwnProperty("end")) {
                 if (properties.kind === 1)
                     return "kind: multiple values";
                 properties.kind = 1;
                 {
-                    var error = $root.ai.Shutdown.verify(message.shutdown);
+                    var error = $root.ai.End.verify(message.end);
                     if (error)
-                        return "shutdown." + error;
+                        return "end." + error;
                 }
             }
             return null;
@@ -548,10 +785,10 @@ $root.ai = (function() {
                     throw TypeError(".ai.Request.frame: object expected");
                 message.frame = $root.ai.Frame.fromObject(object.frame);
             }
-            if (object.shutdown != null) {
-                if (typeof object.shutdown !== "object")
-                    throw TypeError(".ai.Request.shutdown: object expected");
-                message.shutdown = $root.ai.Shutdown.fromObject(object.shutdown);
+            if (object.end != null) {
+                if (typeof object.end !== "object")
+                    throw TypeError(".ai.Request.end: object expected");
+                message.end = $root.ai.End.fromObject(object.end);
             }
             return message;
         };
@@ -579,10 +816,10 @@ $root.ai = (function() {
                 if (options.oneofs)
                     object.kind = "frame";
             }
-            if (message.shutdown != null && message.hasOwnProperty("shutdown")) {
-                object.shutdown = $root.ai.Shutdown.toObject(message.shutdown, options);
+            if (message.end != null && message.hasOwnProperty("end")) {
+                object.end = $root.ai.End.toObject(message.end, options);
                 if (options.oneofs)
-                    object.kind = "shutdown";
+                    object.kind = "end";
             }
             return object;
         };
@@ -622,11 +859,8 @@ $root.ai = (function() {
          * Properties of an Init.
          * @memberof ai
          * @interface IInit
-         * @property {string|null} [modelPath] Init modelPath
-         * @property {number|null} [width] Init width
-         * @property {number|null} [height] Init height
-         * @property {number|null} [confThreshold] Init confThreshold
-         * @property {Array.<number>|null} [classesFilter] Init classesFilter
+         * @property {string|null} [model] Init model
+         * @property {ai.ICapabilities|null} [caps] Init caps
          */
 
         /**
@@ -638,7 +872,6 @@ $root.ai = (function() {
          * @param {ai.IInit=} [properties] Properties to set
          */
         function Init(properties) {
-            this.classesFilter = [];
             if (properties)
                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                     if (properties[keys[i]] != null)
@@ -646,44 +879,20 @@ $root.ai = (function() {
         }
 
         /**
-         * Init modelPath.
-         * @member {string} modelPath
+         * Init model.
+         * @member {string} model
          * @memberof ai.Init
          * @instance
          */
-        Init.prototype.modelPath = "";
+        Init.prototype.model = "";
 
         /**
-         * Init width.
-         * @member {number} width
+         * Init caps.
+         * @member {ai.ICapabilities|null|undefined} caps
          * @memberof ai.Init
          * @instance
          */
-        Init.prototype.width = 0;
-
-        /**
-         * Init height.
-         * @member {number} height
-         * @memberof ai.Init
-         * @instance
-         */
-        Init.prototype.height = 0;
-
-        /**
-         * Init confThreshold.
-         * @member {number} confThreshold
-         * @memberof ai.Init
-         * @instance
-         */
-        Init.prototype.confThreshold = 0;
-
-        /**
-         * Init classesFilter.
-         * @member {Array.<number>} classesFilter
-         * @memberof ai.Init
-         * @instance
-         */
-        Init.prototype.classesFilter = $util.emptyArray;
+        Init.prototype.caps = null;
 
         /**
          * Creates a new Init instance using the specified properties.
@@ -709,20 +918,10 @@ $root.ai = (function() {
         Init.encode = function encode(message, writer) {
             if (!writer)
                 writer = $Writer.create();
-            if (message.modelPath != null && Object.hasOwnProperty.call(message, "modelPath"))
-                writer.uint32(/* id 1, wireType 2 =*/10).string(message.modelPath);
-            if (message.width != null && Object.hasOwnProperty.call(message, "width"))
-                writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.width);
-            if (message.height != null && Object.hasOwnProperty.call(message, "height"))
-                writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.height);
-            if (message.confThreshold != null && Object.hasOwnProperty.call(message, "confThreshold"))
-                writer.uint32(/* id 4, wireType 5 =*/37).float(message.confThreshold);
-            if (message.classesFilter != null && message.classesFilter.length) {
-                writer.uint32(/* id 5, wireType 2 =*/42).fork();
-                for (var i = 0; i < message.classesFilter.length; ++i)
-                    writer.uint32(message.classesFilter[i]);
-                writer.ldelim();
-            }
+            if (message.model != null && Object.hasOwnProperty.call(message, "model"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.model);
+            if (message.caps != null && Object.hasOwnProperty.call(message, "caps"))
+                $root.ai.Capabilities.encode(message.caps, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
             return writer;
         };
 
@@ -760,30 +959,11 @@ $root.ai = (function() {
                     break;
                 switch (tag >>> 3) {
                 case 1: {
-                        message.modelPath = reader.string();
+                        message.model = reader.string();
                         break;
                     }
                 case 2: {
-                        message.width = reader.uint32();
-                        break;
-                    }
-                case 3: {
-                        message.height = reader.uint32();
-                        break;
-                    }
-                case 4: {
-                        message.confThreshold = reader.float();
-                        break;
-                    }
-                case 5: {
-                        if (!(message.classesFilter && message.classesFilter.length))
-                            message.classesFilter = [];
-                        if ((tag & 7) === 2) {
-                            var end2 = reader.uint32() + reader.pos;
-                            while (reader.pos < end2)
-                                message.classesFilter.push(reader.uint32());
-                        } else
-                            message.classesFilter.push(reader.uint32());
+                        message.caps = $root.ai.Capabilities.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -821,24 +1001,13 @@ $root.ai = (function() {
         Init.verify = function verify(message) {
             if (typeof message !== "object" || message === null)
                 return "object expected";
-            if (message.modelPath != null && message.hasOwnProperty("modelPath"))
-                if (!$util.isString(message.modelPath))
-                    return "modelPath: string expected";
-            if (message.width != null && message.hasOwnProperty("width"))
-                if (!$util.isInteger(message.width))
-                    return "width: integer expected";
-            if (message.height != null && message.hasOwnProperty("height"))
-                if (!$util.isInteger(message.height))
-                    return "height: integer expected";
-            if (message.confThreshold != null && message.hasOwnProperty("confThreshold"))
-                if (typeof message.confThreshold !== "number")
-                    return "confThreshold: number expected";
-            if (message.classesFilter != null && message.hasOwnProperty("classesFilter")) {
-                if (!Array.isArray(message.classesFilter))
-                    return "classesFilter: array expected";
-                for (var i = 0; i < message.classesFilter.length; ++i)
-                    if (!$util.isInteger(message.classesFilter[i]))
-                        return "classesFilter: integer[] expected";
+            if (message.model != null && message.hasOwnProperty("model"))
+                if (!$util.isString(message.model))
+                    return "model: string expected";
+            if (message.caps != null && message.hasOwnProperty("caps")) {
+                var error = $root.ai.Capabilities.verify(message.caps);
+                if (error)
+                    return "caps." + error;
             }
             return null;
         };
@@ -855,20 +1024,12 @@ $root.ai = (function() {
             if (object instanceof $root.ai.Init)
                 return object;
             var message = new $root.ai.Init();
-            if (object.modelPath != null)
-                message.modelPath = String(object.modelPath);
-            if (object.width != null)
-                message.width = object.width >>> 0;
-            if (object.height != null)
-                message.height = object.height >>> 0;
-            if (object.confThreshold != null)
-                message.confThreshold = Number(object.confThreshold);
-            if (object.classesFilter) {
-                if (!Array.isArray(object.classesFilter))
-                    throw TypeError(".ai.Init.classesFilter: array expected");
-                message.classesFilter = [];
-                for (var i = 0; i < object.classesFilter.length; ++i)
-                    message.classesFilter[i] = object.classesFilter[i] >>> 0;
+            if (object.model != null)
+                message.model = String(object.model);
+            if (object.caps != null) {
+                if (typeof object.caps !== "object")
+                    throw TypeError(".ai.Init.caps: object expected");
+                message.caps = $root.ai.Capabilities.fromObject(object.caps);
             }
             return message;
         };
@@ -886,27 +1047,14 @@ $root.ai = (function() {
             if (!options)
                 options = {};
             var object = {};
-            if (options.arrays || options.defaults)
-                object.classesFilter = [];
             if (options.defaults) {
-                object.modelPath = "";
-                object.width = 0;
-                object.height = 0;
-                object.confThreshold = 0;
+                object.model = "";
+                object.caps = null;
             }
-            if (message.modelPath != null && message.hasOwnProperty("modelPath"))
-                object.modelPath = message.modelPath;
-            if (message.width != null && message.hasOwnProperty("width"))
-                object.width = message.width;
-            if (message.height != null && message.hasOwnProperty("height"))
-                object.height = message.height;
-            if (message.confThreshold != null && message.hasOwnProperty("confThreshold"))
-                object.confThreshold = options.json && !isFinite(message.confThreshold) ? String(message.confThreshold) : message.confThreshold;
-            if (message.classesFilter && message.classesFilter.length) {
-                object.classesFilter = [];
-                for (var j = 0; j < message.classesFilter.length; ++j)
-                    object.classesFilter[j] = message.classesFilter[j];
-            }
+            if (message.model != null && message.hasOwnProperty("model"))
+                object.model = message.model;
+            if (message.caps != null && message.hasOwnProperty("caps"))
+                object.caps = $root.ai.Capabilities.toObject(message.caps, options);
             return object;
         };
 
@@ -939,19 +1087,547 @@ $root.ai = (function() {
         return Init;
     })();
 
+    ai.Capabilities = (function() {
+
+        /**
+         * Properties of a Capabilities.
+         * @memberof ai
+         * @interface ICapabilities
+         * @property {Array.<ai.PixelFormat>|null} [acceptedPixelFormats] Capabilities acceptedPixelFormats
+         * @property {Array.<ai.Codec>|null} [acceptedCodecs] Capabilities acceptedCodecs
+         * @property {number|null} [maxWidth] Capabilities maxWidth
+         * @property {number|null} [maxHeight] Capabilities maxHeight
+         * @property {number|null} [maxInflight] Capabilities maxInflight
+         * @property {boolean|null} [supportsLetterbox] Capabilities supportsLetterbox
+         * @property {boolean|null} [supportsNormalize] Capabilities supportsNormalize
+         * @property {string|null} [preferredLayout] Capabilities preferredLayout
+         * @property {string|null} [preferredDtype] Capabilities preferredDtype
+         * @property {number|null} [desiredMaxFrameBytes] Capabilities desiredMaxFrameBytes
+         */
+
+        /**
+         * Constructs a new Capabilities.
+         * @memberof ai
+         * @classdesc Represents a Capabilities.
+         * @implements ICapabilities
+         * @constructor
+         * @param {ai.ICapabilities=} [properties] Properties to set
+         */
+        function Capabilities(properties) {
+            this.acceptedPixelFormats = [];
+            this.acceptedCodecs = [];
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * Capabilities acceptedPixelFormats.
+         * @member {Array.<ai.PixelFormat>} acceptedPixelFormats
+         * @memberof ai.Capabilities
+         * @instance
+         */
+        Capabilities.prototype.acceptedPixelFormats = $util.emptyArray;
+
+        /**
+         * Capabilities acceptedCodecs.
+         * @member {Array.<ai.Codec>} acceptedCodecs
+         * @memberof ai.Capabilities
+         * @instance
+         */
+        Capabilities.prototype.acceptedCodecs = $util.emptyArray;
+
+        /**
+         * Capabilities maxWidth.
+         * @member {number} maxWidth
+         * @memberof ai.Capabilities
+         * @instance
+         */
+        Capabilities.prototype.maxWidth = 0;
+
+        /**
+         * Capabilities maxHeight.
+         * @member {number} maxHeight
+         * @memberof ai.Capabilities
+         * @instance
+         */
+        Capabilities.prototype.maxHeight = 0;
+
+        /**
+         * Capabilities maxInflight.
+         * @member {number} maxInflight
+         * @memberof ai.Capabilities
+         * @instance
+         */
+        Capabilities.prototype.maxInflight = 0;
+
+        /**
+         * Capabilities supportsLetterbox.
+         * @member {boolean} supportsLetterbox
+         * @memberof ai.Capabilities
+         * @instance
+         */
+        Capabilities.prototype.supportsLetterbox = false;
+
+        /**
+         * Capabilities supportsNormalize.
+         * @member {boolean} supportsNormalize
+         * @memberof ai.Capabilities
+         * @instance
+         */
+        Capabilities.prototype.supportsNormalize = false;
+
+        /**
+         * Capabilities preferredLayout.
+         * @member {string} preferredLayout
+         * @memberof ai.Capabilities
+         * @instance
+         */
+        Capabilities.prototype.preferredLayout = "";
+
+        /**
+         * Capabilities preferredDtype.
+         * @member {string} preferredDtype
+         * @memberof ai.Capabilities
+         * @instance
+         */
+        Capabilities.prototype.preferredDtype = "";
+
+        /**
+         * Capabilities desiredMaxFrameBytes.
+         * @member {number} desiredMaxFrameBytes
+         * @memberof ai.Capabilities
+         * @instance
+         */
+        Capabilities.prototype.desiredMaxFrameBytes = 0;
+
+        /**
+         * Creates a new Capabilities instance using the specified properties.
+         * @function create
+         * @memberof ai.Capabilities
+         * @static
+         * @param {ai.ICapabilities=} [properties] Properties to set
+         * @returns {ai.Capabilities} Capabilities instance
+         */
+        Capabilities.create = function create(properties) {
+            return new Capabilities(properties);
+        };
+
+        /**
+         * Encodes the specified Capabilities message. Does not implicitly {@link ai.Capabilities.verify|verify} messages.
+         * @function encode
+         * @memberof ai.Capabilities
+         * @static
+         * @param {ai.ICapabilities} message Capabilities message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        Capabilities.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.acceptedPixelFormats != null && message.acceptedPixelFormats.length) {
+                writer.uint32(/* id 1, wireType 2 =*/10).fork();
+                for (var i = 0; i < message.acceptedPixelFormats.length; ++i)
+                    writer.int32(message.acceptedPixelFormats[i]);
+                writer.ldelim();
+            }
+            if (message.acceptedCodecs != null && message.acceptedCodecs.length) {
+                writer.uint32(/* id 2, wireType 2 =*/18).fork();
+                for (var i = 0; i < message.acceptedCodecs.length; ++i)
+                    writer.int32(message.acceptedCodecs[i]);
+                writer.ldelim();
+            }
+            if (message.maxWidth != null && Object.hasOwnProperty.call(message, "maxWidth"))
+                writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.maxWidth);
+            if (message.maxHeight != null && Object.hasOwnProperty.call(message, "maxHeight"))
+                writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.maxHeight);
+            if (message.maxInflight != null && Object.hasOwnProperty.call(message, "maxInflight"))
+                writer.uint32(/* id 5, wireType 0 =*/40).uint32(message.maxInflight);
+            if (message.supportsLetterbox != null && Object.hasOwnProperty.call(message, "supportsLetterbox"))
+                writer.uint32(/* id 6, wireType 0 =*/48).bool(message.supportsLetterbox);
+            if (message.supportsNormalize != null && Object.hasOwnProperty.call(message, "supportsNormalize"))
+                writer.uint32(/* id 7, wireType 0 =*/56).bool(message.supportsNormalize);
+            if (message.preferredLayout != null && Object.hasOwnProperty.call(message, "preferredLayout"))
+                writer.uint32(/* id 8, wireType 2 =*/66).string(message.preferredLayout);
+            if (message.preferredDtype != null && Object.hasOwnProperty.call(message, "preferredDtype"))
+                writer.uint32(/* id 9, wireType 2 =*/74).string(message.preferredDtype);
+            if (message.desiredMaxFrameBytes != null && Object.hasOwnProperty.call(message, "desiredMaxFrameBytes"))
+                writer.uint32(/* id 10, wireType 0 =*/80).uint32(message.desiredMaxFrameBytes);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified Capabilities message, length delimited. Does not implicitly {@link ai.Capabilities.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof ai.Capabilities
+         * @static
+         * @param {ai.ICapabilities} message Capabilities message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        Capabilities.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a Capabilities message from the specified reader or buffer.
+         * @function decode
+         * @memberof ai.Capabilities
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {ai.Capabilities} Capabilities
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        Capabilities.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.ai.Capabilities();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        if (!(message.acceptedPixelFormats && message.acceptedPixelFormats.length))
+                            message.acceptedPixelFormats = [];
+                        if ((tag & 7) === 2) {
+                            var end2 = reader.uint32() + reader.pos;
+                            while (reader.pos < end2)
+                                message.acceptedPixelFormats.push(reader.int32());
+                        } else
+                            message.acceptedPixelFormats.push(reader.int32());
+                        break;
+                    }
+                case 2: {
+                        if (!(message.acceptedCodecs && message.acceptedCodecs.length))
+                            message.acceptedCodecs = [];
+                        if ((tag & 7) === 2) {
+                            var end2 = reader.uint32() + reader.pos;
+                            while (reader.pos < end2)
+                                message.acceptedCodecs.push(reader.int32());
+                        } else
+                            message.acceptedCodecs.push(reader.int32());
+                        break;
+                    }
+                case 3: {
+                        message.maxWidth = reader.uint32();
+                        break;
+                    }
+                case 4: {
+                        message.maxHeight = reader.uint32();
+                        break;
+                    }
+                case 5: {
+                        message.maxInflight = reader.uint32();
+                        break;
+                    }
+                case 6: {
+                        message.supportsLetterbox = reader.bool();
+                        break;
+                    }
+                case 7: {
+                        message.supportsNormalize = reader.bool();
+                        break;
+                    }
+                case 8: {
+                        message.preferredLayout = reader.string();
+                        break;
+                    }
+                case 9: {
+                        message.preferredDtype = reader.string();
+                        break;
+                    }
+                case 10: {
+                        message.desiredMaxFrameBytes = reader.uint32();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a Capabilities message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof ai.Capabilities
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {ai.Capabilities} Capabilities
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        Capabilities.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a Capabilities message.
+         * @function verify
+         * @memberof ai.Capabilities
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        Capabilities.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.acceptedPixelFormats != null && message.hasOwnProperty("acceptedPixelFormats")) {
+                if (!Array.isArray(message.acceptedPixelFormats))
+                    return "acceptedPixelFormats: array expected";
+                for (var i = 0; i < message.acceptedPixelFormats.length; ++i)
+                    switch (message.acceptedPixelFormats[i]) {
+                    default:
+                        return "acceptedPixelFormats: enum value[] expected";
+                    case 0:
+                    case 1:
+                    case 2:
+                    case 3:
+                        break;
+                    }
+            }
+            if (message.acceptedCodecs != null && message.hasOwnProperty("acceptedCodecs")) {
+                if (!Array.isArray(message.acceptedCodecs))
+                    return "acceptedCodecs: array expected";
+                for (var i = 0; i < message.acceptedCodecs.length; ++i)
+                    switch (message.acceptedCodecs[i]) {
+                    default:
+                        return "acceptedCodecs: enum value[] expected";
+                    case 0:
+                    case 1:
+                    case 2:
+                    case 3:
+                        break;
+                    }
+            }
+            if (message.maxWidth != null && message.hasOwnProperty("maxWidth"))
+                if (!$util.isInteger(message.maxWidth))
+                    return "maxWidth: integer expected";
+            if (message.maxHeight != null && message.hasOwnProperty("maxHeight"))
+                if (!$util.isInteger(message.maxHeight))
+                    return "maxHeight: integer expected";
+            if (message.maxInflight != null && message.hasOwnProperty("maxInflight"))
+                if (!$util.isInteger(message.maxInflight))
+                    return "maxInflight: integer expected";
+            if (message.supportsLetterbox != null && message.hasOwnProperty("supportsLetterbox"))
+                if (typeof message.supportsLetterbox !== "boolean")
+                    return "supportsLetterbox: boolean expected";
+            if (message.supportsNormalize != null && message.hasOwnProperty("supportsNormalize"))
+                if (typeof message.supportsNormalize !== "boolean")
+                    return "supportsNormalize: boolean expected";
+            if (message.preferredLayout != null && message.hasOwnProperty("preferredLayout"))
+                if (!$util.isString(message.preferredLayout))
+                    return "preferredLayout: string expected";
+            if (message.preferredDtype != null && message.hasOwnProperty("preferredDtype"))
+                if (!$util.isString(message.preferredDtype))
+                    return "preferredDtype: string expected";
+            if (message.desiredMaxFrameBytes != null && message.hasOwnProperty("desiredMaxFrameBytes"))
+                if (!$util.isInteger(message.desiredMaxFrameBytes))
+                    return "desiredMaxFrameBytes: integer expected";
+            return null;
+        };
+
+        /**
+         * Creates a Capabilities message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof ai.Capabilities
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {ai.Capabilities} Capabilities
+         */
+        Capabilities.fromObject = function fromObject(object) {
+            if (object instanceof $root.ai.Capabilities)
+                return object;
+            var message = new $root.ai.Capabilities();
+            if (object.acceptedPixelFormats) {
+                if (!Array.isArray(object.acceptedPixelFormats))
+                    throw TypeError(".ai.Capabilities.acceptedPixelFormats: array expected");
+                message.acceptedPixelFormats = [];
+                for (var i = 0; i < object.acceptedPixelFormats.length; ++i)
+                    switch (object.acceptedPixelFormats[i]) {
+                    default:
+                        if (typeof object.acceptedPixelFormats[i] === "number") {
+                            message.acceptedPixelFormats[i] = object.acceptedPixelFormats[i];
+                            break;
+                        }
+                    case "PF_UNKNOWN":
+                    case 0:
+                        message.acceptedPixelFormats[i] = 0;
+                        break;
+                    case "PF_I420":
+                    case 1:
+                        message.acceptedPixelFormats[i] = 1;
+                        break;
+                    case "PF_NV12":
+                    case 2:
+                        message.acceptedPixelFormats[i] = 2;
+                        break;
+                    case "PF_RGB8":
+                    case 3:
+                        message.acceptedPixelFormats[i] = 3;
+                        break;
+                    }
+            }
+            if (object.acceptedCodecs) {
+                if (!Array.isArray(object.acceptedCodecs))
+                    throw TypeError(".ai.Capabilities.acceptedCodecs: array expected");
+                message.acceptedCodecs = [];
+                for (var i = 0; i < object.acceptedCodecs.length; ++i)
+                    switch (object.acceptedCodecs[i]) {
+                    default:
+                        if (typeof object.acceptedCodecs[i] === "number") {
+                            message.acceptedCodecs[i] = object.acceptedCodecs[i];
+                            break;
+                        }
+                    case "CODEC_UNKNOWN":
+                    case 0:
+                        message.acceptedCodecs[i] = 0;
+                        break;
+                    case "CODEC_NONE":
+                    case 1:
+                        message.acceptedCodecs[i] = 1;
+                        break;
+                    case "CODEC_JPEG":
+                    case 2:
+                        message.acceptedCodecs[i] = 2;
+                        break;
+                    case "CODEC_H264":
+                    case 3:
+                        message.acceptedCodecs[i] = 3;
+                        break;
+                    }
+            }
+            if (object.maxWidth != null)
+                message.maxWidth = object.maxWidth >>> 0;
+            if (object.maxHeight != null)
+                message.maxHeight = object.maxHeight >>> 0;
+            if (object.maxInflight != null)
+                message.maxInflight = object.maxInflight >>> 0;
+            if (object.supportsLetterbox != null)
+                message.supportsLetterbox = Boolean(object.supportsLetterbox);
+            if (object.supportsNormalize != null)
+                message.supportsNormalize = Boolean(object.supportsNormalize);
+            if (object.preferredLayout != null)
+                message.preferredLayout = String(object.preferredLayout);
+            if (object.preferredDtype != null)
+                message.preferredDtype = String(object.preferredDtype);
+            if (object.desiredMaxFrameBytes != null)
+                message.desiredMaxFrameBytes = object.desiredMaxFrameBytes >>> 0;
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a Capabilities message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof ai.Capabilities
+         * @static
+         * @param {ai.Capabilities} message Capabilities
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        Capabilities.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.arrays || options.defaults) {
+                object.acceptedPixelFormats = [];
+                object.acceptedCodecs = [];
+            }
+            if (options.defaults) {
+                object.maxWidth = 0;
+                object.maxHeight = 0;
+                object.maxInflight = 0;
+                object.supportsLetterbox = false;
+                object.supportsNormalize = false;
+                object.preferredLayout = "";
+                object.preferredDtype = "";
+                object.desiredMaxFrameBytes = 0;
+            }
+            if (message.acceptedPixelFormats && message.acceptedPixelFormats.length) {
+                object.acceptedPixelFormats = [];
+                for (var j = 0; j < message.acceptedPixelFormats.length; ++j)
+                    object.acceptedPixelFormats[j] = options.enums === String ? $root.ai.PixelFormat[message.acceptedPixelFormats[j]] === undefined ? message.acceptedPixelFormats[j] : $root.ai.PixelFormat[message.acceptedPixelFormats[j]] : message.acceptedPixelFormats[j];
+            }
+            if (message.acceptedCodecs && message.acceptedCodecs.length) {
+                object.acceptedCodecs = [];
+                for (var j = 0; j < message.acceptedCodecs.length; ++j)
+                    object.acceptedCodecs[j] = options.enums === String ? $root.ai.Codec[message.acceptedCodecs[j]] === undefined ? message.acceptedCodecs[j] : $root.ai.Codec[message.acceptedCodecs[j]] : message.acceptedCodecs[j];
+            }
+            if (message.maxWidth != null && message.hasOwnProperty("maxWidth"))
+                object.maxWidth = message.maxWidth;
+            if (message.maxHeight != null && message.hasOwnProperty("maxHeight"))
+                object.maxHeight = message.maxHeight;
+            if (message.maxInflight != null && message.hasOwnProperty("maxInflight"))
+                object.maxInflight = message.maxInflight;
+            if (message.supportsLetterbox != null && message.hasOwnProperty("supportsLetterbox"))
+                object.supportsLetterbox = message.supportsLetterbox;
+            if (message.supportsNormalize != null && message.hasOwnProperty("supportsNormalize"))
+                object.supportsNormalize = message.supportsNormalize;
+            if (message.preferredLayout != null && message.hasOwnProperty("preferredLayout"))
+                object.preferredLayout = message.preferredLayout;
+            if (message.preferredDtype != null && message.hasOwnProperty("preferredDtype"))
+                object.preferredDtype = message.preferredDtype;
+            if (message.desiredMaxFrameBytes != null && message.hasOwnProperty("desiredMaxFrameBytes"))
+                object.desiredMaxFrameBytes = message.desiredMaxFrameBytes;
+            return object;
+        };
+
+        /**
+         * Converts this Capabilities to JSON.
+         * @function toJSON
+         * @memberof ai.Capabilities
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        Capabilities.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for Capabilities
+         * @function getTypeUrl
+         * @memberof ai.Capabilities
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        Capabilities.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/ai.Capabilities";
+        };
+
+        return Capabilities;
+    })();
+
     ai.Frame = (function() {
 
         /**
          * Properties of a Frame.
          * @memberof ai
          * @interface IFrame
-         * @property {number|Long|null} [seq] Frame seq
-         * @property {string|null} [tsIso] Frame tsIso
+         * @property {number|Long|null} [frameId] Frame frameId
          * @property {number|Long|null} [tsMonoNs] Frame tsMonoNs
+         * @property {number|Long|null} [tsPdtNs] Frame tsPdtNs
+         * @property {number|Long|null} [tsUtcNs] Frame tsUtcNs
          * @property {number|null} [width] Frame width
          * @property {number|null} [height] Frame height
-         * @property {string|null} [pixFmt] Frame pixFmt
+         * @property {ai.PixelFormat|null} [pixelFormat] Frame pixelFormat
+         * @property {ai.Codec|null} [codec] Frame codec
+         * @property {Array.<ai.IPlane>|null} [planes] Frame planes
+         * @property {boolean|null} [isKeyframe] Frame isKeyframe
+         * @property {string|null} [colorSpace] Frame colorSpace
+         * @property {string|null} [colorRange] Frame colorRange
          * @property {Uint8Array|null} [data] Frame data
+         * @property {string|null} [sessionId] Frame sessionId
          */
 
         /**
@@ -963,6 +1639,7 @@ $root.ai = (function() {
          * @param {ai.IFrame=} [properties] Properties to set
          */
         function Frame(properties) {
+            this.planes = [];
             if (properties)
                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                     if (properties[keys[i]] != null)
@@ -970,20 +1647,12 @@ $root.ai = (function() {
         }
 
         /**
-         * Frame seq.
-         * @member {number|Long} seq
+         * Frame frameId.
+         * @member {number|Long} frameId
          * @memberof ai.Frame
          * @instance
          */
-        Frame.prototype.seq = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
-
-        /**
-         * Frame tsIso.
-         * @member {string} tsIso
-         * @memberof ai.Frame
-         * @instance
-         */
-        Frame.prototype.tsIso = "";
+        Frame.prototype.frameId = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
         /**
          * Frame tsMonoNs.
@@ -992,6 +1661,22 @@ $root.ai = (function() {
          * @instance
          */
         Frame.prototype.tsMonoNs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * Frame tsPdtNs.
+         * @member {number|Long} tsPdtNs
+         * @memberof ai.Frame
+         * @instance
+         */
+        Frame.prototype.tsPdtNs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * Frame tsUtcNs.
+         * @member {number|Long} tsUtcNs
+         * @memberof ai.Frame
+         * @instance
+         */
+        Frame.prototype.tsUtcNs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
         /**
          * Frame width.
@@ -1010,12 +1695,52 @@ $root.ai = (function() {
         Frame.prototype.height = 0;
 
         /**
-         * Frame pixFmt.
-         * @member {string} pixFmt
+         * Frame pixelFormat.
+         * @member {ai.PixelFormat} pixelFormat
          * @memberof ai.Frame
          * @instance
          */
-        Frame.prototype.pixFmt = "";
+        Frame.prototype.pixelFormat = 0;
+
+        /**
+         * Frame codec.
+         * @member {ai.Codec} codec
+         * @memberof ai.Frame
+         * @instance
+         */
+        Frame.prototype.codec = 0;
+
+        /**
+         * Frame planes.
+         * @member {Array.<ai.IPlane>} planes
+         * @memberof ai.Frame
+         * @instance
+         */
+        Frame.prototype.planes = $util.emptyArray;
+
+        /**
+         * Frame isKeyframe.
+         * @member {boolean} isKeyframe
+         * @memberof ai.Frame
+         * @instance
+         */
+        Frame.prototype.isKeyframe = false;
+
+        /**
+         * Frame colorSpace.
+         * @member {string} colorSpace
+         * @memberof ai.Frame
+         * @instance
+         */
+        Frame.prototype.colorSpace = "";
+
+        /**
+         * Frame colorRange.
+         * @member {string} colorRange
+         * @memberof ai.Frame
+         * @instance
+         */
+        Frame.prototype.colorRange = "";
 
         /**
          * Frame data.
@@ -1024,6 +1749,14 @@ $root.ai = (function() {
          * @instance
          */
         Frame.prototype.data = $util.newBuffer([]);
+
+        /**
+         * Frame sessionId.
+         * @member {string} sessionId
+         * @memberof ai.Frame
+         * @instance
+         */
+        Frame.prototype.sessionId = "";
 
         /**
          * Creates a new Frame instance using the specified properties.
@@ -1049,20 +1782,35 @@ $root.ai = (function() {
         Frame.encode = function encode(message, writer) {
             if (!writer)
                 writer = $Writer.create();
-            if (message.seq != null && Object.hasOwnProperty.call(message, "seq"))
-                writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.seq);
-            if (message.tsIso != null && Object.hasOwnProperty.call(message, "tsIso"))
-                writer.uint32(/* id 2, wireType 2 =*/18).string(message.tsIso);
+            if (message.frameId != null && Object.hasOwnProperty.call(message, "frameId"))
+                writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.frameId);
             if (message.tsMonoNs != null && Object.hasOwnProperty.call(message, "tsMonoNs"))
-                writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.tsMonoNs);
+                writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.tsMonoNs);
+            if (message.tsPdtNs != null && Object.hasOwnProperty.call(message, "tsPdtNs"))
+                writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.tsPdtNs);
+            if (message.tsUtcNs != null && Object.hasOwnProperty.call(message, "tsUtcNs"))
+                writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.tsUtcNs);
             if (message.width != null && Object.hasOwnProperty.call(message, "width"))
-                writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.width);
+                writer.uint32(/* id 5, wireType 0 =*/40).uint32(message.width);
             if (message.height != null && Object.hasOwnProperty.call(message, "height"))
-                writer.uint32(/* id 5, wireType 0 =*/40).uint32(message.height);
-            if (message.pixFmt != null && Object.hasOwnProperty.call(message, "pixFmt"))
-                writer.uint32(/* id 6, wireType 2 =*/50).string(message.pixFmt);
+                writer.uint32(/* id 6, wireType 0 =*/48).uint32(message.height);
+            if (message.pixelFormat != null && Object.hasOwnProperty.call(message, "pixelFormat"))
+                writer.uint32(/* id 7, wireType 0 =*/56).int32(message.pixelFormat);
+            if (message.codec != null && Object.hasOwnProperty.call(message, "codec"))
+                writer.uint32(/* id 8, wireType 0 =*/64).int32(message.codec);
+            if (message.planes != null && message.planes.length)
+                for (var i = 0; i < message.planes.length; ++i)
+                    $root.ai.Plane.encode(message.planes[i], writer.uint32(/* id 9, wireType 2 =*/74).fork()).ldelim();
+            if (message.isKeyframe != null && Object.hasOwnProperty.call(message, "isKeyframe"))
+                writer.uint32(/* id 10, wireType 0 =*/80).bool(message.isKeyframe);
+            if (message.colorSpace != null && Object.hasOwnProperty.call(message, "colorSpace"))
+                writer.uint32(/* id 11, wireType 2 =*/90).string(message.colorSpace);
+            if (message.colorRange != null && Object.hasOwnProperty.call(message, "colorRange"))
+                writer.uint32(/* id 12, wireType 2 =*/98).string(message.colorRange);
             if (message.data != null && Object.hasOwnProperty.call(message, "data"))
-                writer.uint32(/* id 7, wireType 2 =*/58).bytes(message.data);
+                writer.uint32(/* id 13, wireType 2 =*/106).bytes(message.data);
+            if (message.sessionId != null && Object.hasOwnProperty.call(message, "sessionId"))
+                writer.uint32(/* id 14, wireType 2 =*/114).string(message.sessionId);
             return writer;
         };
 
@@ -1100,31 +1848,61 @@ $root.ai = (function() {
                     break;
                 switch (tag >>> 3) {
                 case 1: {
-                        message.seq = reader.uint64();
+                        message.frameId = reader.uint64();
                         break;
                     }
                 case 2: {
-                        message.tsIso = reader.string();
-                        break;
-                    }
-                case 3: {
                         message.tsMonoNs = reader.uint64();
                         break;
                     }
+                case 3: {
+                        message.tsPdtNs = reader.uint64();
+                        break;
+                    }
                 case 4: {
-                        message.width = reader.uint32();
+                        message.tsUtcNs = reader.uint64();
                         break;
                     }
                 case 5: {
-                        message.height = reader.uint32();
+                        message.width = reader.uint32();
                         break;
                     }
                 case 6: {
-                        message.pixFmt = reader.string();
+                        message.height = reader.uint32();
                         break;
                     }
                 case 7: {
+                        message.pixelFormat = reader.int32();
+                        break;
+                    }
+                case 8: {
+                        message.codec = reader.int32();
+                        break;
+                    }
+                case 9: {
+                        if (!(message.planes && message.planes.length))
+                            message.planes = [];
+                        message.planes.push($root.ai.Plane.decode(reader, reader.uint32()));
+                        break;
+                    }
+                case 10: {
+                        message.isKeyframe = reader.bool();
+                        break;
+                    }
+                case 11: {
+                        message.colorSpace = reader.string();
+                        break;
+                    }
+                case 12: {
+                        message.colorRange = reader.string();
+                        break;
+                    }
+                case 13: {
                         message.data = reader.bytes();
+                        break;
+                    }
+                case 14: {
+                        message.sessionId = reader.string();
                         break;
                     }
                 default:
@@ -1162,27 +1940,68 @@ $root.ai = (function() {
         Frame.verify = function verify(message) {
             if (typeof message !== "object" || message === null)
                 return "object expected";
-            if (message.seq != null && message.hasOwnProperty("seq"))
-                if (!$util.isInteger(message.seq) && !(message.seq && $util.isInteger(message.seq.low) && $util.isInteger(message.seq.high)))
-                    return "seq: integer|Long expected";
-            if (message.tsIso != null && message.hasOwnProperty("tsIso"))
-                if (!$util.isString(message.tsIso))
-                    return "tsIso: string expected";
+            if (message.frameId != null && message.hasOwnProperty("frameId"))
+                if (!$util.isInteger(message.frameId) && !(message.frameId && $util.isInteger(message.frameId.low) && $util.isInteger(message.frameId.high)))
+                    return "frameId: integer|Long expected";
             if (message.tsMonoNs != null && message.hasOwnProperty("tsMonoNs"))
                 if (!$util.isInteger(message.tsMonoNs) && !(message.tsMonoNs && $util.isInteger(message.tsMonoNs.low) && $util.isInteger(message.tsMonoNs.high)))
                     return "tsMonoNs: integer|Long expected";
+            if (message.tsPdtNs != null && message.hasOwnProperty("tsPdtNs"))
+                if (!$util.isInteger(message.tsPdtNs) && !(message.tsPdtNs && $util.isInteger(message.tsPdtNs.low) && $util.isInteger(message.tsPdtNs.high)))
+                    return "tsPdtNs: integer|Long expected";
+            if (message.tsUtcNs != null && message.hasOwnProperty("tsUtcNs"))
+                if (!$util.isInteger(message.tsUtcNs) && !(message.tsUtcNs && $util.isInteger(message.tsUtcNs.low) && $util.isInteger(message.tsUtcNs.high)))
+                    return "tsUtcNs: integer|Long expected";
             if (message.width != null && message.hasOwnProperty("width"))
                 if (!$util.isInteger(message.width))
                     return "width: integer expected";
             if (message.height != null && message.hasOwnProperty("height"))
                 if (!$util.isInteger(message.height))
                     return "height: integer expected";
-            if (message.pixFmt != null && message.hasOwnProperty("pixFmt"))
-                if (!$util.isString(message.pixFmt))
-                    return "pixFmt: string expected";
+            if (message.pixelFormat != null && message.hasOwnProperty("pixelFormat"))
+                switch (message.pixelFormat) {
+                default:
+                    return "pixelFormat: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                case 3:
+                    break;
+                }
+            if (message.codec != null && message.hasOwnProperty("codec"))
+                switch (message.codec) {
+                default:
+                    return "codec: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                case 3:
+                    break;
+                }
+            if (message.planes != null && message.hasOwnProperty("planes")) {
+                if (!Array.isArray(message.planes))
+                    return "planes: array expected";
+                for (var i = 0; i < message.planes.length; ++i) {
+                    var error = $root.ai.Plane.verify(message.planes[i]);
+                    if (error)
+                        return "planes." + error;
+                }
+            }
+            if (message.isKeyframe != null && message.hasOwnProperty("isKeyframe"))
+                if (typeof message.isKeyframe !== "boolean")
+                    return "isKeyframe: boolean expected";
+            if (message.colorSpace != null && message.hasOwnProperty("colorSpace"))
+                if (!$util.isString(message.colorSpace))
+                    return "colorSpace: string expected";
+            if (message.colorRange != null && message.hasOwnProperty("colorRange"))
+                if (!$util.isString(message.colorRange))
+                    return "colorRange: string expected";
             if (message.data != null && message.hasOwnProperty("data"))
                 if (!(message.data && typeof message.data.length === "number" || $util.isString(message.data)))
                     return "data: buffer expected";
+            if (message.sessionId != null && message.hasOwnProperty("sessionId"))
+                if (!$util.isString(message.sessionId))
+                    return "sessionId: string expected";
             return null;
         };
 
@@ -1198,17 +2017,15 @@ $root.ai = (function() {
             if (object instanceof $root.ai.Frame)
                 return object;
             var message = new $root.ai.Frame();
-            if (object.seq != null)
+            if (object.frameId != null)
                 if ($util.Long)
-                    (message.seq = $util.Long.fromValue(object.seq)).unsigned = true;
-                else if (typeof object.seq === "string")
-                    message.seq = parseInt(object.seq, 10);
-                else if (typeof object.seq === "number")
-                    message.seq = object.seq;
-                else if (typeof object.seq === "object")
-                    message.seq = new $util.LongBits(object.seq.low >>> 0, object.seq.high >>> 0).toNumber(true);
-            if (object.tsIso != null)
-                message.tsIso = String(object.tsIso);
+                    (message.frameId = $util.Long.fromValue(object.frameId)).unsigned = true;
+                else if (typeof object.frameId === "string")
+                    message.frameId = parseInt(object.frameId, 10);
+                else if (typeof object.frameId === "number")
+                    message.frameId = object.frameId;
+                else if (typeof object.frameId === "object")
+                    message.frameId = new $util.LongBits(object.frameId.low >>> 0, object.frameId.high >>> 0).toNumber(true);
             if (object.tsMonoNs != null)
                 if ($util.Long)
                     (message.tsMonoNs = $util.Long.fromValue(object.tsMonoNs)).unsigned = true;
@@ -1218,17 +2035,99 @@ $root.ai = (function() {
                     message.tsMonoNs = object.tsMonoNs;
                 else if (typeof object.tsMonoNs === "object")
                     message.tsMonoNs = new $util.LongBits(object.tsMonoNs.low >>> 0, object.tsMonoNs.high >>> 0).toNumber(true);
+            if (object.tsPdtNs != null)
+                if ($util.Long)
+                    (message.tsPdtNs = $util.Long.fromValue(object.tsPdtNs)).unsigned = true;
+                else if (typeof object.tsPdtNs === "string")
+                    message.tsPdtNs = parseInt(object.tsPdtNs, 10);
+                else if (typeof object.tsPdtNs === "number")
+                    message.tsPdtNs = object.tsPdtNs;
+                else if (typeof object.tsPdtNs === "object")
+                    message.tsPdtNs = new $util.LongBits(object.tsPdtNs.low >>> 0, object.tsPdtNs.high >>> 0).toNumber(true);
+            if (object.tsUtcNs != null)
+                if ($util.Long)
+                    (message.tsUtcNs = $util.Long.fromValue(object.tsUtcNs)).unsigned = true;
+                else if (typeof object.tsUtcNs === "string")
+                    message.tsUtcNs = parseInt(object.tsUtcNs, 10);
+                else if (typeof object.tsUtcNs === "number")
+                    message.tsUtcNs = object.tsUtcNs;
+                else if (typeof object.tsUtcNs === "object")
+                    message.tsUtcNs = new $util.LongBits(object.tsUtcNs.low >>> 0, object.tsUtcNs.high >>> 0).toNumber(true);
             if (object.width != null)
                 message.width = object.width >>> 0;
             if (object.height != null)
                 message.height = object.height >>> 0;
-            if (object.pixFmt != null)
-                message.pixFmt = String(object.pixFmt);
+            switch (object.pixelFormat) {
+            default:
+                if (typeof object.pixelFormat === "number") {
+                    message.pixelFormat = object.pixelFormat;
+                    break;
+                }
+                break;
+            case "PF_UNKNOWN":
+            case 0:
+                message.pixelFormat = 0;
+                break;
+            case "PF_I420":
+            case 1:
+                message.pixelFormat = 1;
+                break;
+            case "PF_NV12":
+            case 2:
+                message.pixelFormat = 2;
+                break;
+            case "PF_RGB8":
+            case 3:
+                message.pixelFormat = 3;
+                break;
+            }
+            switch (object.codec) {
+            default:
+                if (typeof object.codec === "number") {
+                    message.codec = object.codec;
+                    break;
+                }
+                break;
+            case "CODEC_UNKNOWN":
+            case 0:
+                message.codec = 0;
+                break;
+            case "CODEC_NONE":
+            case 1:
+                message.codec = 1;
+                break;
+            case "CODEC_JPEG":
+            case 2:
+                message.codec = 2;
+                break;
+            case "CODEC_H264":
+            case 3:
+                message.codec = 3;
+                break;
+            }
+            if (object.planes) {
+                if (!Array.isArray(object.planes))
+                    throw TypeError(".ai.Frame.planes: array expected");
+                message.planes = [];
+                for (var i = 0; i < object.planes.length; ++i) {
+                    if (typeof object.planes[i] !== "object")
+                        throw TypeError(".ai.Frame.planes: object expected");
+                    message.planes[i] = $root.ai.Plane.fromObject(object.planes[i]);
+                }
+            }
+            if (object.isKeyframe != null)
+                message.isKeyframe = Boolean(object.isKeyframe);
+            if (object.colorSpace != null)
+                message.colorSpace = String(object.colorSpace);
+            if (object.colorRange != null)
+                message.colorRange = String(object.colorRange);
             if (object.data != null)
                 if (typeof object.data === "string")
                     $util.base64.decode(object.data, message.data = $util.newBuffer($util.base64.length(object.data)), 0);
                 else if (object.data.length >= 0)
                     message.data = object.data;
+            if (object.sessionId != null)
+                message.sessionId = String(object.sessionId);
             return message;
         };
 
@@ -1245,21 +2144,36 @@ $root.ai = (function() {
             if (!options)
                 options = {};
             var object = {};
+            if (options.arrays || options.defaults)
+                object.planes = [];
             if (options.defaults) {
                 if ($util.Long) {
                     var long = new $util.Long(0, 0, true);
-                    object.seq = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                    object.frameId = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                 } else
-                    object.seq = options.longs === String ? "0" : 0;
-                object.tsIso = "";
+                    object.frameId = options.longs === String ? "0" : 0;
                 if ($util.Long) {
                     var long = new $util.Long(0, 0, true);
                     object.tsMonoNs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                 } else
                     object.tsMonoNs = options.longs === String ? "0" : 0;
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.tsPdtNs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.tsPdtNs = options.longs === String ? "0" : 0;
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.tsUtcNs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.tsUtcNs = options.longs === String ? "0" : 0;
                 object.width = 0;
                 object.height = 0;
-                object.pixFmt = "";
+                object.pixelFormat = options.enums === String ? "PF_UNKNOWN" : 0;
+                object.codec = options.enums === String ? "CODEC_UNKNOWN" : 0;
+                object.isKeyframe = false;
+                object.colorSpace = "";
+                object.colorRange = "";
                 if (options.bytes === String)
                     object.data = "";
                 else {
@@ -1267,27 +2181,51 @@ $root.ai = (function() {
                     if (options.bytes !== Array)
                         object.data = $util.newBuffer(object.data);
                 }
+                object.sessionId = "";
             }
-            if (message.seq != null && message.hasOwnProperty("seq"))
-                if (typeof message.seq === "number")
-                    object.seq = options.longs === String ? String(message.seq) : message.seq;
+            if (message.frameId != null && message.hasOwnProperty("frameId"))
+                if (typeof message.frameId === "number")
+                    object.frameId = options.longs === String ? String(message.frameId) : message.frameId;
                 else
-                    object.seq = options.longs === String ? $util.Long.prototype.toString.call(message.seq) : options.longs === Number ? new $util.LongBits(message.seq.low >>> 0, message.seq.high >>> 0).toNumber(true) : message.seq;
-            if (message.tsIso != null && message.hasOwnProperty("tsIso"))
-                object.tsIso = message.tsIso;
+                    object.frameId = options.longs === String ? $util.Long.prototype.toString.call(message.frameId) : options.longs === Number ? new $util.LongBits(message.frameId.low >>> 0, message.frameId.high >>> 0).toNumber(true) : message.frameId;
             if (message.tsMonoNs != null && message.hasOwnProperty("tsMonoNs"))
                 if (typeof message.tsMonoNs === "number")
                     object.tsMonoNs = options.longs === String ? String(message.tsMonoNs) : message.tsMonoNs;
                 else
                     object.tsMonoNs = options.longs === String ? $util.Long.prototype.toString.call(message.tsMonoNs) : options.longs === Number ? new $util.LongBits(message.tsMonoNs.low >>> 0, message.tsMonoNs.high >>> 0).toNumber(true) : message.tsMonoNs;
+            if (message.tsPdtNs != null && message.hasOwnProperty("tsPdtNs"))
+                if (typeof message.tsPdtNs === "number")
+                    object.tsPdtNs = options.longs === String ? String(message.tsPdtNs) : message.tsPdtNs;
+                else
+                    object.tsPdtNs = options.longs === String ? $util.Long.prototype.toString.call(message.tsPdtNs) : options.longs === Number ? new $util.LongBits(message.tsPdtNs.low >>> 0, message.tsPdtNs.high >>> 0).toNumber(true) : message.tsPdtNs;
+            if (message.tsUtcNs != null && message.hasOwnProperty("tsUtcNs"))
+                if (typeof message.tsUtcNs === "number")
+                    object.tsUtcNs = options.longs === String ? String(message.tsUtcNs) : message.tsUtcNs;
+                else
+                    object.tsUtcNs = options.longs === String ? $util.Long.prototype.toString.call(message.tsUtcNs) : options.longs === Number ? new $util.LongBits(message.tsUtcNs.low >>> 0, message.tsUtcNs.high >>> 0).toNumber(true) : message.tsUtcNs;
             if (message.width != null && message.hasOwnProperty("width"))
                 object.width = message.width;
             if (message.height != null && message.hasOwnProperty("height"))
                 object.height = message.height;
-            if (message.pixFmt != null && message.hasOwnProperty("pixFmt"))
-                object.pixFmt = message.pixFmt;
+            if (message.pixelFormat != null && message.hasOwnProperty("pixelFormat"))
+                object.pixelFormat = options.enums === String ? $root.ai.PixelFormat[message.pixelFormat] === undefined ? message.pixelFormat : $root.ai.PixelFormat[message.pixelFormat] : message.pixelFormat;
+            if (message.codec != null && message.hasOwnProperty("codec"))
+                object.codec = options.enums === String ? $root.ai.Codec[message.codec] === undefined ? message.codec : $root.ai.Codec[message.codec] : message.codec;
+            if (message.planes && message.planes.length) {
+                object.planes = [];
+                for (var j = 0; j < message.planes.length; ++j)
+                    object.planes[j] = $root.ai.Plane.toObject(message.planes[j], options);
+            }
+            if (message.isKeyframe != null && message.hasOwnProperty("isKeyframe"))
+                object.isKeyframe = message.isKeyframe;
+            if (message.colorSpace != null && message.hasOwnProperty("colorSpace"))
+                object.colorSpace = message.colorSpace;
+            if (message.colorRange != null && message.hasOwnProperty("colorRange"))
+                object.colorRange = message.colorRange;
             if (message.data != null && message.hasOwnProperty("data"))
                 object.data = options.bytes === String ? $util.base64.encode(message.data, 0, message.data.length) : options.bytes === Array ? Array.prototype.slice.call(message.data) : message.data;
+            if (message.sessionId != null && message.hasOwnProperty("sessionId"))
+                object.sessionId = message.sessionId;
             return object;
         };
 
@@ -1320,23 +2258,26 @@ $root.ai = (function() {
         return Frame;
     })();
 
-    ai.Shutdown = (function() {
+    ai.Plane = (function() {
 
         /**
-         * Properties of a Shutdown.
+         * Properties of a Plane.
          * @memberof ai
-         * @interface IShutdown
+         * @interface IPlane
+         * @property {number|null} [stride] Plane stride
+         * @property {number|null} [offset] Plane offset
+         * @property {number|null} [size] Plane size
          */
 
         /**
-         * Constructs a new Shutdown.
+         * Constructs a new Plane.
          * @memberof ai
-         * @classdesc Represents a Shutdown.
-         * @implements IShutdown
+         * @classdesc Represents a Plane.
+         * @implements IPlane
          * @constructor
-         * @param {ai.IShutdown=} [properties] Properties to set
+         * @param {ai.IPlane=} [properties] Properties to set
          */
-        function Shutdown(properties) {
+        function Plane(properties) {
             if (properties)
                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                     if (properties[keys[i]] != null)
@@ -1344,60 +2285,309 @@ $root.ai = (function() {
         }
 
         /**
-         * Creates a new Shutdown instance using the specified properties.
-         * @function create
-         * @memberof ai.Shutdown
-         * @static
-         * @param {ai.IShutdown=} [properties] Properties to set
-         * @returns {ai.Shutdown} Shutdown instance
+         * Plane stride.
+         * @member {number} stride
+         * @memberof ai.Plane
+         * @instance
          */
-        Shutdown.create = function create(properties) {
-            return new Shutdown(properties);
+        Plane.prototype.stride = 0;
+
+        /**
+         * Plane offset.
+         * @member {number} offset
+         * @memberof ai.Plane
+         * @instance
+         */
+        Plane.prototype.offset = 0;
+
+        /**
+         * Plane size.
+         * @member {number} size
+         * @memberof ai.Plane
+         * @instance
+         */
+        Plane.prototype.size = 0;
+
+        /**
+         * Creates a new Plane instance using the specified properties.
+         * @function create
+         * @memberof ai.Plane
+         * @static
+         * @param {ai.IPlane=} [properties] Properties to set
+         * @returns {ai.Plane} Plane instance
+         */
+        Plane.create = function create(properties) {
+            return new Plane(properties);
         };
 
         /**
-         * Encodes the specified Shutdown message. Does not implicitly {@link ai.Shutdown.verify|verify} messages.
+         * Encodes the specified Plane message. Does not implicitly {@link ai.Plane.verify|verify} messages.
          * @function encode
-         * @memberof ai.Shutdown
+         * @memberof ai.Plane
          * @static
-         * @param {ai.IShutdown} message Shutdown message or plain object to encode
+         * @param {ai.IPlane} message Plane message or plain object to encode
          * @param {$protobuf.Writer} [writer] Writer to encode to
          * @returns {$protobuf.Writer} Writer
          */
-        Shutdown.encode = function encode(message, writer) {
+        Plane.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.stride != null && Object.hasOwnProperty.call(message, "stride"))
+                writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.stride);
+            if (message.offset != null && Object.hasOwnProperty.call(message, "offset"))
+                writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.offset);
+            if (message.size != null && Object.hasOwnProperty.call(message, "size"))
+                writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.size);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified Plane message, length delimited. Does not implicitly {@link ai.Plane.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof ai.Plane
+         * @static
+         * @param {ai.IPlane} message Plane message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        Plane.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a Plane message from the specified reader or buffer.
+         * @function decode
+         * @memberof ai.Plane
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {ai.Plane} Plane
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        Plane.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.ai.Plane();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.stride = reader.uint32();
+                        break;
+                    }
+                case 2: {
+                        message.offset = reader.uint32();
+                        break;
+                    }
+                case 3: {
+                        message.size = reader.uint32();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a Plane message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof ai.Plane
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {ai.Plane} Plane
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        Plane.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a Plane message.
+         * @function verify
+         * @memberof ai.Plane
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        Plane.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.stride != null && message.hasOwnProperty("stride"))
+                if (!$util.isInteger(message.stride))
+                    return "stride: integer expected";
+            if (message.offset != null && message.hasOwnProperty("offset"))
+                if (!$util.isInteger(message.offset))
+                    return "offset: integer expected";
+            if (message.size != null && message.hasOwnProperty("size"))
+                if (!$util.isInteger(message.size))
+                    return "size: integer expected";
+            return null;
+        };
+
+        /**
+         * Creates a Plane message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof ai.Plane
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {ai.Plane} Plane
+         */
+        Plane.fromObject = function fromObject(object) {
+            if (object instanceof $root.ai.Plane)
+                return object;
+            var message = new $root.ai.Plane();
+            if (object.stride != null)
+                message.stride = object.stride >>> 0;
+            if (object.offset != null)
+                message.offset = object.offset >>> 0;
+            if (object.size != null)
+                message.size = object.size >>> 0;
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a Plane message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof ai.Plane
+         * @static
+         * @param {ai.Plane} message Plane
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        Plane.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.stride = 0;
+                object.offset = 0;
+                object.size = 0;
+            }
+            if (message.stride != null && message.hasOwnProperty("stride"))
+                object.stride = message.stride;
+            if (message.offset != null && message.hasOwnProperty("offset"))
+                object.offset = message.offset;
+            if (message.size != null && message.hasOwnProperty("size"))
+                object.size = message.size;
+            return object;
+        };
+
+        /**
+         * Converts this Plane to JSON.
+         * @function toJSON
+         * @memberof ai.Plane
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        Plane.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for Plane
+         * @function getTypeUrl
+         * @memberof ai.Plane
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        Plane.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/ai.Plane";
+        };
+
+        return Plane;
+    })();
+
+    ai.End = (function() {
+
+        /**
+         * Properties of an End.
+         * @memberof ai
+         * @interface IEnd
+         */
+
+        /**
+         * Constructs a new End.
+         * @memberof ai
+         * @classdesc Represents an End.
+         * @implements IEnd
+         * @constructor
+         * @param {ai.IEnd=} [properties] Properties to set
+         */
+        function End(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * Creates a new End instance using the specified properties.
+         * @function create
+         * @memberof ai.End
+         * @static
+         * @param {ai.IEnd=} [properties] Properties to set
+         * @returns {ai.End} End instance
+         */
+        End.create = function create(properties) {
+            return new End(properties);
+        };
+
+        /**
+         * Encodes the specified End message. Does not implicitly {@link ai.End.verify|verify} messages.
+         * @function encode
+         * @memberof ai.End
+         * @static
+         * @param {ai.IEnd} message End message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        End.encode = function encode(message, writer) {
             if (!writer)
                 writer = $Writer.create();
             return writer;
         };
 
         /**
-         * Encodes the specified Shutdown message, length delimited. Does not implicitly {@link ai.Shutdown.verify|verify} messages.
+         * Encodes the specified End message, length delimited. Does not implicitly {@link ai.End.verify|verify} messages.
          * @function encodeDelimited
-         * @memberof ai.Shutdown
+         * @memberof ai.End
          * @static
-         * @param {ai.IShutdown} message Shutdown message or plain object to encode
+         * @param {ai.IEnd} message End message or plain object to encode
          * @param {$protobuf.Writer} [writer] Writer to encode to
          * @returns {$protobuf.Writer} Writer
          */
-        Shutdown.encodeDelimited = function encodeDelimited(message, writer) {
+        End.encodeDelimited = function encodeDelimited(message, writer) {
             return this.encode(message, writer).ldelim();
         };
 
         /**
-         * Decodes a Shutdown message from the specified reader or buffer.
+         * Decodes an End message from the specified reader or buffer.
          * @function decode
-         * @memberof ai.Shutdown
+         * @memberof ai.End
          * @static
          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
          * @param {number} [length] Message length if known beforehand
-         * @returns {ai.Shutdown} Shutdown
+         * @returns {ai.End} End
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        Shutdown.decode = function decode(reader, length, error) {
+        End.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
-            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.ai.Shutdown();
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.ai.End();
             while (reader.pos < end) {
                 var tag = reader.uint32();
                 if (tag === error)
@@ -1412,89 +2602,89 @@ $root.ai = (function() {
         };
 
         /**
-         * Decodes a Shutdown message from the specified reader or buffer, length delimited.
+         * Decodes an End message from the specified reader or buffer, length delimited.
          * @function decodeDelimited
-         * @memberof ai.Shutdown
+         * @memberof ai.End
          * @static
          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-         * @returns {ai.Shutdown} Shutdown
+         * @returns {ai.End} End
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        Shutdown.decodeDelimited = function decodeDelimited(reader) {
+        End.decodeDelimited = function decodeDelimited(reader) {
             if (!(reader instanceof $Reader))
                 reader = new $Reader(reader);
             return this.decode(reader, reader.uint32());
         };
 
         /**
-         * Verifies a Shutdown message.
+         * Verifies an End message.
          * @function verify
-         * @memberof ai.Shutdown
+         * @memberof ai.End
          * @static
          * @param {Object.<string,*>} message Plain object to verify
          * @returns {string|null} `null` if valid, otherwise the reason why it is not
          */
-        Shutdown.verify = function verify(message) {
+        End.verify = function verify(message) {
             if (typeof message !== "object" || message === null)
                 return "object expected";
             return null;
         };
 
         /**
-         * Creates a Shutdown message from a plain object. Also converts values to their respective internal types.
+         * Creates an End message from a plain object. Also converts values to their respective internal types.
          * @function fromObject
-         * @memberof ai.Shutdown
+         * @memberof ai.End
          * @static
          * @param {Object.<string,*>} object Plain object
-         * @returns {ai.Shutdown} Shutdown
+         * @returns {ai.End} End
          */
-        Shutdown.fromObject = function fromObject(object) {
-            if (object instanceof $root.ai.Shutdown)
+        End.fromObject = function fromObject(object) {
+            if (object instanceof $root.ai.End)
                 return object;
-            return new $root.ai.Shutdown();
+            return new $root.ai.End();
         };
 
         /**
-         * Creates a plain object from a Shutdown message. Also converts values to other types if specified.
+         * Creates a plain object from an End message. Also converts values to other types if specified.
          * @function toObject
-         * @memberof ai.Shutdown
+         * @memberof ai.End
          * @static
-         * @param {ai.Shutdown} message Shutdown
+         * @param {ai.End} message End
          * @param {$protobuf.IConversionOptions} [options] Conversion options
          * @returns {Object.<string,*>} Plain object
          */
-        Shutdown.toObject = function toObject() {
+        End.toObject = function toObject() {
             return {};
         };
 
         /**
-         * Converts this Shutdown to JSON.
+         * Converts this End to JSON.
          * @function toJSON
-         * @memberof ai.Shutdown
+         * @memberof ai.End
          * @instance
          * @returns {Object.<string,*>} JSON object
          */
-        Shutdown.prototype.toJSON = function toJSON() {
+        End.prototype.toJSON = function toJSON() {
             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
         };
 
         /**
-         * Gets the default type url for Shutdown
+         * Gets the default type url for End
          * @function getTypeUrl
-         * @memberof ai.Shutdown
+         * @memberof ai.End
          * @static
          * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
          * @returns {string} The default type url
          */
-        Shutdown.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+        End.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
             if (typeUrlPrefix === undefined) {
                 typeUrlPrefix = "type.googleapis.com";
             }
-            return typeUrlPrefix + "/ai.Shutdown";
+            return typeUrlPrefix + "/ai.End";
         };
 
-        return Shutdown;
+        return End;
     })();
 
     ai.Response = (function() {
@@ -1504,7 +2694,7 @@ $root.ai = (function() {
          * @memberof ai
          * @interface IResponse
          * @property {ai.IInitOk|null} [initOk] Response initOk
-         * @property {ai.IReady|null} [ready] Response ready
+         * @property {ai.IWindowUpdate|null} [windowUpdate] Response windowUpdate
          * @property {ai.IResult|null} [result] Response result
          * @property {ai.IError|null} [error] Response error
          */
@@ -1533,12 +2723,12 @@ $root.ai = (function() {
         Response.prototype.initOk = null;
 
         /**
-         * Response ready.
-         * @member {ai.IReady|null|undefined} ready
+         * Response windowUpdate.
+         * @member {ai.IWindowUpdate|null|undefined} windowUpdate
          * @memberof ai.Response
          * @instance
          */
-        Response.prototype.ready = null;
+        Response.prototype.windowUpdate = null;
 
         /**
          * Response result.
@@ -1561,12 +2751,12 @@ $root.ai = (function() {
 
         /**
          * Response kind.
-         * @member {"initOk"|"ready"|"result"|"error"|undefined} kind
+         * @member {"initOk"|"windowUpdate"|"result"|"error"|undefined} kind
          * @memberof ai.Response
          * @instance
          */
         Object.defineProperty(Response.prototype, "kind", {
-            get: $util.oneOfGetter($oneOfFields = ["initOk", "ready", "result", "error"]),
+            get: $util.oneOfGetter($oneOfFields = ["initOk", "windowUpdate", "result", "error"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -1596,8 +2786,8 @@ $root.ai = (function() {
                 writer = $Writer.create();
             if (message.initOk != null && Object.hasOwnProperty.call(message, "initOk"))
                 $root.ai.InitOk.encode(message.initOk, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
-            if (message.ready != null && Object.hasOwnProperty.call(message, "ready"))
-                $root.ai.Ready.encode(message.ready, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+            if (message.windowUpdate != null && Object.hasOwnProperty.call(message, "windowUpdate"))
+                $root.ai.WindowUpdate.encode(message.windowUpdate, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
             if (message.result != null && Object.hasOwnProperty.call(message, "result"))
                 $root.ai.Result.encode(message.result, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
             if (message.error != null && Object.hasOwnProperty.call(message, "error"))
@@ -1643,7 +2833,7 @@ $root.ai = (function() {
                         break;
                     }
                 case 2: {
-                        message.ready = $root.ai.Ready.decode(reader, reader.uint32());
+                        message.windowUpdate = $root.ai.WindowUpdate.decode(reader, reader.uint32());
                         break;
                     }
                 case 3: {
@@ -1698,14 +2888,14 @@ $root.ai = (function() {
                         return "initOk." + error;
                 }
             }
-            if (message.ready != null && message.hasOwnProperty("ready")) {
+            if (message.windowUpdate != null && message.hasOwnProperty("windowUpdate")) {
                 if (properties.kind === 1)
                     return "kind: multiple values";
                 properties.kind = 1;
                 {
-                    var error = $root.ai.Ready.verify(message.ready);
+                    var error = $root.ai.WindowUpdate.verify(message.windowUpdate);
                     if (error)
-                        return "ready." + error;
+                        return "windowUpdate." + error;
                 }
             }
             if (message.result != null && message.hasOwnProperty("result")) {
@@ -1748,10 +2938,10 @@ $root.ai = (function() {
                     throw TypeError(".ai.Response.initOk: object expected");
                 message.initOk = $root.ai.InitOk.fromObject(object.initOk);
             }
-            if (object.ready != null) {
-                if (typeof object.ready !== "object")
-                    throw TypeError(".ai.Response.ready: object expected");
-                message.ready = $root.ai.Ready.fromObject(object.ready);
+            if (object.windowUpdate != null) {
+                if (typeof object.windowUpdate !== "object")
+                    throw TypeError(".ai.Response.windowUpdate: object expected");
+                message.windowUpdate = $root.ai.WindowUpdate.fromObject(object.windowUpdate);
             }
             if (object.result != null) {
                 if (typeof object.result !== "object")
@@ -1784,10 +2974,10 @@ $root.ai = (function() {
                 if (options.oneofs)
                     object.kind = "initOk";
             }
-            if (message.ready != null && message.hasOwnProperty("ready")) {
-                object.ready = $root.ai.Ready.toObject(message.ready, options);
+            if (message.windowUpdate != null && message.hasOwnProperty("windowUpdate")) {
+                object.windowUpdate = $root.ai.WindowUpdate.toObject(message.windowUpdate, options);
                 if (options.oneofs)
-                    object.kind = "ready";
+                    object.kind = "windowUpdate";
             }
             if (message.result != null && message.hasOwnProperty("result")) {
                 object.result = $root.ai.Result.toObject(message.result, options);
@@ -1837,13 +3027,8 @@ $root.ai = (function() {
          * Properties of an InitOk.
          * @memberof ai
          * @interface IInitOk
-         * @property {string|null} [runtime] InitOk runtime
-         * @property {string|null} [modelVersion] InitOk modelVersion
-         * @property {Array.<string>|null} [classNames] InitOk classNames
+         * @property {ai.IChosen|null} [chosen] InitOk chosen
          * @property {number|null} [maxFrameBytes] InitOk maxFrameBytes
-         * @property {Array.<string>|null} [providers] InitOk providers
-         * @property {string|null} [modelId] InitOk modelId
-         * @property {ai.IPreprocessing|null} [preproc] InitOk preproc
          */
 
         /**
@@ -1855,8 +3040,6 @@ $root.ai = (function() {
          * @param {ai.IInitOk=} [properties] Properties to set
          */
         function InitOk(properties) {
-            this.classNames = [];
-            this.providers = [];
             if (properties)
                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                     if (properties[keys[i]] != null)
@@ -1864,28 +3047,12 @@ $root.ai = (function() {
         }
 
         /**
-         * InitOk runtime.
-         * @member {string} runtime
+         * InitOk chosen.
+         * @member {ai.IChosen|null|undefined} chosen
          * @memberof ai.InitOk
          * @instance
          */
-        InitOk.prototype.runtime = "";
-
-        /**
-         * InitOk modelVersion.
-         * @member {string} modelVersion
-         * @memberof ai.InitOk
-         * @instance
-         */
-        InitOk.prototype.modelVersion = "";
-
-        /**
-         * InitOk classNames.
-         * @member {Array.<string>} classNames
-         * @memberof ai.InitOk
-         * @instance
-         */
-        InitOk.prototype.classNames = $util.emptyArray;
+        InitOk.prototype.chosen = null;
 
         /**
          * InitOk maxFrameBytes.
@@ -1894,30 +3061,6 @@ $root.ai = (function() {
          * @instance
          */
         InitOk.prototype.maxFrameBytes = 0;
-
-        /**
-         * InitOk providers.
-         * @member {Array.<string>} providers
-         * @memberof ai.InitOk
-         * @instance
-         */
-        InitOk.prototype.providers = $util.emptyArray;
-
-        /**
-         * InitOk modelId.
-         * @member {string} modelId
-         * @memberof ai.InitOk
-         * @instance
-         */
-        InitOk.prototype.modelId = "";
-
-        /**
-         * InitOk preproc.
-         * @member {ai.IPreprocessing|null|undefined} preproc
-         * @memberof ai.InitOk
-         * @instance
-         */
-        InitOk.prototype.preproc = null;
 
         /**
          * Creates a new InitOk instance using the specified properties.
@@ -1943,22 +3086,10 @@ $root.ai = (function() {
         InitOk.encode = function encode(message, writer) {
             if (!writer)
                 writer = $Writer.create();
-            if (message.runtime != null && Object.hasOwnProperty.call(message, "runtime"))
-                writer.uint32(/* id 1, wireType 2 =*/10).string(message.runtime);
-            if (message.modelVersion != null && Object.hasOwnProperty.call(message, "modelVersion"))
-                writer.uint32(/* id 2, wireType 2 =*/18).string(message.modelVersion);
-            if (message.classNames != null && message.classNames.length)
-                for (var i = 0; i < message.classNames.length; ++i)
-                    writer.uint32(/* id 3, wireType 2 =*/26).string(message.classNames[i]);
+            if (message.chosen != null && Object.hasOwnProperty.call(message, "chosen"))
+                $root.ai.Chosen.encode(message.chosen, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
             if (message.maxFrameBytes != null && Object.hasOwnProperty.call(message, "maxFrameBytes"))
-                writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.maxFrameBytes);
-            if (message.providers != null && message.providers.length)
-                for (var i = 0; i < message.providers.length; ++i)
-                    writer.uint32(/* id 5, wireType 2 =*/42).string(message.providers[i]);
-            if (message.modelId != null && Object.hasOwnProperty.call(message, "modelId"))
-                writer.uint32(/* id 6, wireType 2 =*/50).string(message.modelId);
-            if (message.preproc != null && Object.hasOwnProperty.call(message, "preproc"))
-                $root.ai.Preprocessing.encode(message.preproc, writer.uint32(/* id 7, wireType 2 =*/58).fork()).ldelim();
+                writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.maxFrameBytes);
             return writer;
         };
 
@@ -1996,35 +3127,11 @@ $root.ai = (function() {
                     break;
                 switch (tag >>> 3) {
                 case 1: {
-                        message.runtime = reader.string();
+                        message.chosen = $root.ai.Chosen.decode(reader, reader.uint32());
                         break;
                     }
                 case 2: {
-                        message.modelVersion = reader.string();
-                        break;
-                    }
-                case 3: {
-                        if (!(message.classNames && message.classNames.length))
-                            message.classNames = [];
-                        message.classNames.push(reader.string());
-                        break;
-                    }
-                case 4: {
                         message.maxFrameBytes = reader.uint32();
-                        break;
-                    }
-                case 5: {
-                        if (!(message.providers && message.providers.length))
-                            message.providers = [];
-                        message.providers.push(reader.string());
-                        break;
-                    }
-                case 6: {
-                        message.modelId = reader.string();
-                        break;
-                    }
-                case 7: {
-                        message.preproc = $root.ai.Preprocessing.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -2062,37 +3169,14 @@ $root.ai = (function() {
         InitOk.verify = function verify(message) {
             if (typeof message !== "object" || message === null)
                 return "object expected";
-            if (message.runtime != null && message.hasOwnProperty("runtime"))
-                if (!$util.isString(message.runtime))
-                    return "runtime: string expected";
-            if (message.modelVersion != null && message.hasOwnProperty("modelVersion"))
-                if (!$util.isString(message.modelVersion))
-                    return "modelVersion: string expected";
-            if (message.classNames != null && message.hasOwnProperty("classNames")) {
-                if (!Array.isArray(message.classNames))
-                    return "classNames: array expected";
-                for (var i = 0; i < message.classNames.length; ++i)
-                    if (!$util.isString(message.classNames[i]))
-                        return "classNames: string[] expected";
+            if (message.chosen != null && message.hasOwnProperty("chosen")) {
+                var error = $root.ai.Chosen.verify(message.chosen);
+                if (error)
+                    return "chosen." + error;
             }
             if (message.maxFrameBytes != null && message.hasOwnProperty("maxFrameBytes"))
                 if (!$util.isInteger(message.maxFrameBytes))
                     return "maxFrameBytes: integer expected";
-            if (message.providers != null && message.hasOwnProperty("providers")) {
-                if (!Array.isArray(message.providers))
-                    return "providers: array expected";
-                for (var i = 0; i < message.providers.length; ++i)
-                    if (!$util.isString(message.providers[i]))
-                        return "providers: string[] expected";
-            }
-            if (message.modelId != null && message.hasOwnProperty("modelId"))
-                if (!$util.isString(message.modelId))
-                    return "modelId: string expected";
-            if (message.preproc != null && message.hasOwnProperty("preproc")) {
-                var error = $root.ai.Preprocessing.verify(message.preproc);
-                if (error)
-                    return "preproc." + error;
-            }
             return null;
         };
 
@@ -2108,33 +3192,13 @@ $root.ai = (function() {
             if (object instanceof $root.ai.InitOk)
                 return object;
             var message = new $root.ai.InitOk();
-            if (object.runtime != null)
-                message.runtime = String(object.runtime);
-            if (object.modelVersion != null)
-                message.modelVersion = String(object.modelVersion);
-            if (object.classNames) {
-                if (!Array.isArray(object.classNames))
-                    throw TypeError(".ai.InitOk.classNames: array expected");
-                message.classNames = [];
-                for (var i = 0; i < object.classNames.length; ++i)
-                    message.classNames[i] = String(object.classNames[i]);
+            if (object.chosen != null) {
+                if (typeof object.chosen !== "object")
+                    throw TypeError(".ai.InitOk.chosen: object expected");
+                message.chosen = $root.ai.Chosen.fromObject(object.chosen);
             }
             if (object.maxFrameBytes != null)
                 message.maxFrameBytes = object.maxFrameBytes >>> 0;
-            if (object.providers) {
-                if (!Array.isArray(object.providers))
-                    throw TypeError(".ai.InitOk.providers: array expected");
-                message.providers = [];
-                for (var i = 0; i < object.providers.length; ++i)
-                    message.providers[i] = String(object.providers[i]);
-            }
-            if (object.modelId != null)
-                message.modelId = String(object.modelId);
-            if (object.preproc != null) {
-                if (typeof object.preproc !== "object")
-                    throw TypeError(".ai.InitOk.preproc: object expected");
-                message.preproc = $root.ai.Preprocessing.fromObject(object.preproc);
-            }
             return message;
         };
 
@@ -2151,37 +3215,14 @@ $root.ai = (function() {
             if (!options)
                 options = {};
             var object = {};
-            if (options.arrays || options.defaults) {
-                object.classNames = [];
-                object.providers = [];
-            }
             if (options.defaults) {
-                object.runtime = "";
-                object.modelVersion = "";
+                object.chosen = null;
                 object.maxFrameBytes = 0;
-                object.modelId = "";
-                object.preproc = null;
             }
-            if (message.runtime != null && message.hasOwnProperty("runtime"))
-                object.runtime = message.runtime;
-            if (message.modelVersion != null && message.hasOwnProperty("modelVersion"))
-                object.modelVersion = message.modelVersion;
-            if (message.classNames && message.classNames.length) {
-                object.classNames = [];
-                for (var j = 0; j < message.classNames.length; ++j)
-                    object.classNames[j] = message.classNames[j];
-            }
+            if (message.chosen != null && message.hasOwnProperty("chosen"))
+                object.chosen = $root.ai.Chosen.toObject(message.chosen, options);
             if (message.maxFrameBytes != null && message.hasOwnProperty("maxFrameBytes"))
                 object.maxFrameBytes = message.maxFrameBytes;
-            if (message.providers && message.providers.length) {
-                object.providers = [];
-                for (var j = 0; j < message.providers.length; ++j)
-                    object.providers[j] = message.providers[j];
-            }
-            if (message.modelId != null && message.hasOwnProperty("modelId"))
-                object.modelId = message.modelId;
-            if (message.preproc != null && message.hasOwnProperty("preproc"))
-                object.preproc = $root.ai.Preprocessing.toObject(message.preproc, options);
             return object;
         };
 
@@ -2214,29 +3255,33 @@ $root.ai = (function() {
         return InitOk;
     })();
 
-    ai.Preprocessing = (function() {
+    ai.Chosen = (function() {
 
         /**
-         * Properties of a Preprocessing.
+         * Properties of a Chosen.
          * @memberof ai
-         * @interface IPreprocessing
-         * @property {string|null} [layout] Preprocessing layout
-         * @property {Array.<number>|null} [mean] Preprocessing mean
-         * @property {Array.<number>|null} [std] Preprocessing std
-         * @property {boolean|null} [letterbox] Preprocessing letterbox
+         * @interface IChosen
+         * @property {ai.PixelFormat|null} [pixelFormat] Chosen pixelFormat
+         * @property {ai.Codec|null} [codec] Chosen codec
+         * @property {number|null} [width] Chosen width
+         * @property {number|null} [height] Chosen height
+         * @property {number|null} [fpsTarget] Chosen fpsTarget
+         * @property {ai.Policy|null} [policy] Chosen policy
+         * @property {number|null} [initialCredits] Chosen initialCredits
+         * @property {number|null} [gopMs] Chosen gopMs
+         * @property {string|null} [colorSpace] Chosen colorSpace
+         * @property {string|null} [colorRange] Chosen colorRange
          */
 
         /**
-         * Constructs a new Preprocessing.
+         * Constructs a new Chosen.
          * @memberof ai
-         * @classdesc Represents a Preprocessing.
-         * @implements IPreprocessing
+         * @classdesc Represents a Chosen.
+         * @implements IChosen
          * @constructor
-         * @param {ai.IPreprocessing=} [properties] Properties to set
+         * @param {ai.IChosen=} [properties] Properties to set
          */
-        function Preprocessing(properties) {
-            this.mean = [];
-            this.std = [];
+        function Chosen(properties) {
             if (properties)
                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                     if (properties[keys[i]] != null)
@@ -2244,141 +3289,203 @@ $root.ai = (function() {
         }
 
         /**
-         * Preprocessing layout.
-         * @member {string} layout
-         * @memberof ai.Preprocessing
+         * Chosen pixelFormat.
+         * @member {ai.PixelFormat} pixelFormat
+         * @memberof ai.Chosen
          * @instance
          */
-        Preprocessing.prototype.layout = "";
+        Chosen.prototype.pixelFormat = 0;
 
         /**
-         * Preprocessing mean.
-         * @member {Array.<number>} mean
-         * @memberof ai.Preprocessing
+         * Chosen codec.
+         * @member {ai.Codec} codec
+         * @memberof ai.Chosen
          * @instance
          */
-        Preprocessing.prototype.mean = $util.emptyArray;
+        Chosen.prototype.codec = 0;
 
         /**
-         * Preprocessing std.
-         * @member {Array.<number>} std
-         * @memberof ai.Preprocessing
+         * Chosen width.
+         * @member {number} width
+         * @memberof ai.Chosen
          * @instance
          */
-        Preprocessing.prototype.std = $util.emptyArray;
+        Chosen.prototype.width = 0;
 
         /**
-         * Preprocessing letterbox.
-         * @member {boolean} letterbox
-         * @memberof ai.Preprocessing
+         * Chosen height.
+         * @member {number} height
+         * @memberof ai.Chosen
          * @instance
          */
-        Preprocessing.prototype.letterbox = false;
+        Chosen.prototype.height = 0;
 
         /**
-         * Creates a new Preprocessing instance using the specified properties.
+         * Chosen fpsTarget.
+         * @member {number} fpsTarget
+         * @memberof ai.Chosen
+         * @instance
+         */
+        Chosen.prototype.fpsTarget = 0;
+
+        /**
+         * Chosen policy.
+         * @member {ai.Policy} policy
+         * @memberof ai.Chosen
+         * @instance
+         */
+        Chosen.prototype.policy = 0;
+
+        /**
+         * Chosen initialCredits.
+         * @member {number} initialCredits
+         * @memberof ai.Chosen
+         * @instance
+         */
+        Chosen.prototype.initialCredits = 0;
+
+        /**
+         * Chosen gopMs.
+         * @member {number} gopMs
+         * @memberof ai.Chosen
+         * @instance
+         */
+        Chosen.prototype.gopMs = 0;
+
+        /**
+         * Chosen colorSpace.
+         * @member {string} colorSpace
+         * @memberof ai.Chosen
+         * @instance
+         */
+        Chosen.prototype.colorSpace = "";
+
+        /**
+         * Chosen colorRange.
+         * @member {string} colorRange
+         * @memberof ai.Chosen
+         * @instance
+         */
+        Chosen.prototype.colorRange = "";
+
+        /**
+         * Creates a new Chosen instance using the specified properties.
          * @function create
-         * @memberof ai.Preprocessing
+         * @memberof ai.Chosen
          * @static
-         * @param {ai.IPreprocessing=} [properties] Properties to set
-         * @returns {ai.Preprocessing} Preprocessing instance
+         * @param {ai.IChosen=} [properties] Properties to set
+         * @returns {ai.Chosen} Chosen instance
          */
-        Preprocessing.create = function create(properties) {
-            return new Preprocessing(properties);
+        Chosen.create = function create(properties) {
+            return new Chosen(properties);
         };
 
         /**
-         * Encodes the specified Preprocessing message. Does not implicitly {@link ai.Preprocessing.verify|verify} messages.
+         * Encodes the specified Chosen message. Does not implicitly {@link ai.Chosen.verify|verify} messages.
          * @function encode
-         * @memberof ai.Preprocessing
+         * @memberof ai.Chosen
          * @static
-         * @param {ai.IPreprocessing} message Preprocessing message or plain object to encode
+         * @param {ai.IChosen} message Chosen message or plain object to encode
          * @param {$protobuf.Writer} [writer] Writer to encode to
          * @returns {$protobuf.Writer} Writer
          */
-        Preprocessing.encode = function encode(message, writer) {
+        Chosen.encode = function encode(message, writer) {
             if (!writer)
                 writer = $Writer.create();
-            if (message.layout != null && Object.hasOwnProperty.call(message, "layout"))
-                writer.uint32(/* id 1, wireType 2 =*/10).string(message.layout);
-            if (message.mean != null && message.mean.length) {
-                writer.uint32(/* id 2, wireType 2 =*/18).fork();
-                for (var i = 0; i < message.mean.length; ++i)
-                    writer.float(message.mean[i]);
-                writer.ldelim();
-            }
-            if (message.std != null && message.std.length) {
-                writer.uint32(/* id 3, wireType 2 =*/26).fork();
-                for (var i = 0; i < message.std.length; ++i)
-                    writer.float(message.std[i]);
-                writer.ldelim();
-            }
-            if (message.letterbox != null && Object.hasOwnProperty.call(message, "letterbox"))
-                writer.uint32(/* id 4, wireType 0 =*/32).bool(message.letterbox);
+            if (message.pixelFormat != null && Object.hasOwnProperty.call(message, "pixelFormat"))
+                writer.uint32(/* id 1, wireType 0 =*/8).int32(message.pixelFormat);
+            if (message.codec != null && Object.hasOwnProperty.call(message, "codec"))
+                writer.uint32(/* id 2, wireType 0 =*/16).int32(message.codec);
+            if (message.width != null && Object.hasOwnProperty.call(message, "width"))
+                writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.width);
+            if (message.height != null && Object.hasOwnProperty.call(message, "height"))
+                writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.height);
+            if (message.fpsTarget != null && Object.hasOwnProperty.call(message, "fpsTarget"))
+                writer.uint32(/* id 5, wireType 5 =*/45).float(message.fpsTarget);
+            if (message.policy != null && Object.hasOwnProperty.call(message, "policy"))
+                writer.uint32(/* id 6, wireType 0 =*/48).int32(message.policy);
+            if (message.initialCredits != null && Object.hasOwnProperty.call(message, "initialCredits"))
+                writer.uint32(/* id 7, wireType 0 =*/56).uint32(message.initialCredits);
+            if (message.gopMs != null && Object.hasOwnProperty.call(message, "gopMs"))
+                writer.uint32(/* id 8, wireType 0 =*/64).uint32(message.gopMs);
+            if (message.colorSpace != null && Object.hasOwnProperty.call(message, "colorSpace"))
+                writer.uint32(/* id 9, wireType 2 =*/74).string(message.colorSpace);
+            if (message.colorRange != null && Object.hasOwnProperty.call(message, "colorRange"))
+                writer.uint32(/* id 10, wireType 2 =*/82).string(message.colorRange);
             return writer;
         };
 
         /**
-         * Encodes the specified Preprocessing message, length delimited. Does not implicitly {@link ai.Preprocessing.verify|verify} messages.
+         * Encodes the specified Chosen message, length delimited. Does not implicitly {@link ai.Chosen.verify|verify} messages.
          * @function encodeDelimited
-         * @memberof ai.Preprocessing
+         * @memberof ai.Chosen
          * @static
-         * @param {ai.IPreprocessing} message Preprocessing message or plain object to encode
+         * @param {ai.IChosen} message Chosen message or plain object to encode
          * @param {$protobuf.Writer} [writer] Writer to encode to
          * @returns {$protobuf.Writer} Writer
          */
-        Preprocessing.encodeDelimited = function encodeDelimited(message, writer) {
+        Chosen.encodeDelimited = function encodeDelimited(message, writer) {
             return this.encode(message, writer).ldelim();
         };
 
         /**
-         * Decodes a Preprocessing message from the specified reader or buffer.
+         * Decodes a Chosen message from the specified reader or buffer.
          * @function decode
-         * @memberof ai.Preprocessing
+         * @memberof ai.Chosen
          * @static
          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
          * @param {number} [length] Message length if known beforehand
-         * @returns {ai.Preprocessing} Preprocessing
+         * @returns {ai.Chosen} Chosen
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        Preprocessing.decode = function decode(reader, length, error) {
+        Chosen.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
-            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.ai.Preprocessing();
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.ai.Chosen();
             while (reader.pos < end) {
                 var tag = reader.uint32();
                 if (tag === error)
                     break;
                 switch (tag >>> 3) {
                 case 1: {
-                        message.layout = reader.string();
+                        message.pixelFormat = reader.int32();
                         break;
                     }
                 case 2: {
-                        if (!(message.mean && message.mean.length))
-                            message.mean = [];
-                        if ((tag & 7) === 2) {
-                            var end2 = reader.uint32() + reader.pos;
-                            while (reader.pos < end2)
-                                message.mean.push(reader.float());
-                        } else
-                            message.mean.push(reader.float());
+                        message.codec = reader.int32();
                         break;
                     }
                 case 3: {
-                        if (!(message.std && message.std.length))
-                            message.std = [];
-                        if ((tag & 7) === 2) {
-                            var end2 = reader.uint32() + reader.pos;
-                            while (reader.pos < end2)
-                                message.std.push(reader.float());
-                        } else
-                            message.std.push(reader.float());
+                        message.width = reader.uint32();
                         break;
                     }
                 case 4: {
-                        message.letterbox = reader.bool();
+                        message.height = reader.uint32();
+                        break;
+                    }
+                case 5: {
+                        message.fpsTarget = reader.float();
+                        break;
+                    }
+                case 6: {
+                        message.policy = reader.int32();
+                        break;
+                    }
+                case 7: {
+                        message.initialCredits = reader.uint32();
+                        break;
+                    }
+                case 8: {
+                        message.gopMs = reader.uint32();
+                        break;
+                    }
+                case 9: {
+                        message.colorSpace = reader.string();
+                        break;
+                    }
+                case 10: {
+                        message.colorRange = reader.string();
                         break;
                     }
                 default:
@@ -2390,173 +3497,277 @@ $root.ai = (function() {
         };
 
         /**
-         * Decodes a Preprocessing message from the specified reader or buffer, length delimited.
+         * Decodes a Chosen message from the specified reader or buffer, length delimited.
          * @function decodeDelimited
-         * @memberof ai.Preprocessing
+         * @memberof ai.Chosen
          * @static
          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-         * @returns {ai.Preprocessing} Preprocessing
+         * @returns {ai.Chosen} Chosen
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        Preprocessing.decodeDelimited = function decodeDelimited(reader) {
+        Chosen.decodeDelimited = function decodeDelimited(reader) {
             if (!(reader instanceof $Reader))
                 reader = new $Reader(reader);
             return this.decode(reader, reader.uint32());
         };
 
         /**
-         * Verifies a Preprocessing message.
+         * Verifies a Chosen message.
          * @function verify
-         * @memberof ai.Preprocessing
+         * @memberof ai.Chosen
          * @static
          * @param {Object.<string,*>} message Plain object to verify
          * @returns {string|null} `null` if valid, otherwise the reason why it is not
          */
-        Preprocessing.verify = function verify(message) {
+        Chosen.verify = function verify(message) {
             if (typeof message !== "object" || message === null)
                 return "object expected";
-            if (message.layout != null && message.hasOwnProperty("layout"))
-                if (!$util.isString(message.layout))
-                    return "layout: string expected";
-            if (message.mean != null && message.hasOwnProperty("mean")) {
-                if (!Array.isArray(message.mean))
-                    return "mean: array expected";
-                for (var i = 0; i < message.mean.length; ++i)
-                    if (typeof message.mean[i] !== "number")
-                        return "mean: number[] expected";
-            }
-            if (message.std != null && message.hasOwnProperty("std")) {
-                if (!Array.isArray(message.std))
-                    return "std: array expected";
-                for (var i = 0; i < message.std.length; ++i)
-                    if (typeof message.std[i] !== "number")
-                        return "std: number[] expected";
-            }
-            if (message.letterbox != null && message.hasOwnProperty("letterbox"))
-                if (typeof message.letterbox !== "boolean")
-                    return "letterbox: boolean expected";
+            if (message.pixelFormat != null && message.hasOwnProperty("pixelFormat"))
+                switch (message.pixelFormat) {
+                default:
+                    return "pixelFormat: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                case 3:
+                    break;
+                }
+            if (message.codec != null && message.hasOwnProperty("codec"))
+                switch (message.codec) {
+                default:
+                    return "codec: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                case 3:
+                    break;
+                }
+            if (message.width != null && message.hasOwnProperty("width"))
+                if (!$util.isInteger(message.width))
+                    return "width: integer expected";
+            if (message.height != null && message.hasOwnProperty("height"))
+                if (!$util.isInteger(message.height))
+                    return "height: integer expected";
+            if (message.fpsTarget != null && message.hasOwnProperty("fpsTarget"))
+                if (typeof message.fpsTarget !== "number")
+                    return "fpsTarget: number expected";
+            if (message.policy != null && message.hasOwnProperty("policy"))
+                switch (message.policy) {
+                default:
+                    return "policy: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                    break;
+                }
+            if (message.initialCredits != null && message.hasOwnProperty("initialCredits"))
+                if (!$util.isInteger(message.initialCredits))
+                    return "initialCredits: integer expected";
+            if (message.gopMs != null && message.hasOwnProperty("gopMs"))
+                if (!$util.isInteger(message.gopMs))
+                    return "gopMs: integer expected";
+            if (message.colorSpace != null && message.hasOwnProperty("colorSpace"))
+                if (!$util.isString(message.colorSpace))
+                    return "colorSpace: string expected";
+            if (message.colorRange != null && message.hasOwnProperty("colorRange"))
+                if (!$util.isString(message.colorRange))
+                    return "colorRange: string expected";
             return null;
         };
 
         /**
-         * Creates a Preprocessing message from a plain object. Also converts values to their respective internal types.
+         * Creates a Chosen message from a plain object. Also converts values to their respective internal types.
          * @function fromObject
-         * @memberof ai.Preprocessing
+         * @memberof ai.Chosen
          * @static
          * @param {Object.<string,*>} object Plain object
-         * @returns {ai.Preprocessing} Preprocessing
+         * @returns {ai.Chosen} Chosen
          */
-        Preprocessing.fromObject = function fromObject(object) {
-            if (object instanceof $root.ai.Preprocessing)
+        Chosen.fromObject = function fromObject(object) {
+            if (object instanceof $root.ai.Chosen)
                 return object;
-            var message = new $root.ai.Preprocessing();
-            if (object.layout != null)
-                message.layout = String(object.layout);
-            if (object.mean) {
-                if (!Array.isArray(object.mean))
-                    throw TypeError(".ai.Preprocessing.mean: array expected");
-                message.mean = [];
-                for (var i = 0; i < object.mean.length; ++i)
-                    message.mean[i] = Number(object.mean[i]);
+            var message = new $root.ai.Chosen();
+            switch (object.pixelFormat) {
+            default:
+                if (typeof object.pixelFormat === "number") {
+                    message.pixelFormat = object.pixelFormat;
+                    break;
+                }
+                break;
+            case "PF_UNKNOWN":
+            case 0:
+                message.pixelFormat = 0;
+                break;
+            case "PF_I420":
+            case 1:
+                message.pixelFormat = 1;
+                break;
+            case "PF_NV12":
+            case 2:
+                message.pixelFormat = 2;
+                break;
+            case "PF_RGB8":
+            case 3:
+                message.pixelFormat = 3;
+                break;
             }
-            if (object.std) {
-                if (!Array.isArray(object.std))
-                    throw TypeError(".ai.Preprocessing.std: array expected");
-                message.std = [];
-                for (var i = 0; i < object.std.length; ++i)
-                    message.std[i] = Number(object.std[i]);
+            switch (object.codec) {
+            default:
+                if (typeof object.codec === "number") {
+                    message.codec = object.codec;
+                    break;
+                }
+                break;
+            case "CODEC_UNKNOWN":
+            case 0:
+                message.codec = 0;
+                break;
+            case "CODEC_NONE":
+            case 1:
+                message.codec = 1;
+                break;
+            case "CODEC_JPEG":
+            case 2:
+                message.codec = 2;
+                break;
+            case "CODEC_H264":
+            case 3:
+                message.codec = 3;
+                break;
             }
-            if (object.letterbox != null)
-                message.letterbox = Boolean(object.letterbox);
+            if (object.width != null)
+                message.width = object.width >>> 0;
+            if (object.height != null)
+                message.height = object.height >>> 0;
+            if (object.fpsTarget != null)
+                message.fpsTarget = Number(object.fpsTarget);
+            switch (object.policy) {
+            default:
+                if (typeof object.policy === "number") {
+                    message.policy = object.policy;
+                    break;
+                }
+                break;
+            case "POLICY_UNKNOWN":
+            case 0:
+                message.policy = 0;
+                break;
+            case "LATEST_WINS":
+            case 1:
+                message.policy = 1;
+                break;
+            case "FIFO":
+            case 2:
+                message.policy = 2;
+                break;
+            }
+            if (object.initialCredits != null)
+                message.initialCredits = object.initialCredits >>> 0;
+            if (object.gopMs != null)
+                message.gopMs = object.gopMs >>> 0;
+            if (object.colorSpace != null)
+                message.colorSpace = String(object.colorSpace);
+            if (object.colorRange != null)
+                message.colorRange = String(object.colorRange);
             return message;
         };
 
         /**
-         * Creates a plain object from a Preprocessing message. Also converts values to other types if specified.
+         * Creates a plain object from a Chosen message. Also converts values to other types if specified.
          * @function toObject
-         * @memberof ai.Preprocessing
+         * @memberof ai.Chosen
          * @static
-         * @param {ai.Preprocessing} message Preprocessing
+         * @param {ai.Chosen} message Chosen
          * @param {$protobuf.IConversionOptions} [options] Conversion options
          * @returns {Object.<string,*>} Plain object
          */
-        Preprocessing.toObject = function toObject(message, options) {
+        Chosen.toObject = function toObject(message, options) {
             if (!options)
                 options = {};
             var object = {};
-            if (options.arrays || options.defaults) {
-                object.mean = [];
-                object.std = [];
-            }
             if (options.defaults) {
-                object.layout = "";
-                object.letterbox = false;
+                object.pixelFormat = options.enums === String ? "PF_UNKNOWN" : 0;
+                object.codec = options.enums === String ? "CODEC_UNKNOWN" : 0;
+                object.width = 0;
+                object.height = 0;
+                object.fpsTarget = 0;
+                object.policy = options.enums === String ? "POLICY_UNKNOWN" : 0;
+                object.initialCredits = 0;
+                object.gopMs = 0;
+                object.colorSpace = "";
+                object.colorRange = "";
             }
-            if (message.layout != null && message.hasOwnProperty("layout"))
-                object.layout = message.layout;
-            if (message.mean && message.mean.length) {
-                object.mean = [];
-                for (var j = 0; j < message.mean.length; ++j)
-                    object.mean[j] = options.json && !isFinite(message.mean[j]) ? String(message.mean[j]) : message.mean[j];
-            }
-            if (message.std && message.std.length) {
-                object.std = [];
-                for (var j = 0; j < message.std.length; ++j)
-                    object.std[j] = options.json && !isFinite(message.std[j]) ? String(message.std[j]) : message.std[j];
-            }
-            if (message.letterbox != null && message.hasOwnProperty("letterbox"))
-                object.letterbox = message.letterbox;
+            if (message.pixelFormat != null && message.hasOwnProperty("pixelFormat"))
+                object.pixelFormat = options.enums === String ? $root.ai.PixelFormat[message.pixelFormat] === undefined ? message.pixelFormat : $root.ai.PixelFormat[message.pixelFormat] : message.pixelFormat;
+            if (message.codec != null && message.hasOwnProperty("codec"))
+                object.codec = options.enums === String ? $root.ai.Codec[message.codec] === undefined ? message.codec : $root.ai.Codec[message.codec] : message.codec;
+            if (message.width != null && message.hasOwnProperty("width"))
+                object.width = message.width;
+            if (message.height != null && message.hasOwnProperty("height"))
+                object.height = message.height;
+            if (message.fpsTarget != null && message.hasOwnProperty("fpsTarget"))
+                object.fpsTarget = options.json && !isFinite(message.fpsTarget) ? String(message.fpsTarget) : message.fpsTarget;
+            if (message.policy != null && message.hasOwnProperty("policy"))
+                object.policy = options.enums === String ? $root.ai.Policy[message.policy] === undefined ? message.policy : $root.ai.Policy[message.policy] : message.policy;
+            if (message.initialCredits != null && message.hasOwnProperty("initialCredits"))
+                object.initialCredits = message.initialCredits;
+            if (message.gopMs != null && message.hasOwnProperty("gopMs"))
+                object.gopMs = message.gopMs;
+            if (message.colorSpace != null && message.hasOwnProperty("colorSpace"))
+                object.colorSpace = message.colorSpace;
+            if (message.colorRange != null && message.hasOwnProperty("colorRange"))
+                object.colorRange = message.colorRange;
             return object;
         };
 
         /**
-         * Converts this Preprocessing to JSON.
+         * Converts this Chosen to JSON.
          * @function toJSON
-         * @memberof ai.Preprocessing
+         * @memberof ai.Chosen
          * @instance
          * @returns {Object.<string,*>} JSON object
          */
-        Preprocessing.prototype.toJSON = function toJSON() {
+        Chosen.prototype.toJSON = function toJSON() {
             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
         };
 
         /**
-         * Gets the default type url for Preprocessing
+         * Gets the default type url for Chosen
          * @function getTypeUrl
-         * @memberof ai.Preprocessing
+         * @memberof ai.Chosen
          * @static
          * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
          * @returns {string} The default type url
          */
-        Preprocessing.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+        Chosen.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
             if (typeUrlPrefix === undefined) {
                 typeUrlPrefix = "type.googleapis.com";
             }
-            return typeUrlPrefix + "/ai.Preprocessing";
+            return typeUrlPrefix + "/ai.Chosen";
         };
 
-        return Preprocessing;
+        return Chosen;
     })();
 
-    ai.Ready = (function() {
+    ai.WindowUpdate = (function() {
 
         /**
-         * Properties of a Ready.
+         * Properties of a WindowUpdate.
          * @memberof ai
-         * @interface IReady
-         * @property {number|Long|null} [seq] Ready seq
+         * @interface IWindowUpdate
+         * @property {number|null} [newWindowSize] WindowUpdate newWindowSize
          */
 
         /**
-         * Constructs a new Ready.
+         * Constructs a new WindowUpdate.
          * @memberof ai
-         * @classdesc Represents a Ready.
-         * @implements IReady
+         * @classdesc Represents a WindowUpdate.
+         * @implements IWindowUpdate
          * @constructor
-         * @param {ai.IReady=} [properties] Properties to set
+         * @param {ai.IWindowUpdate=} [properties] Properties to set
          */
-        function Ready(properties) {
+        function WindowUpdate(properties) {
             if (properties)
                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                     if (properties[keys[i]] != null)
@@ -2564,77 +3775,77 @@ $root.ai = (function() {
         }
 
         /**
-         * Ready seq.
-         * @member {number|Long} seq
-         * @memberof ai.Ready
+         * WindowUpdate newWindowSize.
+         * @member {number} newWindowSize
+         * @memberof ai.WindowUpdate
          * @instance
          */
-        Ready.prototype.seq = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+        WindowUpdate.prototype.newWindowSize = 0;
 
         /**
-         * Creates a new Ready instance using the specified properties.
+         * Creates a new WindowUpdate instance using the specified properties.
          * @function create
-         * @memberof ai.Ready
+         * @memberof ai.WindowUpdate
          * @static
-         * @param {ai.IReady=} [properties] Properties to set
-         * @returns {ai.Ready} Ready instance
+         * @param {ai.IWindowUpdate=} [properties] Properties to set
+         * @returns {ai.WindowUpdate} WindowUpdate instance
          */
-        Ready.create = function create(properties) {
-            return new Ready(properties);
+        WindowUpdate.create = function create(properties) {
+            return new WindowUpdate(properties);
         };
 
         /**
-         * Encodes the specified Ready message. Does not implicitly {@link ai.Ready.verify|verify} messages.
+         * Encodes the specified WindowUpdate message. Does not implicitly {@link ai.WindowUpdate.verify|verify} messages.
          * @function encode
-         * @memberof ai.Ready
+         * @memberof ai.WindowUpdate
          * @static
-         * @param {ai.IReady} message Ready message or plain object to encode
+         * @param {ai.IWindowUpdate} message WindowUpdate message or plain object to encode
          * @param {$protobuf.Writer} [writer] Writer to encode to
          * @returns {$protobuf.Writer} Writer
          */
-        Ready.encode = function encode(message, writer) {
+        WindowUpdate.encode = function encode(message, writer) {
             if (!writer)
                 writer = $Writer.create();
-            if (message.seq != null && Object.hasOwnProperty.call(message, "seq"))
-                writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.seq);
+            if (message.newWindowSize != null && Object.hasOwnProperty.call(message, "newWindowSize"))
+                writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.newWindowSize);
             return writer;
         };
 
         /**
-         * Encodes the specified Ready message, length delimited. Does not implicitly {@link ai.Ready.verify|verify} messages.
+         * Encodes the specified WindowUpdate message, length delimited. Does not implicitly {@link ai.WindowUpdate.verify|verify} messages.
          * @function encodeDelimited
-         * @memberof ai.Ready
+         * @memberof ai.WindowUpdate
          * @static
-         * @param {ai.IReady} message Ready message or plain object to encode
+         * @param {ai.IWindowUpdate} message WindowUpdate message or plain object to encode
          * @param {$protobuf.Writer} [writer] Writer to encode to
          * @returns {$protobuf.Writer} Writer
          */
-        Ready.encodeDelimited = function encodeDelimited(message, writer) {
+        WindowUpdate.encodeDelimited = function encodeDelimited(message, writer) {
             return this.encode(message, writer).ldelim();
         };
 
         /**
-         * Decodes a Ready message from the specified reader or buffer.
+         * Decodes a WindowUpdate message from the specified reader or buffer.
          * @function decode
-         * @memberof ai.Ready
+         * @memberof ai.WindowUpdate
          * @static
          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
          * @param {number} [length] Message length if known beforehand
-         * @returns {ai.Ready} Ready
+         * @returns {ai.WindowUpdate} WindowUpdate
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        Ready.decode = function decode(reader, length, error) {
+        WindowUpdate.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
-            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.ai.Ready();
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.ai.WindowUpdate();
             while (reader.pos < end) {
                 var tag = reader.uint32();
                 if (tag === error)
                     break;
                 switch (tag >>> 3) {
                 case 1: {
-                        message.seq = reader.uint64();
+                        message.newWindowSize = reader.uint32();
                         break;
                     }
                 default:
@@ -2646,116 +3857,102 @@ $root.ai = (function() {
         };
 
         /**
-         * Decodes a Ready message from the specified reader or buffer, length delimited.
+         * Decodes a WindowUpdate message from the specified reader or buffer, length delimited.
          * @function decodeDelimited
-         * @memberof ai.Ready
+         * @memberof ai.WindowUpdate
          * @static
          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-         * @returns {ai.Ready} Ready
+         * @returns {ai.WindowUpdate} WindowUpdate
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        Ready.decodeDelimited = function decodeDelimited(reader) {
+        WindowUpdate.decodeDelimited = function decodeDelimited(reader) {
             if (!(reader instanceof $Reader))
                 reader = new $Reader(reader);
             return this.decode(reader, reader.uint32());
         };
 
         /**
-         * Verifies a Ready message.
+         * Verifies a WindowUpdate message.
          * @function verify
-         * @memberof ai.Ready
+         * @memberof ai.WindowUpdate
          * @static
          * @param {Object.<string,*>} message Plain object to verify
          * @returns {string|null} `null` if valid, otherwise the reason why it is not
          */
-        Ready.verify = function verify(message) {
+        WindowUpdate.verify = function verify(message) {
             if (typeof message !== "object" || message === null)
                 return "object expected";
-            if (message.seq != null && message.hasOwnProperty("seq"))
-                if (!$util.isInteger(message.seq) && !(message.seq && $util.isInteger(message.seq.low) && $util.isInteger(message.seq.high)))
-                    return "seq: integer|Long expected";
+            if (message.newWindowSize != null && message.hasOwnProperty("newWindowSize"))
+                if (!$util.isInteger(message.newWindowSize))
+                    return "newWindowSize: integer expected";
             return null;
         };
 
         /**
-         * Creates a Ready message from a plain object. Also converts values to their respective internal types.
+         * Creates a WindowUpdate message from a plain object. Also converts values to their respective internal types.
          * @function fromObject
-         * @memberof ai.Ready
+         * @memberof ai.WindowUpdate
          * @static
          * @param {Object.<string,*>} object Plain object
-         * @returns {ai.Ready} Ready
+         * @returns {ai.WindowUpdate} WindowUpdate
          */
-        Ready.fromObject = function fromObject(object) {
-            if (object instanceof $root.ai.Ready)
+        WindowUpdate.fromObject = function fromObject(object) {
+            if (object instanceof $root.ai.WindowUpdate)
                 return object;
-            var message = new $root.ai.Ready();
-            if (object.seq != null)
-                if ($util.Long)
-                    (message.seq = $util.Long.fromValue(object.seq)).unsigned = true;
-                else if (typeof object.seq === "string")
-                    message.seq = parseInt(object.seq, 10);
-                else if (typeof object.seq === "number")
-                    message.seq = object.seq;
-                else if (typeof object.seq === "object")
-                    message.seq = new $util.LongBits(object.seq.low >>> 0, object.seq.high >>> 0).toNumber(true);
+            var message = new $root.ai.WindowUpdate();
+            if (object.newWindowSize != null)
+                message.newWindowSize = object.newWindowSize >>> 0;
             return message;
         };
 
         /**
-         * Creates a plain object from a Ready message. Also converts values to other types if specified.
+         * Creates a plain object from a WindowUpdate message. Also converts values to other types if specified.
          * @function toObject
-         * @memberof ai.Ready
+         * @memberof ai.WindowUpdate
          * @static
-         * @param {ai.Ready} message Ready
+         * @param {ai.WindowUpdate} message WindowUpdate
          * @param {$protobuf.IConversionOptions} [options] Conversion options
          * @returns {Object.<string,*>} Plain object
          */
-        Ready.toObject = function toObject(message, options) {
+        WindowUpdate.toObject = function toObject(message, options) {
             if (!options)
                 options = {};
             var object = {};
             if (options.defaults)
-                if ($util.Long) {
-                    var long = new $util.Long(0, 0, true);
-                    object.seq = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
-                } else
-                    object.seq = options.longs === String ? "0" : 0;
-            if (message.seq != null && message.hasOwnProperty("seq"))
-                if (typeof message.seq === "number")
-                    object.seq = options.longs === String ? String(message.seq) : message.seq;
-                else
-                    object.seq = options.longs === String ? $util.Long.prototype.toString.call(message.seq) : options.longs === Number ? new $util.LongBits(message.seq.low >>> 0, message.seq.high >>> 0).toNumber(true) : message.seq;
+                object.newWindowSize = 0;
+            if (message.newWindowSize != null && message.hasOwnProperty("newWindowSize"))
+                object.newWindowSize = message.newWindowSize;
             return object;
         };
 
         /**
-         * Converts this Ready to JSON.
+         * Converts this WindowUpdate to JSON.
          * @function toJSON
-         * @memberof ai.Ready
+         * @memberof ai.WindowUpdate
          * @instance
          * @returns {Object.<string,*>} JSON object
          */
-        Ready.prototype.toJSON = function toJSON() {
+        WindowUpdate.prototype.toJSON = function toJSON() {
             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
         };
 
         /**
-         * Gets the default type url for Ready
+         * Gets the default type url for WindowUpdate
          * @function getTypeUrl
-         * @memberof ai.Ready
+         * @memberof ai.WindowUpdate
          * @static
          * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
          * @returns {string} The default type url
          */
-        Ready.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+        WindowUpdate.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
             if (typeUrlPrefix === undefined) {
                 typeUrlPrefix = "type.googleapis.com";
             }
-            return typeUrlPrefix + "/ai.Ready";
+            return typeUrlPrefix + "/ai.WindowUpdate";
         };
 
-        return Ready;
+        return WindowUpdate;
     })();
 
     ai.Result = (function() {
@@ -2764,10 +3961,13 @@ $root.ai = (function() {
          * Properties of a Result.
          * @memberof ai
          * @interface IResult
-         * @property {number|Long|null} [seq] Result seq
-         * @property {string|null} [tsIso] Result tsIso
-         * @property {number|Long|null} [tsMonoNs] Result tsMonoNs
-         * @property {Array.<ai.IDetection>|null} [detections] Result detections
+         * @property {number|Long|null} [frameId] Result frameId
+         * @property {ai.IFrameRef|null} [frameRef] Result frameRef
+         * @property {string|null} [modelFamily] Result modelFamily
+         * @property {string|null} [modelName] Result modelName
+         * @property {string|null} [modelVersion] Result modelVersion
+         * @property {ai.ILatency|null} [lat] Result lat
+         * @property {ai.IDetectionSet|null} [detections] Result detections
          */
 
         /**
@@ -2779,7 +3979,6 @@ $root.ai = (function() {
          * @param {ai.IResult=} [properties] Properties to set
          */
         function Result(properties) {
-            this.detections = [];
             if (properties)
                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                     if (properties[keys[i]] != null)
@@ -2787,36 +3986,74 @@ $root.ai = (function() {
         }
 
         /**
-         * Result seq.
-         * @member {number|Long} seq
+         * Result frameId.
+         * @member {number|Long} frameId
          * @memberof ai.Result
          * @instance
          */
-        Result.prototype.seq = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+        Result.prototype.frameId = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
         /**
-         * Result tsIso.
-         * @member {string} tsIso
+         * Result frameRef.
+         * @member {ai.IFrameRef|null|undefined} frameRef
          * @memberof ai.Result
          * @instance
          */
-        Result.prototype.tsIso = "";
+        Result.prototype.frameRef = null;
 
         /**
-         * Result tsMonoNs.
-         * @member {number|Long} tsMonoNs
+         * Result modelFamily.
+         * @member {string} modelFamily
          * @memberof ai.Result
          * @instance
          */
-        Result.prototype.tsMonoNs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+        Result.prototype.modelFamily = "";
+
+        /**
+         * Result modelName.
+         * @member {string} modelName
+         * @memberof ai.Result
+         * @instance
+         */
+        Result.prototype.modelName = "";
+
+        /**
+         * Result modelVersion.
+         * @member {string} modelVersion
+         * @memberof ai.Result
+         * @instance
+         */
+        Result.prototype.modelVersion = "";
+
+        /**
+         * Result lat.
+         * @member {ai.ILatency|null|undefined} lat
+         * @memberof ai.Result
+         * @instance
+         */
+        Result.prototype.lat = null;
 
         /**
          * Result detections.
-         * @member {Array.<ai.IDetection>} detections
+         * @member {ai.IDetectionSet|null|undefined} detections
          * @memberof ai.Result
          * @instance
          */
-        Result.prototype.detections = $util.emptyArray;
+        Result.prototype.detections = null;
+
+        // OneOf field names bound to virtual getters and setters
+        var $oneOfFields;
+
+        /**
+         * Result out.
+         * @member {"detections"|undefined} out
+         * @memberof ai.Result
+         * @instance
+         */
+        Object.defineProperty(Result.prototype, "out", {
+            get: $util.oneOfGetter($oneOfFields = ["detections"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
 
         /**
          * Creates a new Result instance using the specified properties.
@@ -2842,15 +4079,20 @@ $root.ai = (function() {
         Result.encode = function encode(message, writer) {
             if (!writer)
                 writer = $Writer.create();
-            if (message.seq != null && Object.hasOwnProperty.call(message, "seq"))
-                writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.seq);
-            if (message.tsIso != null && Object.hasOwnProperty.call(message, "tsIso"))
-                writer.uint32(/* id 2, wireType 2 =*/18).string(message.tsIso);
-            if (message.tsMonoNs != null && Object.hasOwnProperty.call(message, "tsMonoNs"))
-                writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.tsMonoNs);
-            if (message.detections != null && message.detections.length)
-                for (var i = 0; i < message.detections.length; ++i)
-                    $root.ai.Detection.encode(message.detections[i], writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+            if (message.frameId != null && Object.hasOwnProperty.call(message, "frameId"))
+                writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.frameId);
+            if (message.frameRef != null && Object.hasOwnProperty.call(message, "frameRef"))
+                $root.ai.FrameRef.encode(message.frameRef, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+            if (message.modelFamily != null && Object.hasOwnProperty.call(message, "modelFamily"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.modelFamily);
+            if (message.modelName != null && Object.hasOwnProperty.call(message, "modelName"))
+                writer.uint32(/* id 4, wireType 2 =*/34).string(message.modelName);
+            if (message.modelVersion != null && Object.hasOwnProperty.call(message, "modelVersion"))
+                writer.uint32(/* id 5, wireType 2 =*/42).string(message.modelVersion);
+            if (message.lat != null && Object.hasOwnProperty.call(message, "lat"))
+                $root.ai.Latency.encode(message.lat, writer.uint32(/* id 6, wireType 2 =*/50).fork()).ldelim();
+            if (message.detections != null && Object.hasOwnProperty.call(message, "detections"))
+                $root.ai.DetectionSet.encode(message.detections, writer.uint32(/* id 10, wireType 2 =*/82).fork()).ldelim();
             return writer;
         };
 
@@ -2888,21 +4130,31 @@ $root.ai = (function() {
                     break;
                 switch (tag >>> 3) {
                 case 1: {
-                        message.seq = reader.uint64();
+                        message.frameId = reader.uint64();
                         break;
                     }
                 case 2: {
-                        message.tsIso = reader.string();
+                        message.frameRef = $root.ai.FrameRef.decode(reader, reader.uint32());
                         break;
                     }
                 case 3: {
-                        message.tsMonoNs = reader.uint64();
+                        message.modelFamily = reader.string();
                         break;
                     }
                 case 4: {
-                        if (!(message.detections && message.detections.length))
-                            message.detections = [];
-                        message.detections.push($root.ai.Detection.decode(reader, reader.uint32()));
+                        message.modelName = reader.string();
+                        break;
+                    }
+                case 5: {
+                        message.modelVersion = reader.string();
+                        break;
+                    }
+                case 6: {
+                        message.lat = $root.ai.Latency.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 10: {
+                        message.detections = $root.ai.DetectionSet.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -2940,20 +4192,33 @@ $root.ai = (function() {
         Result.verify = function verify(message) {
             if (typeof message !== "object" || message === null)
                 return "object expected";
-            if (message.seq != null && message.hasOwnProperty("seq"))
-                if (!$util.isInteger(message.seq) && !(message.seq && $util.isInteger(message.seq.low) && $util.isInteger(message.seq.high)))
-                    return "seq: integer|Long expected";
-            if (message.tsIso != null && message.hasOwnProperty("tsIso"))
-                if (!$util.isString(message.tsIso))
-                    return "tsIso: string expected";
-            if (message.tsMonoNs != null && message.hasOwnProperty("tsMonoNs"))
-                if (!$util.isInteger(message.tsMonoNs) && !(message.tsMonoNs && $util.isInteger(message.tsMonoNs.low) && $util.isInteger(message.tsMonoNs.high)))
-                    return "tsMonoNs: integer|Long expected";
+            var properties = {};
+            if (message.frameId != null && message.hasOwnProperty("frameId"))
+                if (!$util.isInteger(message.frameId) && !(message.frameId && $util.isInteger(message.frameId.low) && $util.isInteger(message.frameId.high)))
+                    return "frameId: integer|Long expected";
+            if (message.frameRef != null && message.hasOwnProperty("frameRef")) {
+                var error = $root.ai.FrameRef.verify(message.frameRef);
+                if (error)
+                    return "frameRef." + error;
+            }
+            if (message.modelFamily != null && message.hasOwnProperty("modelFamily"))
+                if (!$util.isString(message.modelFamily))
+                    return "modelFamily: string expected";
+            if (message.modelName != null && message.hasOwnProperty("modelName"))
+                if (!$util.isString(message.modelName))
+                    return "modelName: string expected";
+            if (message.modelVersion != null && message.hasOwnProperty("modelVersion"))
+                if (!$util.isString(message.modelVersion))
+                    return "modelVersion: string expected";
+            if (message.lat != null && message.hasOwnProperty("lat")) {
+                var error = $root.ai.Latency.verify(message.lat);
+                if (error)
+                    return "lat." + error;
+            }
             if (message.detections != null && message.hasOwnProperty("detections")) {
-                if (!Array.isArray(message.detections))
-                    return "detections: array expected";
-                for (var i = 0; i < message.detections.length; ++i) {
-                    var error = $root.ai.Detection.verify(message.detections[i]);
+                properties.out = 1;
+                {
+                    var error = $root.ai.DetectionSet.verify(message.detections);
                     if (error)
                         return "detections." + error;
                 }
@@ -2973,35 +4238,35 @@ $root.ai = (function() {
             if (object instanceof $root.ai.Result)
                 return object;
             var message = new $root.ai.Result();
-            if (object.seq != null)
+            if (object.frameId != null)
                 if ($util.Long)
-                    (message.seq = $util.Long.fromValue(object.seq)).unsigned = true;
-                else if (typeof object.seq === "string")
-                    message.seq = parseInt(object.seq, 10);
-                else if (typeof object.seq === "number")
-                    message.seq = object.seq;
-                else if (typeof object.seq === "object")
-                    message.seq = new $util.LongBits(object.seq.low >>> 0, object.seq.high >>> 0).toNumber(true);
-            if (object.tsIso != null)
-                message.tsIso = String(object.tsIso);
-            if (object.tsMonoNs != null)
-                if ($util.Long)
-                    (message.tsMonoNs = $util.Long.fromValue(object.tsMonoNs)).unsigned = true;
-                else if (typeof object.tsMonoNs === "string")
-                    message.tsMonoNs = parseInt(object.tsMonoNs, 10);
-                else if (typeof object.tsMonoNs === "number")
-                    message.tsMonoNs = object.tsMonoNs;
-                else if (typeof object.tsMonoNs === "object")
-                    message.tsMonoNs = new $util.LongBits(object.tsMonoNs.low >>> 0, object.tsMonoNs.high >>> 0).toNumber(true);
-            if (object.detections) {
-                if (!Array.isArray(object.detections))
-                    throw TypeError(".ai.Result.detections: array expected");
-                message.detections = [];
-                for (var i = 0; i < object.detections.length; ++i) {
-                    if (typeof object.detections[i] !== "object")
-                        throw TypeError(".ai.Result.detections: object expected");
-                    message.detections[i] = $root.ai.Detection.fromObject(object.detections[i]);
-                }
+                    (message.frameId = $util.Long.fromValue(object.frameId)).unsigned = true;
+                else if (typeof object.frameId === "string")
+                    message.frameId = parseInt(object.frameId, 10);
+                else if (typeof object.frameId === "number")
+                    message.frameId = object.frameId;
+                else if (typeof object.frameId === "object")
+                    message.frameId = new $util.LongBits(object.frameId.low >>> 0, object.frameId.high >>> 0).toNumber(true);
+            if (object.frameRef != null) {
+                if (typeof object.frameRef !== "object")
+                    throw TypeError(".ai.Result.frameRef: object expected");
+                message.frameRef = $root.ai.FrameRef.fromObject(object.frameRef);
+            }
+            if (object.modelFamily != null)
+                message.modelFamily = String(object.modelFamily);
+            if (object.modelName != null)
+                message.modelName = String(object.modelName);
+            if (object.modelVersion != null)
+                message.modelVersion = String(object.modelVersion);
+            if (object.lat != null) {
+                if (typeof object.lat !== "object")
+                    throw TypeError(".ai.Result.lat: object expected");
+                message.lat = $root.ai.Latency.fromObject(object.lat);
+            }
+            if (object.detections != null) {
+                if (typeof object.detections !== "object")
+                    throw TypeError(".ai.Result.detections: object expected");
+                message.detections = $root.ai.DetectionSet.fromObject(object.detections);
             }
             return message;
         };
@@ -3019,37 +4284,37 @@ $root.ai = (function() {
             if (!options)
                 options = {};
             var object = {};
-            if (options.arrays || options.defaults)
-                object.detections = [];
             if (options.defaults) {
                 if ($util.Long) {
                     var long = new $util.Long(0, 0, true);
-                    object.seq = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                    object.frameId = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                 } else
-                    object.seq = options.longs === String ? "0" : 0;
-                object.tsIso = "";
-                if ($util.Long) {
-                    var long = new $util.Long(0, 0, true);
-                    object.tsMonoNs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
-                } else
-                    object.tsMonoNs = options.longs === String ? "0" : 0;
+                    object.frameId = options.longs === String ? "0" : 0;
+                object.frameRef = null;
+                object.modelFamily = "";
+                object.modelName = "";
+                object.modelVersion = "";
+                object.lat = null;
             }
-            if (message.seq != null && message.hasOwnProperty("seq"))
-                if (typeof message.seq === "number")
-                    object.seq = options.longs === String ? String(message.seq) : message.seq;
+            if (message.frameId != null && message.hasOwnProperty("frameId"))
+                if (typeof message.frameId === "number")
+                    object.frameId = options.longs === String ? String(message.frameId) : message.frameId;
                 else
-                    object.seq = options.longs === String ? $util.Long.prototype.toString.call(message.seq) : options.longs === Number ? new $util.LongBits(message.seq.low >>> 0, message.seq.high >>> 0).toNumber(true) : message.seq;
-            if (message.tsIso != null && message.hasOwnProperty("tsIso"))
-                object.tsIso = message.tsIso;
-            if (message.tsMonoNs != null && message.hasOwnProperty("tsMonoNs"))
-                if (typeof message.tsMonoNs === "number")
-                    object.tsMonoNs = options.longs === String ? String(message.tsMonoNs) : message.tsMonoNs;
-                else
-                    object.tsMonoNs = options.longs === String ? $util.Long.prototype.toString.call(message.tsMonoNs) : options.longs === Number ? new $util.LongBits(message.tsMonoNs.low >>> 0, message.tsMonoNs.high >>> 0).toNumber(true) : message.tsMonoNs;
-            if (message.detections && message.detections.length) {
-                object.detections = [];
-                for (var j = 0; j < message.detections.length; ++j)
-                    object.detections[j] = $root.ai.Detection.toObject(message.detections[j], options);
+                    object.frameId = options.longs === String ? $util.Long.prototype.toString.call(message.frameId) : options.longs === Number ? new $util.LongBits(message.frameId.low >>> 0, message.frameId.high >>> 0).toNumber(true) : message.frameId;
+            if (message.frameRef != null && message.hasOwnProperty("frameRef"))
+                object.frameRef = $root.ai.FrameRef.toObject(message.frameRef, options);
+            if (message.modelFamily != null && message.hasOwnProperty("modelFamily"))
+                object.modelFamily = message.modelFamily;
+            if (message.modelName != null && message.hasOwnProperty("modelName"))
+                object.modelName = message.modelName;
+            if (message.modelVersion != null && message.hasOwnProperty("modelVersion"))
+                object.modelVersion = message.modelVersion;
+            if (message.lat != null && message.hasOwnProperty("lat"))
+                object.lat = $root.ai.Latency.toObject(message.lat, options);
+            if (message.detections != null && message.hasOwnProperty("detections")) {
+                object.detections = $root.ai.DetectionSet.toObject(message.detections, options);
+                if (options.oneofs)
+                    object.out = "detections";
             }
             return object;
         };
@@ -3083,15 +4348,796 @@ $root.ai = (function() {
         return Result;
     })();
 
+    ai.FrameRef = (function() {
+
+        /**
+         * Properties of a FrameRef.
+         * @memberof ai
+         * @interface IFrameRef
+         * @property {number|Long|null} [tsMonoNs] FrameRef tsMonoNs
+         * @property {number|Long|null} [tsUtcNs] FrameRef tsUtcNs
+         * @property {string|null} [sessionId] FrameRef sessionId
+         */
+
+        /**
+         * Constructs a new FrameRef.
+         * @memberof ai
+         * @classdesc Represents a FrameRef.
+         * @implements IFrameRef
+         * @constructor
+         * @param {ai.IFrameRef=} [properties] Properties to set
+         */
+        function FrameRef(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * FrameRef tsMonoNs.
+         * @member {number|Long} tsMonoNs
+         * @memberof ai.FrameRef
+         * @instance
+         */
+        FrameRef.prototype.tsMonoNs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * FrameRef tsUtcNs.
+         * @member {number|Long} tsUtcNs
+         * @memberof ai.FrameRef
+         * @instance
+         */
+        FrameRef.prototype.tsUtcNs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * FrameRef sessionId.
+         * @member {string} sessionId
+         * @memberof ai.FrameRef
+         * @instance
+         */
+        FrameRef.prototype.sessionId = "";
+
+        /**
+         * Creates a new FrameRef instance using the specified properties.
+         * @function create
+         * @memberof ai.FrameRef
+         * @static
+         * @param {ai.IFrameRef=} [properties] Properties to set
+         * @returns {ai.FrameRef} FrameRef instance
+         */
+        FrameRef.create = function create(properties) {
+            return new FrameRef(properties);
+        };
+
+        /**
+         * Encodes the specified FrameRef message. Does not implicitly {@link ai.FrameRef.verify|verify} messages.
+         * @function encode
+         * @memberof ai.FrameRef
+         * @static
+         * @param {ai.IFrameRef} message FrameRef message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        FrameRef.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.tsMonoNs != null && Object.hasOwnProperty.call(message, "tsMonoNs"))
+                writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.tsMonoNs);
+            if (message.tsUtcNs != null && Object.hasOwnProperty.call(message, "tsUtcNs"))
+                writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.tsUtcNs);
+            if (message.sessionId != null && Object.hasOwnProperty.call(message, "sessionId"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.sessionId);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified FrameRef message, length delimited. Does not implicitly {@link ai.FrameRef.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof ai.FrameRef
+         * @static
+         * @param {ai.IFrameRef} message FrameRef message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        FrameRef.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a FrameRef message from the specified reader or buffer.
+         * @function decode
+         * @memberof ai.FrameRef
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {ai.FrameRef} FrameRef
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        FrameRef.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.ai.FrameRef();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.tsMonoNs = reader.uint64();
+                        break;
+                    }
+                case 2: {
+                        message.tsUtcNs = reader.uint64();
+                        break;
+                    }
+                case 3: {
+                        message.sessionId = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a FrameRef message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof ai.FrameRef
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {ai.FrameRef} FrameRef
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        FrameRef.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a FrameRef message.
+         * @function verify
+         * @memberof ai.FrameRef
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        FrameRef.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.tsMonoNs != null && message.hasOwnProperty("tsMonoNs"))
+                if (!$util.isInteger(message.tsMonoNs) && !(message.tsMonoNs && $util.isInteger(message.tsMonoNs.low) && $util.isInteger(message.tsMonoNs.high)))
+                    return "tsMonoNs: integer|Long expected";
+            if (message.tsUtcNs != null && message.hasOwnProperty("tsUtcNs"))
+                if (!$util.isInteger(message.tsUtcNs) && !(message.tsUtcNs && $util.isInteger(message.tsUtcNs.low) && $util.isInteger(message.tsUtcNs.high)))
+                    return "tsUtcNs: integer|Long expected";
+            if (message.sessionId != null && message.hasOwnProperty("sessionId"))
+                if (!$util.isString(message.sessionId))
+                    return "sessionId: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a FrameRef message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof ai.FrameRef
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {ai.FrameRef} FrameRef
+         */
+        FrameRef.fromObject = function fromObject(object) {
+            if (object instanceof $root.ai.FrameRef)
+                return object;
+            var message = new $root.ai.FrameRef();
+            if (object.tsMonoNs != null)
+                if ($util.Long)
+                    (message.tsMonoNs = $util.Long.fromValue(object.tsMonoNs)).unsigned = true;
+                else if (typeof object.tsMonoNs === "string")
+                    message.tsMonoNs = parseInt(object.tsMonoNs, 10);
+                else if (typeof object.tsMonoNs === "number")
+                    message.tsMonoNs = object.tsMonoNs;
+                else if (typeof object.tsMonoNs === "object")
+                    message.tsMonoNs = new $util.LongBits(object.tsMonoNs.low >>> 0, object.tsMonoNs.high >>> 0).toNumber(true);
+            if (object.tsUtcNs != null)
+                if ($util.Long)
+                    (message.tsUtcNs = $util.Long.fromValue(object.tsUtcNs)).unsigned = true;
+                else if (typeof object.tsUtcNs === "string")
+                    message.tsUtcNs = parseInt(object.tsUtcNs, 10);
+                else if (typeof object.tsUtcNs === "number")
+                    message.tsUtcNs = object.tsUtcNs;
+                else if (typeof object.tsUtcNs === "object")
+                    message.tsUtcNs = new $util.LongBits(object.tsUtcNs.low >>> 0, object.tsUtcNs.high >>> 0).toNumber(true);
+            if (object.sessionId != null)
+                message.sessionId = String(object.sessionId);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a FrameRef message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof ai.FrameRef
+         * @static
+         * @param {ai.FrameRef} message FrameRef
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        FrameRef.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.tsMonoNs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.tsMonoNs = options.longs === String ? "0" : 0;
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.tsUtcNs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.tsUtcNs = options.longs === String ? "0" : 0;
+                object.sessionId = "";
+            }
+            if (message.tsMonoNs != null && message.hasOwnProperty("tsMonoNs"))
+                if (typeof message.tsMonoNs === "number")
+                    object.tsMonoNs = options.longs === String ? String(message.tsMonoNs) : message.tsMonoNs;
+                else
+                    object.tsMonoNs = options.longs === String ? $util.Long.prototype.toString.call(message.tsMonoNs) : options.longs === Number ? new $util.LongBits(message.tsMonoNs.low >>> 0, message.tsMonoNs.high >>> 0).toNumber(true) : message.tsMonoNs;
+            if (message.tsUtcNs != null && message.hasOwnProperty("tsUtcNs"))
+                if (typeof message.tsUtcNs === "number")
+                    object.tsUtcNs = options.longs === String ? String(message.tsUtcNs) : message.tsUtcNs;
+                else
+                    object.tsUtcNs = options.longs === String ? $util.Long.prototype.toString.call(message.tsUtcNs) : options.longs === Number ? new $util.LongBits(message.tsUtcNs.low >>> 0, message.tsUtcNs.high >>> 0).toNumber(true) : message.tsUtcNs;
+            if (message.sessionId != null && message.hasOwnProperty("sessionId"))
+                object.sessionId = message.sessionId;
+            return object;
+        };
+
+        /**
+         * Converts this FrameRef to JSON.
+         * @function toJSON
+         * @memberof ai.FrameRef
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        FrameRef.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for FrameRef
+         * @function getTypeUrl
+         * @memberof ai.FrameRef
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        FrameRef.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/ai.FrameRef";
+        };
+
+        return FrameRef;
+    })();
+
+    ai.Latency = (function() {
+
+        /**
+         * Properties of a Latency.
+         * @memberof ai
+         * @interface ILatency
+         * @property {number|null} [preMs] Latency preMs
+         * @property {number|null} [inferMs] Latency inferMs
+         * @property {number|null} [postMs] Latency postMs
+         * @property {number|null} [totalMs] Latency totalMs
+         */
+
+        /**
+         * Constructs a new Latency.
+         * @memberof ai
+         * @classdesc Represents a Latency.
+         * @implements ILatency
+         * @constructor
+         * @param {ai.ILatency=} [properties] Properties to set
+         */
+        function Latency(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * Latency preMs.
+         * @member {number} preMs
+         * @memberof ai.Latency
+         * @instance
+         */
+        Latency.prototype.preMs = 0;
+
+        /**
+         * Latency inferMs.
+         * @member {number} inferMs
+         * @memberof ai.Latency
+         * @instance
+         */
+        Latency.prototype.inferMs = 0;
+
+        /**
+         * Latency postMs.
+         * @member {number} postMs
+         * @memberof ai.Latency
+         * @instance
+         */
+        Latency.prototype.postMs = 0;
+
+        /**
+         * Latency totalMs.
+         * @member {number} totalMs
+         * @memberof ai.Latency
+         * @instance
+         */
+        Latency.prototype.totalMs = 0;
+
+        /**
+         * Creates a new Latency instance using the specified properties.
+         * @function create
+         * @memberof ai.Latency
+         * @static
+         * @param {ai.ILatency=} [properties] Properties to set
+         * @returns {ai.Latency} Latency instance
+         */
+        Latency.create = function create(properties) {
+            return new Latency(properties);
+        };
+
+        /**
+         * Encodes the specified Latency message. Does not implicitly {@link ai.Latency.verify|verify} messages.
+         * @function encode
+         * @memberof ai.Latency
+         * @static
+         * @param {ai.ILatency} message Latency message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        Latency.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.preMs != null && Object.hasOwnProperty.call(message, "preMs"))
+                writer.uint32(/* id 1, wireType 5 =*/13).float(message.preMs);
+            if (message.inferMs != null && Object.hasOwnProperty.call(message, "inferMs"))
+                writer.uint32(/* id 2, wireType 5 =*/21).float(message.inferMs);
+            if (message.postMs != null && Object.hasOwnProperty.call(message, "postMs"))
+                writer.uint32(/* id 3, wireType 5 =*/29).float(message.postMs);
+            if (message.totalMs != null && Object.hasOwnProperty.call(message, "totalMs"))
+                writer.uint32(/* id 4, wireType 5 =*/37).float(message.totalMs);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified Latency message, length delimited. Does not implicitly {@link ai.Latency.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof ai.Latency
+         * @static
+         * @param {ai.ILatency} message Latency message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        Latency.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a Latency message from the specified reader or buffer.
+         * @function decode
+         * @memberof ai.Latency
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {ai.Latency} Latency
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        Latency.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.ai.Latency();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.preMs = reader.float();
+                        break;
+                    }
+                case 2: {
+                        message.inferMs = reader.float();
+                        break;
+                    }
+                case 3: {
+                        message.postMs = reader.float();
+                        break;
+                    }
+                case 4: {
+                        message.totalMs = reader.float();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a Latency message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof ai.Latency
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {ai.Latency} Latency
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        Latency.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a Latency message.
+         * @function verify
+         * @memberof ai.Latency
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        Latency.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.preMs != null && message.hasOwnProperty("preMs"))
+                if (typeof message.preMs !== "number")
+                    return "preMs: number expected";
+            if (message.inferMs != null && message.hasOwnProperty("inferMs"))
+                if (typeof message.inferMs !== "number")
+                    return "inferMs: number expected";
+            if (message.postMs != null && message.hasOwnProperty("postMs"))
+                if (typeof message.postMs !== "number")
+                    return "postMs: number expected";
+            if (message.totalMs != null && message.hasOwnProperty("totalMs"))
+                if (typeof message.totalMs !== "number")
+                    return "totalMs: number expected";
+            return null;
+        };
+
+        /**
+         * Creates a Latency message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof ai.Latency
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {ai.Latency} Latency
+         */
+        Latency.fromObject = function fromObject(object) {
+            if (object instanceof $root.ai.Latency)
+                return object;
+            var message = new $root.ai.Latency();
+            if (object.preMs != null)
+                message.preMs = Number(object.preMs);
+            if (object.inferMs != null)
+                message.inferMs = Number(object.inferMs);
+            if (object.postMs != null)
+                message.postMs = Number(object.postMs);
+            if (object.totalMs != null)
+                message.totalMs = Number(object.totalMs);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a Latency message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof ai.Latency
+         * @static
+         * @param {ai.Latency} message Latency
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        Latency.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.preMs = 0;
+                object.inferMs = 0;
+                object.postMs = 0;
+                object.totalMs = 0;
+            }
+            if (message.preMs != null && message.hasOwnProperty("preMs"))
+                object.preMs = options.json && !isFinite(message.preMs) ? String(message.preMs) : message.preMs;
+            if (message.inferMs != null && message.hasOwnProperty("inferMs"))
+                object.inferMs = options.json && !isFinite(message.inferMs) ? String(message.inferMs) : message.inferMs;
+            if (message.postMs != null && message.hasOwnProperty("postMs"))
+                object.postMs = options.json && !isFinite(message.postMs) ? String(message.postMs) : message.postMs;
+            if (message.totalMs != null && message.hasOwnProperty("totalMs"))
+                object.totalMs = options.json && !isFinite(message.totalMs) ? String(message.totalMs) : message.totalMs;
+            return object;
+        };
+
+        /**
+         * Converts this Latency to JSON.
+         * @function toJSON
+         * @memberof ai.Latency
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        Latency.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for Latency
+         * @function getTypeUrl
+         * @memberof ai.Latency
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        Latency.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/ai.Latency";
+        };
+
+        return Latency;
+    })();
+
+    ai.DetectionSet = (function() {
+
+        /**
+         * Properties of a DetectionSet.
+         * @memberof ai
+         * @interface IDetectionSet
+         * @property {Array.<ai.IDetection>|null} [items] DetectionSet items
+         */
+
+        /**
+         * Constructs a new DetectionSet.
+         * @memberof ai
+         * @classdesc Represents a DetectionSet.
+         * @implements IDetectionSet
+         * @constructor
+         * @param {ai.IDetectionSet=} [properties] Properties to set
+         */
+        function DetectionSet(properties) {
+            this.items = [];
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * DetectionSet items.
+         * @member {Array.<ai.IDetection>} items
+         * @memberof ai.DetectionSet
+         * @instance
+         */
+        DetectionSet.prototype.items = $util.emptyArray;
+
+        /**
+         * Creates a new DetectionSet instance using the specified properties.
+         * @function create
+         * @memberof ai.DetectionSet
+         * @static
+         * @param {ai.IDetectionSet=} [properties] Properties to set
+         * @returns {ai.DetectionSet} DetectionSet instance
+         */
+        DetectionSet.create = function create(properties) {
+            return new DetectionSet(properties);
+        };
+
+        /**
+         * Encodes the specified DetectionSet message. Does not implicitly {@link ai.DetectionSet.verify|verify} messages.
+         * @function encode
+         * @memberof ai.DetectionSet
+         * @static
+         * @param {ai.IDetectionSet} message DetectionSet message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        DetectionSet.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.items != null && message.items.length)
+                for (var i = 0; i < message.items.length; ++i)
+                    $root.ai.Detection.encode(message.items[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+            return writer;
+        };
+
+        /**
+         * Encodes the specified DetectionSet message, length delimited. Does not implicitly {@link ai.DetectionSet.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof ai.DetectionSet
+         * @static
+         * @param {ai.IDetectionSet} message DetectionSet message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        DetectionSet.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a DetectionSet message from the specified reader or buffer.
+         * @function decode
+         * @memberof ai.DetectionSet
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {ai.DetectionSet} DetectionSet
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        DetectionSet.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.ai.DetectionSet();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        if (!(message.items && message.items.length))
+                            message.items = [];
+                        message.items.push($root.ai.Detection.decode(reader, reader.uint32()));
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a DetectionSet message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof ai.DetectionSet
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {ai.DetectionSet} DetectionSet
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        DetectionSet.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a DetectionSet message.
+         * @function verify
+         * @memberof ai.DetectionSet
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        DetectionSet.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.items != null && message.hasOwnProperty("items")) {
+                if (!Array.isArray(message.items))
+                    return "items: array expected";
+                for (var i = 0; i < message.items.length; ++i) {
+                    var error = $root.ai.Detection.verify(message.items[i]);
+                    if (error)
+                        return "items." + error;
+                }
+            }
+            return null;
+        };
+
+        /**
+         * Creates a DetectionSet message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof ai.DetectionSet
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {ai.DetectionSet} DetectionSet
+         */
+        DetectionSet.fromObject = function fromObject(object) {
+            if (object instanceof $root.ai.DetectionSet)
+                return object;
+            var message = new $root.ai.DetectionSet();
+            if (object.items) {
+                if (!Array.isArray(object.items))
+                    throw TypeError(".ai.DetectionSet.items: array expected");
+                message.items = [];
+                for (var i = 0; i < object.items.length; ++i) {
+                    if (typeof object.items[i] !== "object")
+                        throw TypeError(".ai.DetectionSet.items: object expected");
+                    message.items[i] = $root.ai.Detection.fromObject(object.items[i]);
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a DetectionSet message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof ai.DetectionSet
+         * @static
+         * @param {ai.DetectionSet} message DetectionSet
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        DetectionSet.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.arrays || options.defaults)
+                object.items = [];
+            if (message.items && message.items.length) {
+                object.items = [];
+                for (var j = 0; j < message.items.length; ++j)
+                    object.items[j] = $root.ai.Detection.toObject(message.items[j], options);
+            }
+            return object;
+        };
+
+        /**
+         * Converts this DetectionSet to JSON.
+         * @function toJSON
+         * @memberof ai.DetectionSet
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        DetectionSet.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for DetectionSet
+         * @function getTypeUrl
+         * @memberof ai.DetectionSet
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        DetectionSet.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/ai.DetectionSet";
+        };
+
+        return DetectionSet;
+    })();
+
     ai.Detection = (function() {
 
         /**
          * Properties of a Detection.
          * @memberof ai
          * @interface IDetection
-         * @property {string|null} [cls] Detection cls
+         * @property {ai.IBBox|null} [bbox] Detection bbox
          * @property {number|null} [conf] Detection conf
-         * @property {ai.IBoundingBox|null} [bbox] Detection bbox
+         * @property {string|null} [cls] Detection cls
          * @property {string|null} [trackId] Detection trackId
          */
 
@@ -3111,12 +5157,12 @@ $root.ai = (function() {
         }
 
         /**
-         * Detection cls.
-         * @member {string} cls
+         * Detection bbox.
+         * @member {ai.IBBox|null|undefined} bbox
          * @memberof ai.Detection
          * @instance
          */
-        Detection.prototype.cls = "";
+        Detection.prototype.bbox = null;
 
         /**
          * Detection conf.
@@ -3127,12 +5173,12 @@ $root.ai = (function() {
         Detection.prototype.conf = 0;
 
         /**
-         * Detection bbox.
-         * @member {ai.IBoundingBox|null|undefined} bbox
+         * Detection cls.
+         * @member {string} cls
          * @memberof ai.Detection
          * @instance
          */
-        Detection.prototype.bbox = null;
+        Detection.prototype.cls = "";
 
         /**
          * Detection trackId.
@@ -3166,12 +5212,12 @@ $root.ai = (function() {
         Detection.encode = function encode(message, writer) {
             if (!writer)
                 writer = $Writer.create();
-            if (message.cls != null && Object.hasOwnProperty.call(message, "cls"))
-                writer.uint32(/* id 1, wireType 2 =*/10).string(message.cls);
+            if (message.bbox != null && Object.hasOwnProperty.call(message, "bbox"))
+                $root.ai.BBox.encode(message.bbox, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
             if (message.conf != null && Object.hasOwnProperty.call(message, "conf"))
                 writer.uint32(/* id 2, wireType 5 =*/21).float(message.conf);
-            if (message.bbox != null && Object.hasOwnProperty.call(message, "bbox"))
-                $root.ai.BoundingBox.encode(message.bbox, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+            if (message.cls != null && Object.hasOwnProperty.call(message, "cls"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.cls);
             if (message.trackId != null && Object.hasOwnProperty.call(message, "trackId"))
                 writer.uint32(/* id 4, wireType 2 =*/34).string(message.trackId);
             return writer;
@@ -3211,7 +5257,7 @@ $root.ai = (function() {
                     break;
                 switch (tag >>> 3) {
                 case 1: {
-                        message.cls = reader.string();
+                        message.bbox = $root.ai.BBox.decode(reader, reader.uint32());
                         break;
                     }
                 case 2: {
@@ -3219,7 +5265,7 @@ $root.ai = (function() {
                         break;
                     }
                 case 3: {
-                        message.bbox = $root.ai.BoundingBox.decode(reader, reader.uint32());
+                        message.cls = reader.string();
                         break;
                     }
                 case 4: {
@@ -3261,17 +5307,17 @@ $root.ai = (function() {
         Detection.verify = function verify(message) {
             if (typeof message !== "object" || message === null)
                 return "object expected";
-            if (message.cls != null && message.hasOwnProperty("cls"))
-                if (!$util.isString(message.cls))
-                    return "cls: string expected";
-            if (message.conf != null && message.hasOwnProperty("conf"))
-                if (typeof message.conf !== "number")
-                    return "conf: number expected";
             if (message.bbox != null && message.hasOwnProperty("bbox")) {
-                var error = $root.ai.BoundingBox.verify(message.bbox);
+                var error = $root.ai.BBox.verify(message.bbox);
                 if (error)
                     return "bbox." + error;
             }
+            if (message.conf != null && message.hasOwnProperty("conf"))
+                if (typeof message.conf !== "number")
+                    return "conf: number expected";
+            if (message.cls != null && message.hasOwnProperty("cls"))
+                if (!$util.isString(message.cls))
+                    return "cls: string expected";
             if (message.trackId != null && message.hasOwnProperty("trackId"))
                 if (!$util.isString(message.trackId))
                     return "trackId: string expected";
@@ -3290,15 +5336,15 @@ $root.ai = (function() {
             if (object instanceof $root.ai.Detection)
                 return object;
             var message = new $root.ai.Detection();
-            if (object.cls != null)
-                message.cls = String(object.cls);
-            if (object.conf != null)
-                message.conf = Number(object.conf);
             if (object.bbox != null) {
                 if (typeof object.bbox !== "object")
                     throw TypeError(".ai.Detection.bbox: object expected");
-                message.bbox = $root.ai.BoundingBox.fromObject(object.bbox);
+                message.bbox = $root.ai.BBox.fromObject(object.bbox);
             }
+            if (object.conf != null)
+                message.conf = Number(object.conf);
+            if (object.cls != null)
+                message.cls = String(object.cls);
             if (object.trackId != null)
                 message.trackId = String(object.trackId);
             return message;
@@ -3318,17 +5364,17 @@ $root.ai = (function() {
                 options = {};
             var object = {};
             if (options.defaults) {
-                object.cls = "";
-                object.conf = 0;
                 object.bbox = null;
+                object.conf = 0;
+                object.cls = "";
                 object.trackId = "";
             }
-            if (message.cls != null && message.hasOwnProperty("cls"))
-                object.cls = message.cls;
+            if (message.bbox != null && message.hasOwnProperty("bbox"))
+                object.bbox = $root.ai.BBox.toObject(message.bbox, options);
             if (message.conf != null && message.hasOwnProperty("conf"))
                 object.conf = options.json && !isFinite(message.conf) ? String(message.conf) : message.conf;
-            if (message.bbox != null && message.hasOwnProperty("bbox"))
-                object.bbox = $root.ai.BoundingBox.toObject(message.bbox, options);
+            if (message.cls != null && message.hasOwnProperty("cls"))
+                object.cls = message.cls;
             if (message.trackId != null && message.hasOwnProperty("trackId"))
                 object.trackId = message.trackId;
             return object;
@@ -3363,27 +5409,27 @@ $root.ai = (function() {
         return Detection;
     })();
 
-    ai.BoundingBox = (function() {
+    ai.BBox = (function() {
 
         /**
-         * Properties of a BoundingBox.
+         * Properties of a BBox.
          * @memberof ai
-         * @interface IBoundingBox
-         * @property {number|null} [x] BoundingBox x
-         * @property {number|null} [y] BoundingBox y
-         * @property {number|null} [w] BoundingBox w
-         * @property {number|null} [h] BoundingBox h
+         * @interface IBBox
+         * @property {number|null} [x1] BBox x1
+         * @property {number|null} [y1] BBox y1
+         * @property {number|null} [x2] BBox x2
+         * @property {number|null} [y2] BBox y2
          */
 
         /**
-         * Constructs a new BoundingBox.
+         * Constructs a new BBox.
          * @memberof ai
-         * @classdesc Represents a BoundingBox.
-         * @implements IBoundingBox
+         * @classdesc Represents a BBox.
+         * @implements IBBox
          * @constructor
-         * @param {ai.IBoundingBox=} [properties] Properties to set
+         * @param {ai.IBBox=} [properties] Properties to set
          */
-        function BoundingBox(properties) {
+        function BBox(properties) {
             if (properties)
                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                     if (properties[keys[i]] != null)
@@ -3391,119 +5437,119 @@ $root.ai = (function() {
         }
 
         /**
-         * BoundingBox x.
-         * @member {number} x
-         * @memberof ai.BoundingBox
+         * BBox x1.
+         * @member {number} x1
+         * @memberof ai.BBox
          * @instance
          */
-        BoundingBox.prototype.x = 0;
+        BBox.prototype.x1 = 0;
 
         /**
-         * BoundingBox y.
-         * @member {number} y
-         * @memberof ai.BoundingBox
+         * BBox y1.
+         * @member {number} y1
+         * @memberof ai.BBox
          * @instance
          */
-        BoundingBox.prototype.y = 0;
+        BBox.prototype.y1 = 0;
 
         /**
-         * BoundingBox w.
-         * @member {number} w
-         * @memberof ai.BoundingBox
+         * BBox x2.
+         * @member {number} x2
+         * @memberof ai.BBox
          * @instance
          */
-        BoundingBox.prototype.w = 0;
+        BBox.prototype.x2 = 0;
 
         /**
-         * BoundingBox h.
-         * @member {number} h
-         * @memberof ai.BoundingBox
+         * BBox y2.
+         * @member {number} y2
+         * @memberof ai.BBox
          * @instance
          */
-        BoundingBox.prototype.h = 0;
+        BBox.prototype.y2 = 0;
 
         /**
-         * Creates a new BoundingBox instance using the specified properties.
+         * Creates a new BBox instance using the specified properties.
          * @function create
-         * @memberof ai.BoundingBox
+         * @memberof ai.BBox
          * @static
-         * @param {ai.IBoundingBox=} [properties] Properties to set
-         * @returns {ai.BoundingBox} BoundingBox instance
+         * @param {ai.IBBox=} [properties] Properties to set
+         * @returns {ai.BBox} BBox instance
          */
-        BoundingBox.create = function create(properties) {
-            return new BoundingBox(properties);
+        BBox.create = function create(properties) {
+            return new BBox(properties);
         };
 
         /**
-         * Encodes the specified BoundingBox message. Does not implicitly {@link ai.BoundingBox.verify|verify} messages.
+         * Encodes the specified BBox message. Does not implicitly {@link ai.BBox.verify|verify} messages.
          * @function encode
-         * @memberof ai.BoundingBox
+         * @memberof ai.BBox
          * @static
-         * @param {ai.IBoundingBox} message BoundingBox message or plain object to encode
+         * @param {ai.IBBox} message BBox message or plain object to encode
          * @param {$protobuf.Writer} [writer] Writer to encode to
          * @returns {$protobuf.Writer} Writer
          */
-        BoundingBox.encode = function encode(message, writer) {
+        BBox.encode = function encode(message, writer) {
             if (!writer)
                 writer = $Writer.create();
-            if (message.x != null && Object.hasOwnProperty.call(message, "x"))
-                writer.uint32(/* id 1, wireType 5 =*/13).float(message.x);
-            if (message.y != null && Object.hasOwnProperty.call(message, "y"))
-                writer.uint32(/* id 2, wireType 5 =*/21).float(message.y);
-            if (message.w != null && Object.hasOwnProperty.call(message, "w"))
-                writer.uint32(/* id 3, wireType 5 =*/29).float(message.w);
-            if (message.h != null && Object.hasOwnProperty.call(message, "h"))
-                writer.uint32(/* id 4, wireType 5 =*/37).float(message.h);
+            if (message.x1 != null && Object.hasOwnProperty.call(message, "x1"))
+                writer.uint32(/* id 1, wireType 5 =*/13).float(message.x1);
+            if (message.y1 != null && Object.hasOwnProperty.call(message, "y1"))
+                writer.uint32(/* id 2, wireType 5 =*/21).float(message.y1);
+            if (message.x2 != null && Object.hasOwnProperty.call(message, "x2"))
+                writer.uint32(/* id 3, wireType 5 =*/29).float(message.x2);
+            if (message.y2 != null && Object.hasOwnProperty.call(message, "y2"))
+                writer.uint32(/* id 4, wireType 5 =*/37).float(message.y2);
             return writer;
         };
 
         /**
-         * Encodes the specified BoundingBox message, length delimited. Does not implicitly {@link ai.BoundingBox.verify|verify} messages.
+         * Encodes the specified BBox message, length delimited. Does not implicitly {@link ai.BBox.verify|verify} messages.
          * @function encodeDelimited
-         * @memberof ai.BoundingBox
+         * @memberof ai.BBox
          * @static
-         * @param {ai.IBoundingBox} message BoundingBox message or plain object to encode
+         * @param {ai.IBBox} message BBox message or plain object to encode
          * @param {$protobuf.Writer} [writer] Writer to encode to
          * @returns {$protobuf.Writer} Writer
          */
-        BoundingBox.encodeDelimited = function encodeDelimited(message, writer) {
+        BBox.encodeDelimited = function encodeDelimited(message, writer) {
             return this.encode(message, writer).ldelim();
         };
 
         /**
-         * Decodes a BoundingBox message from the specified reader or buffer.
+         * Decodes a BBox message from the specified reader or buffer.
          * @function decode
-         * @memberof ai.BoundingBox
+         * @memberof ai.BBox
          * @static
          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
          * @param {number} [length] Message length if known beforehand
-         * @returns {ai.BoundingBox} BoundingBox
+         * @returns {ai.BBox} BBox
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        BoundingBox.decode = function decode(reader, length, error) {
+        BBox.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
-            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.ai.BoundingBox();
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.ai.BBox();
             while (reader.pos < end) {
                 var tag = reader.uint32();
                 if (tag === error)
                     break;
                 switch (tag >>> 3) {
                 case 1: {
-                        message.x = reader.float();
+                        message.x1 = reader.float();
                         break;
                     }
                 case 2: {
-                        message.y = reader.float();
+                        message.y1 = reader.float();
                         break;
                     }
                 case 3: {
-                        message.w = reader.float();
+                        message.x2 = reader.float();
                         break;
                     }
                 case 4: {
-                        message.h = reader.float();
+                        message.y2 = reader.float();
                         break;
                     }
                 default:
@@ -3515,127 +5561,127 @@ $root.ai = (function() {
         };
 
         /**
-         * Decodes a BoundingBox message from the specified reader or buffer, length delimited.
+         * Decodes a BBox message from the specified reader or buffer, length delimited.
          * @function decodeDelimited
-         * @memberof ai.BoundingBox
+         * @memberof ai.BBox
          * @static
          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-         * @returns {ai.BoundingBox} BoundingBox
+         * @returns {ai.BBox} BBox
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        BoundingBox.decodeDelimited = function decodeDelimited(reader) {
+        BBox.decodeDelimited = function decodeDelimited(reader) {
             if (!(reader instanceof $Reader))
                 reader = new $Reader(reader);
             return this.decode(reader, reader.uint32());
         };
 
         /**
-         * Verifies a BoundingBox message.
+         * Verifies a BBox message.
          * @function verify
-         * @memberof ai.BoundingBox
+         * @memberof ai.BBox
          * @static
          * @param {Object.<string,*>} message Plain object to verify
          * @returns {string|null} `null` if valid, otherwise the reason why it is not
          */
-        BoundingBox.verify = function verify(message) {
+        BBox.verify = function verify(message) {
             if (typeof message !== "object" || message === null)
                 return "object expected";
-            if (message.x != null && message.hasOwnProperty("x"))
-                if (typeof message.x !== "number")
-                    return "x: number expected";
-            if (message.y != null && message.hasOwnProperty("y"))
-                if (typeof message.y !== "number")
-                    return "y: number expected";
-            if (message.w != null && message.hasOwnProperty("w"))
-                if (typeof message.w !== "number")
-                    return "w: number expected";
-            if (message.h != null && message.hasOwnProperty("h"))
-                if (typeof message.h !== "number")
-                    return "h: number expected";
+            if (message.x1 != null && message.hasOwnProperty("x1"))
+                if (typeof message.x1 !== "number")
+                    return "x1: number expected";
+            if (message.y1 != null && message.hasOwnProperty("y1"))
+                if (typeof message.y1 !== "number")
+                    return "y1: number expected";
+            if (message.x2 != null && message.hasOwnProperty("x2"))
+                if (typeof message.x2 !== "number")
+                    return "x2: number expected";
+            if (message.y2 != null && message.hasOwnProperty("y2"))
+                if (typeof message.y2 !== "number")
+                    return "y2: number expected";
             return null;
         };
 
         /**
-         * Creates a BoundingBox message from a plain object. Also converts values to their respective internal types.
+         * Creates a BBox message from a plain object. Also converts values to their respective internal types.
          * @function fromObject
-         * @memberof ai.BoundingBox
+         * @memberof ai.BBox
          * @static
          * @param {Object.<string,*>} object Plain object
-         * @returns {ai.BoundingBox} BoundingBox
+         * @returns {ai.BBox} BBox
          */
-        BoundingBox.fromObject = function fromObject(object) {
-            if (object instanceof $root.ai.BoundingBox)
+        BBox.fromObject = function fromObject(object) {
+            if (object instanceof $root.ai.BBox)
                 return object;
-            var message = new $root.ai.BoundingBox();
-            if (object.x != null)
-                message.x = Number(object.x);
-            if (object.y != null)
-                message.y = Number(object.y);
-            if (object.w != null)
-                message.w = Number(object.w);
-            if (object.h != null)
-                message.h = Number(object.h);
+            var message = new $root.ai.BBox();
+            if (object.x1 != null)
+                message.x1 = Number(object.x1);
+            if (object.y1 != null)
+                message.y1 = Number(object.y1);
+            if (object.x2 != null)
+                message.x2 = Number(object.x2);
+            if (object.y2 != null)
+                message.y2 = Number(object.y2);
             return message;
         };
 
         /**
-         * Creates a plain object from a BoundingBox message. Also converts values to other types if specified.
+         * Creates a plain object from a BBox message. Also converts values to other types if specified.
          * @function toObject
-         * @memberof ai.BoundingBox
+         * @memberof ai.BBox
          * @static
-         * @param {ai.BoundingBox} message BoundingBox
+         * @param {ai.BBox} message BBox
          * @param {$protobuf.IConversionOptions} [options] Conversion options
          * @returns {Object.<string,*>} Plain object
          */
-        BoundingBox.toObject = function toObject(message, options) {
+        BBox.toObject = function toObject(message, options) {
             if (!options)
                 options = {};
             var object = {};
             if (options.defaults) {
-                object.x = 0;
-                object.y = 0;
-                object.w = 0;
-                object.h = 0;
+                object.x1 = 0;
+                object.y1 = 0;
+                object.x2 = 0;
+                object.y2 = 0;
             }
-            if (message.x != null && message.hasOwnProperty("x"))
-                object.x = options.json && !isFinite(message.x) ? String(message.x) : message.x;
-            if (message.y != null && message.hasOwnProperty("y"))
-                object.y = options.json && !isFinite(message.y) ? String(message.y) : message.y;
-            if (message.w != null && message.hasOwnProperty("w"))
-                object.w = options.json && !isFinite(message.w) ? String(message.w) : message.w;
-            if (message.h != null && message.hasOwnProperty("h"))
-                object.h = options.json && !isFinite(message.h) ? String(message.h) : message.h;
+            if (message.x1 != null && message.hasOwnProperty("x1"))
+                object.x1 = options.json && !isFinite(message.x1) ? String(message.x1) : message.x1;
+            if (message.y1 != null && message.hasOwnProperty("y1"))
+                object.y1 = options.json && !isFinite(message.y1) ? String(message.y1) : message.y1;
+            if (message.x2 != null && message.hasOwnProperty("x2"))
+                object.x2 = options.json && !isFinite(message.x2) ? String(message.x2) : message.x2;
+            if (message.y2 != null && message.hasOwnProperty("y2"))
+                object.y2 = options.json && !isFinite(message.y2) ? String(message.y2) : message.y2;
             return object;
         };
 
         /**
-         * Converts this BoundingBox to JSON.
+         * Converts this BBox to JSON.
          * @function toJSON
-         * @memberof ai.BoundingBox
+         * @memberof ai.BBox
          * @instance
          * @returns {Object.<string,*>} JSON object
          */
-        BoundingBox.prototype.toJSON = function toJSON() {
+        BBox.prototype.toJSON = function toJSON() {
             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
         };
 
         /**
-         * Gets the default type url for BoundingBox
+         * Gets the default type url for BBox
          * @function getTypeUrl
-         * @memberof ai.BoundingBox
+         * @memberof ai.BBox
          * @static
          * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
          * @returns {string} The default type url
          */
-        BoundingBox.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+        BBox.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
             if (typeUrlPrefix === undefined) {
                 typeUrlPrefix = "type.googleapis.com";
             }
-            return typeUrlPrefix + "/ai.BoundingBox";
+            return typeUrlPrefix + "/ai.BBox";
         };
 
-        return BoundingBox;
+        return BBox;
     })();
 
     ai.Error = (function() {
@@ -3644,8 +5690,9 @@ $root.ai = (function() {
          * Properties of an Error.
          * @memberof ai
          * @interface IError
-         * @property {number|null} [code] Error code
+         * @property {ai.ErrorCode|null} [code] Error code
          * @property {string|null} [message] Error message
+         * @property {number|null} [retryAfterMs] Error retryAfterMs
          */
 
         /**
@@ -3665,7 +5712,7 @@ $root.ai = (function() {
 
         /**
          * Error code.
-         * @member {number} code
+         * @member {ai.ErrorCode} code
          * @memberof ai.Error
          * @instance
          */
@@ -3678,6 +5725,14 @@ $root.ai = (function() {
          * @instance
          */
         Error.prototype.message = "";
+
+        /**
+         * Error retryAfterMs.
+         * @member {number} retryAfterMs
+         * @memberof ai.Error
+         * @instance
+         */
+        Error.prototype.retryAfterMs = 0;
 
         /**
          * Creates a new Error instance using the specified properties.
@@ -3704,9 +5759,11 @@ $root.ai = (function() {
             if (!writer)
                 writer = $Writer.create();
             if (message.code != null && Object.hasOwnProperty.call(message, "code"))
-                writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.code);
+                writer.uint32(/* id 1, wireType 0 =*/8).int32(message.code);
             if (message.message != null && Object.hasOwnProperty.call(message, "message"))
                 writer.uint32(/* id 2, wireType 2 =*/18).string(message.message);
+            if (message.retryAfterMs != null && Object.hasOwnProperty.call(message, "retryAfterMs"))
+                writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.retryAfterMs);
             return writer;
         };
 
@@ -3744,11 +5801,15 @@ $root.ai = (function() {
                     break;
                 switch (tag >>> 3) {
                 case 1: {
-                        message.code = reader.uint32();
+                        message.code = reader.int32();
                         break;
                     }
                 case 2: {
                         message.message = reader.string();
+                        break;
+                    }
+                case 3: {
+                        message.retryAfterMs = reader.uint32();
                         break;
                     }
                 default:
@@ -3787,11 +5848,28 @@ $root.ai = (function() {
             if (typeof message !== "object" || message === null)
                 return "object expected";
             if (message.code != null && message.hasOwnProperty("code"))
-                if (!$util.isInteger(message.code))
-                    return "code: integer expected";
+                switch (message.code) {
+                default:
+                    return "code: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                case 3:
+                case 4:
+                case 5:
+                case 6:
+                case 7:
+                case 8:
+                case 9:
+                case 10:
+                    break;
+                }
             if (message.message != null && message.hasOwnProperty("message"))
                 if (!$util.isString(message.message))
                     return "message: string expected";
+            if (message.retryAfterMs != null && message.hasOwnProperty("retryAfterMs"))
+                if (!$util.isInteger(message.retryAfterMs))
+                    return "retryAfterMs: integer expected";
             return null;
         };
 
@@ -3807,10 +5885,62 @@ $root.ai = (function() {
             if (object instanceof $root.ai.Error)
                 return object;
             var message = new $root.ai.Error();
-            if (object.code != null)
-                message.code = object.code >>> 0;
+            switch (object.code) {
+            default:
+                if (typeof object.code === "number") {
+                    message.code = object.code;
+                    break;
+                }
+                break;
+            case "ERR_UNKNOWN":
+            case 0:
+                message.code = 0;
+                break;
+            case "VERSION_UNSUPPORTED":
+            case 1:
+                message.code = 1;
+                break;
+            case "BAD_MESSAGE":
+            case 2:
+                message.code = 2;
+                break;
+            case "BAD_SEQUENCE":
+            case 3:
+                message.code = 3;
+                break;
+            case "UNSUPPORTED_FORMAT":
+            case 4:
+                message.code = 4;
+                break;
+            case "INVALID_FRAME":
+            case 5:
+                message.code = 5;
+                break;
+            case "FRAME_TOO_LARGE":
+            case 6:
+                message.code = 6;
+                break;
+            case "MODEL_NOT_READY":
+            case 7:
+                message.code = 7;
+                break;
+            case "OOM":
+            case 8:
+                message.code = 8;
+                break;
+            case "BACKPRESSURE_TIMEOUT":
+            case 9:
+                message.code = 9;
+                break;
+            case "INTERNAL":
+            case 10:
+                message.code = 10;
+                break;
+            }
             if (object.message != null)
                 message.message = String(object.message);
+            if (object.retryAfterMs != null)
+                message.retryAfterMs = object.retryAfterMs >>> 0;
             return message;
         };
 
@@ -3828,13 +5958,16 @@ $root.ai = (function() {
                 options = {};
             var object = {};
             if (options.defaults) {
-                object.code = 0;
+                object.code = options.enums === String ? "ERR_UNKNOWN" : 0;
                 object.message = "";
+                object.retryAfterMs = 0;
             }
             if (message.code != null && message.hasOwnProperty("code"))
-                object.code = message.code;
+                object.code = options.enums === String ? $root.ai.ErrorCode[message.code] === undefined ? message.code : $root.ai.ErrorCode[message.code] : message.code;
             if (message.message != null && message.hasOwnProperty("message"))
                 object.message = message.message;
+            if (message.retryAfterMs != null && message.hasOwnProperty("retryAfterMs"))
+                object.retryAfterMs = message.retryAfterMs;
             return object;
         };
 
@@ -3873,7 +6006,9 @@ $root.ai = (function() {
          * Properties of a Heartbeat.
          * @memberof ai
          * @interface IHeartbeat
-         * @property {number|Long|null} [tsMonoNs] Heartbeat tsMonoNs
+         * @property {number|Long|null} [lastFrameId] Heartbeat lastFrameId
+         * @property {number|Long|null} [tx] Heartbeat tx
+         * @property {number|Long|null} [rx] Heartbeat rx
          */
 
         /**
@@ -3892,12 +6027,28 @@ $root.ai = (function() {
         }
 
         /**
-         * Heartbeat tsMonoNs.
-         * @member {number|Long} tsMonoNs
+         * Heartbeat lastFrameId.
+         * @member {number|Long} lastFrameId
          * @memberof ai.Heartbeat
          * @instance
          */
-        Heartbeat.prototype.tsMonoNs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+        Heartbeat.prototype.lastFrameId = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * Heartbeat tx.
+         * @member {number|Long} tx
+         * @memberof ai.Heartbeat
+         * @instance
+         */
+        Heartbeat.prototype.tx = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * Heartbeat rx.
+         * @member {number|Long} rx
+         * @memberof ai.Heartbeat
+         * @instance
+         */
+        Heartbeat.prototype.rx = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
         /**
          * Creates a new Heartbeat instance using the specified properties.
@@ -3923,8 +6074,12 @@ $root.ai = (function() {
         Heartbeat.encode = function encode(message, writer) {
             if (!writer)
                 writer = $Writer.create();
-            if (message.tsMonoNs != null && Object.hasOwnProperty.call(message, "tsMonoNs"))
-                writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.tsMonoNs);
+            if (message.lastFrameId != null && Object.hasOwnProperty.call(message, "lastFrameId"))
+                writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.lastFrameId);
+            if (message.tx != null && Object.hasOwnProperty.call(message, "tx"))
+                writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.tx);
+            if (message.rx != null && Object.hasOwnProperty.call(message, "rx"))
+                writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.rx);
             return writer;
         };
 
@@ -3962,7 +6117,15 @@ $root.ai = (function() {
                     break;
                 switch (tag >>> 3) {
                 case 1: {
-                        message.tsMonoNs = reader.uint64();
+                        message.lastFrameId = reader.uint64();
+                        break;
+                    }
+                case 2: {
+                        message.tx = reader.uint64();
+                        break;
+                    }
+                case 3: {
+                        message.rx = reader.uint64();
                         break;
                     }
                 default:
@@ -4000,9 +6163,15 @@ $root.ai = (function() {
         Heartbeat.verify = function verify(message) {
             if (typeof message !== "object" || message === null)
                 return "object expected";
-            if (message.tsMonoNs != null && message.hasOwnProperty("tsMonoNs"))
-                if (!$util.isInteger(message.tsMonoNs) && !(message.tsMonoNs && $util.isInteger(message.tsMonoNs.low) && $util.isInteger(message.tsMonoNs.high)))
-                    return "tsMonoNs: integer|Long expected";
+            if (message.lastFrameId != null && message.hasOwnProperty("lastFrameId"))
+                if (!$util.isInteger(message.lastFrameId) && !(message.lastFrameId && $util.isInteger(message.lastFrameId.low) && $util.isInteger(message.lastFrameId.high)))
+                    return "lastFrameId: integer|Long expected";
+            if (message.tx != null && message.hasOwnProperty("tx"))
+                if (!$util.isInteger(message.tx) && !(message.tx && $util.isInteger(message.tx.low) && $util.isInteger(message.tx.high)))
+                    return "tx: integer|Long expected";
+            if (message.rx != null && message.hasOwnProperty("rx"))
+                if (!$util.isInteger(message.rx) && !(message.rx && $util.isInteger(message.rx.low) && $util.isInteger(message.rx.high)))
+                    return "rx: integer|Long expected";
             return null;
         };
 
@@ -4018,15 +6187,33 @@ $root.ai = (function() {
             if (object instanceof $root.ai.Heartbeat)
                 return object;
             var message = new $root.ai.Heartbeat();
-            if (object.tsMonoNs != null)
+            if (object.lastFrameId != null)
                 if ($util.Long)
-                    (message.tsMonoNs = $util.Long.fromValue(object.tsMonoNs)).unsigned = true;
-                else if (typeof object.tsMonoNs === "string")
-                    message.tsMonoNs = parseInt(object.tsMonoNs, 10);
-                else if (typeof object.tsMonoNs === "number")
-                    message.tsMonoNs = object.tsMonoNs;
-                else if (typeof object.tsMonoNs === "object")
-                    message.tsMonoNs = new $util.LongBits(object.tsMonoNs.low >>> 0, object.tsMonoNs.high >>> 0).toNumber(true);
+                    (message.lastFrameId = $util.Long.fromValue(object.lastFrameId)).unsigned = true;
+                else if (typeof object.lastFrameId === "string")
+                    message.lastFrameId = parseInt(object.lastFrameId, 10);
+                else if (typeof object.lastFrameId === "number")
+                    message.lastFrameId = object.lastFrameId;
+                else if (typeof object.lastFrameId === "object")
+                    message.lastFrameId = new $util.LongBits(object.lastFrameId.low >>> 0, object.lastFrameId.high >>> 0).toNumber(true);
+            if (object.tx != null)
+                if ($util.Long)
+                    (message.tx = $util.Long.fromValue(object.tx)).unsigned = true;
+                else if (typeof object.tx === "string")
+                    message.tx = parseInt(object.tx, 10);
+                else if (typeof object.tx === "number")
+                    message.tx = object.tx;
+                else if (typeof object.tx === "object")
+                    message.tx = new $util.LongBits(object.tx.low >>> 0, object.tx.high >>> 0).toNumber(true);
+            if (object.rx != null)
+                if ($util.Long)
+                    (message.rx = $util.Long.fromValue(object.rx)).unsigned = true;
+                else if (typeof object.rx === "string")
+                    message.rx = parseInt(object.rx, 10);
+                else if (typeof object.rx === "number")
+                    message.rx = object.rx;
+                else if (typeof object.rx === "object")
+                    message.rx = new $util.LongBits(object.rx.low >>> 0, object.rx.high >>> 0).toNumber(true);
             return message;
         };
 
@@ -4043,17 +6230,38 @@ $root.ai = (function() {
             if (!options)
                 options = {};
             var object = {};
-            if (options.defaults)
+            if (options.defaults) {
                 if ($util.Long) {
                     var long = new $util.Long(0, 0, true);
-                    object.tsMonoNs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                    object.lastFrameId = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                 } else
-                    object.tsMonoNs = options.longs === String ? "0" : 0;
-            if (message.tsMonoNs != null && message.hasOwnProperty("tsMonoNs"))
-                if (typeof message.tsMonoNs === "number")
-                    object.tsMonoNs = options.longs === String ? String(message.tsMonoNs) : message.tsMonoNs;
+                    object.lastFrameId = options.longs === String ? "0" : 0;
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.tx = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.tx = options.longs === String ? "0" : 0;
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.rx = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.rx = options.longs === String ? "0" : 0;
+            }
+            if (message.lastFrameId != null && message.hasOwnProperty("lastFrameId"))
+                if (typeof message.lastFrameId === "number")
+                    object.lastFrameId = options.longs === String ? String(message.lastFrameId) : message.lastFrameId;
                 else
-                    object.tsMonoNs = options.longs === String ? $util.Long.prototype.toString.call(message.tsMonoNs) : options.longs === Number ? new $util.LongBits(message.tsMonoNs.low >>> 0, message.tsMonoNs.high >>> 0).toNumber(true) : message.tsMonoNs;
+                    object.lastFrameId = options.longs === String ? $util.Long.prototype.toString.call(message.lastFrameId) : options.longs === Number ? new $util.LongBits(message.lastFrameId.low >>> 0, message.lastFrameId.high >>> 0).toNumber(true) : message.lastFrameId;
+            if (message.tx != null && message.hasOwnProperty("tx"))
+                if (typeof message.tx === "number")
+                    object.tx = options.longs === String ? String(message.tx) : message.tx;
+                else
+                    object.tx = options.longs === String ? $util.Long.prototype.toString.call(message.tx) : options.longs === Number ? new $util.LongBits(message.tx.low >>> 0, message.tx.high >>> 0).toNumber(true) : message.tx;
+            if (message.rx != null && message.hasOwnProperty("rx"))
+                if (typeof message.rx === "number")
+                    object.rx = options.longs === String ? String(message.rx) : message.rx;
+                else
+                    object.rx = options.longs === String ? $util.Long.prototype.toString.call(message.rx) : options.longs === Number ? new $util.LongBits(message.rx.low >>> 0, message.rx.high >>> 0).toNumber(true) : message.rx;
             return object;
         };
 

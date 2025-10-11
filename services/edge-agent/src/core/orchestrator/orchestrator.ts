@@ -2,13 +2,7 @@
  * Orchestrator - Coordinador Central del Sistema (FSM)
  *
  * El Orchestrator es el "cerebro" del Edge Agent. Implementa una FSM
- * (Finite State Machine) pura que coordina todos los módulos.
- * - StartStream: Inicia RTSP hacia MediaMTX
- * - StopStream: Detiene RTSP
- * - OpenSession: Crea nueva sesión en store, retorna sessionId
- * - AppendDetections: Envía batch de detecciones a store
- * - CloseSession: Cierra sesión con endTs
- * - SetAIFpsMode: Cambia velocidad de AI (configurable vía CONFIG.ai.fps)basándose
+ * (Finite State Machine) pura que coordina todos los módulos basándose
  * en eventos.
  *
  * Responsabilidades:
@@ -22,19 +16,34 @@
  *
  * Estados de la FSM:
  *
- * - IDLE: Esperando detecciones (AI @ fps idle, sin stream)
- * - DWELL: Ventana de confirmación (configurable, AI @ fps idle)
- * - ACTIVE: Grabando (AI @ fps active, stream ON)
- * - CLOSING: Post-roll (configurable, AI @ fps active, stream ON)
+ * - IDLE: Esperando detecciones (AI @ fps idle, sin stream, sin sesión)
+ * - DWELL: Ventana de confirmación FIJA (CONFIG.fsm.dwellMs, evita falsos positivos)
+ * - ACTIVE: Grabando (AI @ fps active, stream ON, sesión abierta)
+ * - CLOSING: Post-roll (CONFIG.fsm.postRollMs, grabación extra tras última detección)
  *
  * Flujo típico:
  *
  * ```
- * IDLE → (ai.detection con relevant=true) → DWELL
+ * IDLE → (ai.detection relevante) → DWELL
  *      → (dwell timer OK) → ACTIVE
  *      → (silence timer OK) → CLOSING
  *      → (postroll timer OK) → IDLE
+ *
+ * Re-activación durante post-roll:
+ * CLOSING → (ai.detection relevante) → ACTIVE (mantiene misma sesión)
  * ```
+ *
+ * Comandos que puede ejecutar:
+ *
+ * - StartStream: Inicia pipeline GStreamer
+ * - StopStream: Detiene pipeline
+ * - OpenSession: Crea sesión en store
+ * - CloseSession: Cierra sesión con endTs
+ * - SetAIFpsMode: Cambia tasa de captura AI
+ *
+ * Nota: Las detecciones se envían automáticamente vía FrameIngester
+ * (AI Engine → Session Store /ingest). El orchestrator solo maneja
+ * el ciclo de vida de las sesiones.
  *
  * Arquitectura:
  *
@@ -52,9 +61,7 @@
  */
 
 import { Bus } from "../bus/bus.js";
-// Ports directo: Máxima claridad arquitectónica
 import type { CameraHub } from "../../modules/video/ports/camera-hub.js";
-import type { RGBCapture } from "../../modules/video/ports/rgb-capture.js";
 import type { AIEngine } from "../../modules/ai/ports/ai-engine.js";
 import type { Publisher } from "../../modules/streaming/ports/publisher.js";
 import type { SessionStore } from "../../modules/store/ports/session-store.js";
@@ -65,10 +72,12 @@ import { reduce } from "./fsm.js";
 import type { FSMContext, Command, State } from "./types.js";
 import type { AllEvents } from "../bus/events.js";
 
-// Módulos que el Orchestrator controla (dependency injection)
+/**
+ * Adapters - Módulos que el Orchestrator controla (dependency injection)
+ */
 type Adapters = {
   camera: CameraHub; // V4L2/RTSP → SHM
-  capture: RGBCapture; // SHM → RGB frames (dual-rate)
+  capture: any; // NV12 capture (Protocol v1)
   ai: AIEngine; // Detección de objetos
   publisher: Publisher; // SHM → RTSP MediaMTX
   store: SessionStore; // API sessions + detections
@@ -90,6 +99,10 @@ export class Orchestrator {
     this.bus = bus;
     this.adapters = adapters;
   }
+
+  // ============================================================
+  // LIFECYCLE
+  // ============================================================
 
   /**
    * Inicializa el Orchestrator
@@ -145,7 +158,9 @@ export class Orchestrator {
     }
   }
 
-  // ==================== PRIVATE ====================
+  // ============================================================
+  // EVENT HANDLING & FSM
+  // ============================================================
 
   /**
    * Handler principal de eventos
@@ -201,9 +216,10 @@ export class Orchestrator {
    * - StartStream: Inicia RTSP hacia MediaMTX
    * - StopStream: Detiene RTSP
    * - OpenSession: Crea nueva sesión en store, retorna sessionId
-   * - AppendDetections: Envía batch de detecciones a store
    * - CloseSession: Cierra sesión con endTs
    * - SetAIFpsMode: Cambia velocidad de AI (idle=5fps, active=12fps)
+   *
+   * Nota: Las detecciones se envían automáticamente vía FrameIngester
    *
    * @param cmd - Comando a ejecutar (inmutable)
    */
@@ -227,16 +243,15 @@ export class Orchestrator {
       case "OpenSession":
         // Crear nueva sesión en store, emitir evento con sessionId
         const sessionId = await this.adapters.store.open(cmd.at);
+
+        // Establecer sessionId en el AI Engine para envío de frames
+        this.adapters.ai.setSessionId(sessionId);
+
         this.bus.publish("session.open", {
           type: "session.open",
           sessionId,
           startTs: cmd.at ?? new Date().toISOString(),
         });
-        break;
-
-      case "AppendDetections":
-        // Enviar batch de detecciones a store (HTTP POST /detections)
-        await this.adapters.store.append(cmd.sessionId, cmd.payload);
         break;
 
       case "CloseSession":
@@ -258,23 +273,19 @@ export class Orchestrator {
     }
   }
 
+  // ============================================================
+  // TIMER MANAGEMENT
+  // ============================================================
+
   /**
    * Gestiona timers de la FSM según estado actual
    *
-   * Timers son mecanismos de auto-transición (ej: DWELL → ACTIVE).
-   * Emiten eventos que re-entran al FSM (fsm.t.*).
+   * Timers son mecanismos de auto-transición que emiten eventos fsm.t.*
    *
-   * Lógica por estado:
-   *
-   * - DWELL: Iniciar dwell timer SOLO en la transición de entrada (no resetear)
-   * - ACTIVE: Resetear silence timer en ai.detection RELEVANTE o ai.keepalive
-   * - CLOSING: Iniciar postroll timer tras fsm.t.silence.ok (grabación extra)
-   *
-   * ¿Por qué solo detecciones relevantes?
-   *
-   * Las detecciones no relevantes (ej: detecta "car" pero filtro es "person")
-   * NO deben mantener la sesión activa. Solo las relevantes resetean el timer.
-   * Si pasan silenceMs sin detecciones relevantes → CLOSING.
+   * Estrategia:
+   * 1. Limpiar timers del estado anterior (al salir)
+   * 2. Iniciar timers del nuevo estado (al entrar)
+   * 3. Resetear timers si es necesario (durante el estado)
    *
    * @param event - Evento que acaba de procesarse
    * @param prevState - Estado anterior (antes de la transición)
@@ -282,20 +293,56 @@ export class Orchestrator {
   private manageTimers(event: AllEvents, prevState: State) {
     const { state } = this.ctx;
 
-    // Limpiar timers al salir de un estado
-    if (prevState === "DWELL" && state !== "DWELL") {
+    // ==================== CLEANUP ====================
+    // Limpiar timers cuando salimos de un estado
+    this.cleanupTimersOnStateExit(prevState, state);
+
+    // ==================== STATE-SPECIFIC LOGIC ====================
+    // Iniciar/resetear timers según estado actual
+    if (state === "DWELL") {
+      this.manageDwellTimer(event, prevState);
+    } else if (state === "ACTIVE") {
+      this.manageActiveTimer(event, prevState);
+    } else if (state === "CLOSING") {
+      this.manageClosingTimer(event, prevState);
+    }
+  }
+
+  /**
+   * Limpia timers al salir de un estado
+   */
+  private cleanupTimersOnStateExit(prevState: State, currentState: State) {
+    if (prevState === "DWELL" && currentState !== "DWELL") {
       this.clearDwellTimer();
     }
-    if (prevState === "ACTIVE" && state !== "ACTIVE") {
+    if (prevState === "ACTIVE" && currentState !== "ACTIVE") {
       this.clearSilenceTimer();
     }
-    if (prevState === "CLOSING" && state !== "CLOSING") {
+    if (prevState === "CLOSING" && currentState !== "CLOSING") {
       this.clearPostRollTimer();
     }
+  }
 
-    // === DWELL: Ventana de confirmación ===
-    // Iniciar timer SOLO cuando se ENTRA al estado DWELL (no resetear)
-    if (state === "DWELL" && prevState !== "DWELL") {
+  /**
+   * DWELL: Inicia timer de confirmación (período FIJO, no reseteable)
+   * 
+   * CRÍTICO: El timer NO se resetea con nuevas detecciones.
+   * Propósito: Confirmar presencia SOSTENIDA durante CONFIG.fsm.dwellMs.
+   * 
+   * Si se reseteara, nunca expiraría mientras haya detecciones continuas,
+   * causando que la sesión solo abra cuando NO hay nadie (comportamiento invertido).
+   * 
+   * Ejemplo con dwellMs=500ms:
+   * - t=0ms: Primera detección → IDLE → DWELL (timer inicia)
+   * - t=100ms: Otra detección → timer NO se resetea (sigue corriendo)
+   * - t=500ms: Timer expira → DWELL → ACTIVE (abre sesión)
+   */
+  private manageDwellTimer(event: AllEvents, prevState: State) {
+    const isEnteringDwell = prevState !== "DWELL";
+    
+    // Iniciar timer SOLO al entrar (período fijo de confirmación)
+    if (isEnteringDwell) {
+      this.clearDwellTimer();
       this.dwellTimer = setTimeout(() => {
         this.bus.publish("fsm.t.dwell.ok", { type: "fsm.t.dwell.ok" });
       }, CONFIG.fsm.dwellMs);
@@ -305,88 +352,95 @@ export class Orchestrator {
         dwellMs: CONFIG.fsm.dwellMs,
       });
     }
+  }
 
-    // === ACTIVE: Grabando sesión ===
-    if (state === "ACTIVE") {
-      // Iniciar silence timer cuando se ENTRA a ACTIVE
-      if (prevState !== "ACTIVE") {
-        this.silenceTimer = setTimeout(() => {
-          this.bus.publish("fsm.t.silence.ok", { type: "fsm.t.silence.ok" });
-        }, CONFIG.fsm.silenceMs);
+  /**
+   * ACTIVE: Inicia/resetea silence timer
+   *
+   * - Al entrar: inicia timer (desde DWELL o desde CLOSING)
+   * - Con ai.detection relevante: resetea timer (persona detectada, mantener sesión)
+   * - Con ai.keepalive: NO resetea timer (sin detecciones relevantes, dejar expirar)
+   * - Sin detecciones relevantes por CONFIG.fsm.silenceMs: timer expira → CLOSING
+   */
+  private manageActiveTimer(event: AllEvents, prevState: State) {
+    // Iniciar timer cuando entramos a ACTIVE (desde cualquier estado)
+    const isEnteringActive = prevState !== "ACTIVE";
 
-        logger.debug("Silence timer started", {
-          module: "orchestrator",
-          silenceMs: CONFIG.fsm.silenceMs,
-        });
-      }
+    // Resetear timer SOLO con detecciones relevantes (personas que pasan el filtro)
+    const isRelevantDetection = event.type === "ai.detection" && event.relevant;
+    const shouldResetTimer = isRelevantDetection && !isEnteringActive;
 
-      // Resetear silence timer SOLO con detecciones relevantes
-      // ai.keepalive NO debe resetear el timer (solo indica que AI está vivo)
-      // Las detecciones no relevantes NO deben mantener la sesión viva
-      if (event.type === "ai.detection" && event.relevant) {
-        this.clearSilenceTimer();
-        this.silenceTimer = setTimeout(() => {
-          this.bus.publish("fsm.t.silence.ok", { type: "fsm.t.silence.ok" });
-        }, CONFIG.fsm.silenceMs);
+    if (isEnteringActive || shouldResetTimer) {
+      this.clearSilenceTimer();
+      this.silenceTimer = setTimeout(() => {
+        this.bus.publish("fsm.t.silence.ok", { type: "fsm.t.silence.ok" });
+      }, CONFIG.fsm.silenceMs);
 
-        logger.debug("Silence timer reset (relevant detection)", {
-          module: "orchestrator",
-          silenceMs: CONFIG.fsm.silenceMs,
-        });
-      }
-    }
+      const reason = isEnteringActive
+        ? "entering ACTIVE state"
+        : "relevant detection received";
 
-    // === CLOSING: Post-roll ===
-    if (state === "CLOSING") {
-      if (event.type === "fsm.t.silence.ok") {
-        // Iniciar postroll (grabación extra después de última detección)
-        this.postRollTimer = setTimeout(() => {
-          this.bus.publish("fsm.t.postroll.ok", { type: "fsm.t.postroll.ok" });
-        }, CONFIG.fsm.postRollMs);
-      }
+      logger.debug(`Silence timer ${isEnteringActive ? "started" : "reset"}`, {
+        module: "orchestrator",
+        silenceMs: CONFIG.fsm.silenceMs,
+        reason,
+      });
     }
   }
 
   /**
-   * Limpia timer de DWELL (ventana de confirmación)
-   *
-   * Llamado cuando:
-   * - Sale de DWELL (transición a ACTIVE)
-   * - Nueva detección en DWELL (resetear timer)
-   * - Shutdown completo
+   * CLOSING: Inicia post-roll timer (solo cuando viene de ACTIVE)
+   */
+  private manageClosingTimer(event: AllEvents, prevState: State) {
+    // Iniciar postroll SOLO cuando viene de ACTIVE
+    // Si vuelve de ACTIVE (re-activación), no reiniciar timer
+    if (event.type === "fsm.t.silence.ok" && prevState === "ACTIVE") {
+      this.postRollTimer = setTimeout(() => {
+        this.bus.publish("fsm.t.postroll.ok", { type: "fsm.t.postroll.ok" });
+      }, CONFIG.fsm.postRollMs);
+
+      logger.debug("Post-roll timer started", {
+        module: "orchestrator",
+        postRollMs: CONFIG.fsm.postRollMs,
+      });
+    }
+  }
+
+  // --- Timer Cleanup ---
+
+  /**
+   * Limpia timer de DWELL
    */
   private clearDwellTimer() {
-    if (this.dwellTimer) clearTimeout(this.dwellTimer);
+    if (this.dwellTimer) {
+      clearTimeout(this.dwellTimer);
+      this.dwellTimer = undefined;
+    }
   }
 
   /**
-   * Limpia timer de SILENCE (timeout sin detecciones)
-   *
-   * Llamado cuando:
-   * - Nueva detección en ACTIVE (resetear timer)
-   * - Transición a CLOSING (ya no necesario)
-   * - Shutdown completo
+   * Limpia timer de SILENCE
    */
   private clearSilenceTimer() {
-    if (this.silenceTimer) clearTimeout(this.silenceTimer);
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = undefined;
+    }
   }
 
   /**
-   * Limpia timer de POST-ROLL (grabación extra)
-   *
-   * Llamado cuando:
-   * - Transición CLOSING → IDLE (completó post-roll)
-   * - Shutdown completo (cancelar post-roll)
+   * Limpia timer de POST-ROLL
    */
   private clearPostRollTimer() {
-    if (this.postRollTimer) clearTimeout(this.postRollTimer);
+    if (this.postRollTimer) {
+      clearTimeout(this.postRollTimer);
+      this.postRollTimer = undefined;
+    }
   }
 
   /**
    * Limpia todos los timers pendientes
-   *
-   * Usado en shutdown para evitar que timers emitan eventos
-   * después de que módulos estén detenidos (edge case).
+   * Usado en shutdown para evitar eventos post-shutdown
    */
   private clearAllTimers() {
     this.clearDwellTimer();

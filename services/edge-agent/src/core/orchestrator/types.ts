@@ -15,102 +15,100 @@
  * - Documentación: Tipos son documentación ejecutable
  */
 
-import { Detection } from "../../types/detections.js";
-
 /**
  * State - Estados válidos de la FSM
  *
- * Transiciones permitidas:
+ * Ciclo de vida de una grabación:
  *
  * ```
  * IDLE → DWELL → ACTIVE → CLOSING → IDLE
- *          ↑                  │
- *          └──────────────────┘  (re-armar si detecta en post-roll)
+ *                   ↑         │
+ *                   └─────────┘  (re-activación en post-roll)
  * ```
  *
- * Invariantes:
+ * Invariantes de sessionId:
  *
- * - IDLE: sessionId === undefined
- * - DWELL: sessionId === undefined (sesión se abre en ACTIVE)
- * - ACTIVE: sessionId !== undefined (después de session.open)
- * - CLOSING: sessionId !== undefined (hasta cerrar)
+ * - IDLE: sessionId === undefined (sin sesión activa)
+ * - DWELL: sessionId === undefined (sesión se abre al pasar a ACTIVE)
+ * - ACTIVE: sessionId !== undefined (después de recibir session.open)
+ * - CLOSING: sessionId !== undefined (hasta ejecutar CloseSession)
  */
 export type State = "IDLE" | "DWELL" | "ACTIVE" | "CLOSING";
 
 /**
  * Command - Side effects que la FSM puede ordenar
  *
- * Cada comando es ejecutado por el orchestrator (fuera de reduce).
- * Son declarativos (qué hacer, no cómo hacerlo).
+ * Cada comando es ejecutado por el orchestrator (fuera de la FSM pura).
+ * Son declarativos: especifican QUÉ hacer, no CÓMO hacerlo.
  *
  * Comandos disponibles:
  *
  * - StartStream: Inicia publisher (SHM → RTSP MediaMTX)
- * - StopStream: Detiene publisher
- * - OpenSession: Crea nueva sesión en store (async → event session.open)
- * - AppendDetections: Envía batch de detecciones a sesión activa
- * - CloseSession: Cierra sesión con endTs (flush final)
- * - SetAIFpsMode: Cambia velocidad de AI capture (configurable vía CONFIG.ai.fps)
+ * - StopStream: Detiene publisher (libera recursos RTSP)
+ * - OpenSession: Crea nueva sesión en store (async → emite session.open)
+ * - CloseSession: Cierra sesión con endTs (marca fin de grabación)
+ * - SetAIFpsMode: Cambia velocidad de AI capture (idle vs active fps)
  *
- * Ejemplo:
+ * Nota: Las detecciones se envían automáticamente vía FrameIngester
+ * (AI Engine → Session Store /ingest), no requieren comandos.
+ *
+ * Ejemplo de uso:
  *
  * ```typescript
+ * // FSM genera comandos (reduce pura)
  * const commands: Command[] = [
  *   { type: "StartStream" },
  *   { type: "OpenSession" },
  *   { type: "SetAIFpsMode", mode: "active" },
  * ];
- * // orchestrator ejecuta estos commands en orden
+ *
+ * // Orchestrator ejecuta comandos (side effects)
+ * commands.forEach(cmd => executeCommand(cmd));
  * ```
  */
 export type Command =
   | { type: "StartStream" }
   | { type: "StopStream"; reason?: string }
   | { type: "OpenSession"; at?: string }
-  | {
-      type: "AppendDetections";
-      sessionId: string;
-      payload: {
-        devId: string; // ID del dispositivo edge
-        ts: string; // Timestamp ISO8601 de detección
-        detects: Detection[]; // Objetos detectados por AI
-      };
-    }
   | { type: "CloseSession"; sessionId: string; at?: string }
   | { type: "SetAIFpsMode"; mode: "idle" | "active" };
 
 /**
  * FSMContext - Contexto persistente de la FSM
  *
- * Contiene datos que sobreviven entre transiciones.
- * Es el "estado interno" de la FSM (state + datos auxiliares).
+ * Contiene el estado interno que sobrevive entre transiciones.
+ * Es inmutable: cada transición crea un nuevo contexto.
  *
  * Campos:
  *
- * - state: Estado actual de la FSM
+ * - state: Estado actual de la FSM (IDLE | DWELL | ACTIVE | CLOSING)
  * - sessionId: ID de sesión activa (undefined si no hay sesión)
  *
- * ¿Por qué sessionId en contexto?
+ * ¿Por qué sessionId en el contexto?
  *
- * OpenSession es async (HTTP POST). Store retorna sessionId en evento
- * session.open. Necesitamos guardarlo en contexto para usar en
- * AppendDetections y CloseSession.
+ * OpenSession es async (HTTP POST al store). El store retorna sessionId
+ * en un evento session.open. Necesitamos guardarlo en el contexto para
+ * usarlo después en CloseSession.
  *
- * Flujo:
+ * Flujo de sessionId:
  *
  * ```
- * DWELL → ACTIVE: ctx.sessionId = undefined
- *              ↓
- *         Command: OpenSession
- *              ↓
- *         Event: session.open { sessionId: "abc123" }
- *              ↓
- *         ctx.sessionId = "abc123"
- *              ↓
- *         Command: AppendDetections { sessionId: "abc123", ... }
+ * DWELL → ACTIVE:
+ *   ctx.sessionId = undefined
+ *   Command: OpenSession
+ *       ↓ (async)
+ *   Event: session.open { sessionId: "sess_cam-01_1234567890_1" }
+ *       ↓
+ *   ctx.sessionId = "sess_cam-01_1234567890_1"
+ *       ↓
+ *   AI Engine envía frames con sessionId vía FrameIngester
+ *       ↓
+ * ACTIVE → CLOSING → IDLE:
+ *   Command: CloseSession { sessionId: "sess_cam-01_1234567890_1" }
+ *   ctx.sessionId = undefined
  * ```
  */
-export type FSMContext = {
+export interface FSMContext {
   state: State;
   sessionId?: string;
-};
+}

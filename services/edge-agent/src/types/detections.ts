@@ -16,5 +16,5 @@ export type FrameMeta = {
   ts: string; // ISO timestamp
   width: number;
   height: number;
-  pixFmt: "RGB" | "I420";
+  pixFmt: "RGB" | "I420" | "NV12";
 };

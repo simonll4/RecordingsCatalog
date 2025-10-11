@@ -15,6 +15,9 @@
     "dist",
     "node_modules",
     "**/*.example.ts",
-    "src/modules/_legacy/**/*"
+    "**/*.legacy.ts",
+    "src/modules/_legacy/**/*",
+    "src/legacy/**/*",
+    "src/proto/legacy/**/*"
   ]
 }

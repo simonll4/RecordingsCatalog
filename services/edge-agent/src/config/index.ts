@@ -137,6 +137,7 @@ export const CONFIG: AppConfig = {
       host: getEnv("AI_WORKER_HOST", "worker-ai"),
       port: getEnvNum("AI_WORKER_PORT", 7001),
     },
+    frameCacheTtlMs: getEnvNum("FRAME_CACHE_TTL_MS", 2000),
   },
 
   mediamtx: {
@@ -146,9 +147,9 @@ export const CONFIG: AppConfig = {
   },
 
   fsm: {
-    dwellMs: getEnvNum("FSM_DWELL_MS", 3000),
-    silenceMs: getEnvNum("FSM_SILENCE_MS", 5000),
-    postRollMs: getEnvNum("FSM_POSTROLL_MS", 2000),
+    dwellMs: getEnvNum("FSM_DWELL_MS", 500), // 0.5 seg - confirmación rápida
+    silenceMs: getEnvNum("FSM_SILENCE_MS", 2000), // 2 seg - detección de ausencia
+    postRollMs: getEnvNum("FSM_POSTROLL_MS", 2000), // 2 seg - post-roll
   },
 
   store: {

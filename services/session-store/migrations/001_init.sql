@@ -27,16 +27,30 @@ BEFORE UPDATE ON sessions
 FOR EACH ROW
 EXECUTE FUNCTION trg_update_timestamp();
 
--- Tabla de detecciones
+-- Tabla de detecciones - Nueva estructura con PK compuesta (session_id, track_id)
+-- Cada combinación (session_id, track_id) representa un objeto único rastreado
 CREATE TABLE IF NOT EXISTS detections (
-    id SERIAL PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
-    event_id TEXT NOT NULL UNIQUE,
-    ts TIMESTAMPTZ NOT NULL,
-    detection_data JSONB NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    track_id TEXT NOT NULL,
+    cls TEXT NOT NULL,
+    conf NUMERIC NOT NULL CHECK (conf >= 0 AND conf <= 1),
+    bbox JSONB NOT NULL,  -- {x, y, w, h} normalizadas 0..1
+    url_frame TEXT,
+    first_ts TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_ts TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    capture_ts TIMESTAMPTZ NOT NULL,
+    ingest_ts TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (session_id, track_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_detections_session ON detections(session_id);
-CREATE INDEX IF NOT EXISTS idx_detections_ts ON detections(ts);
-CREATE INDEX IF NOT EXISTS idx_detections_event ON detections(event_id);
+CREATE INDEX IF NOT EXISTS idx_detections_last_ts ON detections(last_ts);
+CREATE INDEX IF NOT EXISTS idx_detections_cls ON detections(cls);
+
+DROP TRIGGER IF EXISTS trg_detections_updated_at ON detections;
+CREATE TRIGGER trg_detections_updated_at
+BEFORE UPDATE ON detections
+FOR EACH ROW
+EXECUTE FUNCTION trg_update_timestamp();

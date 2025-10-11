@@ -95,6 +95,7 @@ export type AIConfig = {
     host: string;
     port: number;
   };
+  frameCacheTtlMs: number;
 };
 
 /**

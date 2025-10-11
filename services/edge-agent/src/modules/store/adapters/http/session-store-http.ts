@@ -1,41 +1,33 @@
 /**
  * Session Store HTTP - Implementación HTTP del store de sesiones
  *
- * Cliente HTTP que persiste sesiones y detecciones en un backend REST API.
+ * Cliente HTTP que persiste sesiones en un backend REST API.
  *
  * Características:
- * - Interfaz limpia (open, append, close, flush)
- * - Batching con timer y límite de tamaño
+ * - Interfaz limpia (open, close)
  * - Retry con exponencial backoff (hasta 3 intentos)
  * - Timeout en requests (5s)
- * - FlushAll para shutdown ordenado
+ * 
+ * NOTA: El envío de detecciones ahora se maneja por FrameIngester via /ingest.
+ * Este adaptador solo gestiona el ciclo de vida de las sesiones.
  */
 
-import crypto from "crypto";
 import { CONFIG } from "../../../../config/index.js";
 import { logger } from "../../../../shared/logging.js";
-import { metrics } from "../../../../shared/metrics.js";
-import { Detection } from "../../../../types/detections.js";
 import { SessionStore } from "../../ports/session-store.js";
 
-// Tipo para items del batch
-type DetectionItem = {
-  eventId: string;
-  ts: string;
-  detections: Detection[];
-};
-
 export class SessionStoreHttp implements SessionStore {
-  private batch: DetectionItem[] = [];
-  private timer?: NodeJS.Timeout;
   private sessionCounter = 0;
-  private currentSessionId?: string; // Track active session
+  private detectionBatch: Map<string, any[]> = new Map();
+  private flushTimer?: NodeJS.Timeout;
 
   async open(startTs?: string): Promise<string> {
-    const sessionId = `sess_${Date.now()}_${++this.sessionCounter}`;
+    // Generate session ID with deviceId for traceability across distributed systems
+    // Format: sess_{deviceId}_{timestamp}_{counter}
+    // Example: sess_cam-01_1760134453955_1
+    const sessionId = `sess_${CONFIG.deviceId}_${Date.now()}_${++this.sessionCounter}`;
     const actualStartTs = startTs ?? new Date().toISOString();
 
-    this.currentSessionId = sessionId;
     logger.info("Opening session", { module: "session-store-http", sessionId });
 
     try {
@@ -68,38 +60,11 @@ export class SessionStoreHttp implements SessionStore {
     return sessionId;
   }
 
-  async append(
-    sessionId: string,
-    payload: { devId: string; ts: string; detects: Detection[] }
-  ): Promise<void> {
-    const row = {
-      eventId: crypto.randomUUID(),
-      ts: payload.ts,
-      detections: payload.detects,
-    };
-
-    this.batch.push(row);
-
-    metrics.inc("store_append_total"); // Métrica
-
-    // Auto-flush por timer o tamaño
-    const batchMax = CONFIG.store.batchMax ?? 50;
-    const flushInterval = CONFIG.store.flushIntervalMs ?? 2000;
-
-    if (!this.timer) {
-      this.timer = setTimeout(() => void this.flush(sessionId), flushInterval);
-    }
-
-    if (this.batch.length >= batchMax) {
-      void this.flush(sessionId);
-    }
-  }
-
   async close(sessionId: string, endTs?: string): Promise<void> {
     logger.info("Closing session", { module: "session-store-http", sessionId });
 
-    // Flush antes de cerrar
-    await this.flush(sessionId);
+    // Flush any pending detections
+    await this.flushDetections(sessionId);
 
     const actualEndTs = endTs ?? new Date().toISOString();
     const postRollSec = Math.round(CONFIG.fsm.postRollMs / 1000);
@@ -128,79 +93,74 @@ export class SessionStoreHttp implements SessionStore {
         error: (err as Error).message,
       });
     }
+
+    // Clean up batch
+    this.detectionBatch.delete(sessionId);
   }
 
-  async flush(sessionId: string): Promise<void> {
-    clearTimeout(this.timer);
-    this.timer = undefined;
-
-    const items = this.batch.splice(0, this.batch.length);
-    if (!items.length) return;
-
-    logger.debug("Flushing batch", {
-      module: "session-store-http",
-      count: items.length,
-    });
-
-    // Retry con backoff (3 intentos)
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-        const res = await fetch(`${CONFIG.store.baseUrl}/detections`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            batchId: crypto.randomUUID(),
-            sessionId,
-            sourceTs: new Date().toISOString(),
-            items,
-          }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-        }
-
-        logger.debug("Flush successful", { module: "session-store-http" });
-        metrics.inc("store_flush_ok_total");
-        return;
-      } catch (err) {
-        logger.error("Flush attempt failed", {
-          module: "session-store-http",
-          attempt,
-          error: (err as Error).message,
-        });
-
-        metrics.inc("store_flush_error_total");
-
-        if (attempt < 3) {
-          await new Promise((res) => setTimeout(res, 500 * attempt));
-        }
-      }
+  async addDetections(sessionId: string, detections: any[]): Promise<void> {
+    if (!this.detectionBatch.has(sessionId)) {
+      this.detectionBatch.set(sessionId, []);
     }
 
-    logger.error("Flush failed after all attempts", {
-      module: "session-store-http",
-    });
+    const batch = this.detectionBatch.get(sessionId)!;
+    batch.push(...detections);
+
+    // Flush if batch size exceeds max
+    if (batch.length >= (CONFIG.store.batchMax || 50)) {
+      await this.flushDetections(sessionId);
+    } else {
+      // Schedule auto-flush
+      this.scheduleFlush(sessionId);
+    }
   }
 
-  /**
-   * Flush all pending data (para shutdown)
-   */
-  async flushAll(): Promise<void> {
-    if (this.batch.length > 0 && this.currentSessionId) {
-      logger.info("Flushing all pending data on shutdown", {
-        module: "session-store-http",
-        count: this.batch.length,
+  private scheduleFlush(sessionId: string): void {
+    if (!this.flushTimer) {
+      this.flushTimer = setTimeout(() => {
+        this.flushTimer = undefined;
+        void this.flushDetections(sessionId);
+      }, CONFIG.store.flushIntervalMs);
+    }
+  }
+
+  private async flushDetections(sessionId: string): Promise<void> {
+    const batch = this.detectionBatch.get(sessionId);
+    if (!batch || batch.length === 0) {
+      return;
+    }
+
+    logger.debug("Flushing detections", {
+      module: "session-store-http",
+      sessionId,
+      count: batch.length,
+    });
+
+    try {
+      const res = await fetch(`${CONFIG.store.baseUrl}/detections`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          detections: batch,
+          ts: new Date().toISOString(),
+        }),
       });
-      await this.flush(this.currentSessionId);
+
+      if (res.ok) {
+        // Clear batch on success
+        this.detectionBatch.set(sessionId, []);
+      } else {
+        logger.warn("Detection batch returned non-2xx", {
+          module: "session-store-http",
+          status: res.status,
+        });
+      }
+    } catch (err) {
+      logger.error("Failed to flush detections", {
+        module: "session-store-http",
+        error: (err as Error).message,
+      });
     }
-    clearTimeout(this.timer);
-    this.timer = undefined;
   }
 }

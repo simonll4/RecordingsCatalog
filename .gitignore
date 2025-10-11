@@ -7,3 +7,5 @@ services/**/node_modules
 services/**/dist
 data/recordings
 docs
+frames
+models

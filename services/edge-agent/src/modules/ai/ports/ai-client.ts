@@ -48,7 +48,8 @@ export interface AIClient {
     tsMonoNs: bigint,
     w: number,
     h: number,
-    rgb: Buffer
+    rgb: Buffer,
+    sessionId?: string
   ): void;
   
   /** Suscribe callback para resultados de inferencia. */

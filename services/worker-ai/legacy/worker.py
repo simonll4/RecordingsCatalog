@@ -1,13 +1,17 @@
 """
-AI Worker v1 - Protocol v1 with NV12/I420/JPEG support
+AI Worker - Worker de Inferencia con ONNX Runtime
 
-Features:
-- Protocol version validation (must be 1)
-- msg_type ↔ oneof validation
-- Sequence validation (Init must be first)
-- NV12/I420/JPEG frame decoding
-- Window-based backpressure
-- Error codes per v1 spec
+Estados globales:
+- IDLE: Sin modelo cargado, sin clientes
+- LOADING: Cargando/cambiando modelo
+- READY: Modelo cargado, listo para conexiones
+- SESSION_ACTIVE: Procesando frames (por conexión)
+
+Reglas:
+- Desconexión → arranca timer de inactividad (IDLE_TIMEOUT_SEC)
+- Sin reconexión antes del timeout → unload modelo → IDLE
+- Nueva conexión antes del timeout → cancela timer → sigue en READY
+- Hot-reload: Init diferente mientras hay conexión → LOADING → recarga → READY
 """
 
 import asyncio
@@ -19,7 +23,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, Optional, Set
 
-import ai_pb2 as pb
+import ai_pb2
 import numpy as np
 import onnxruntime as ort
 
@@ -71,14 +75,15 @@ class WorkerState(Enum):
 
 @dataclass
 class ModelConfig:
-    """Model configuration"""
+    """Configuración del modelo"""
     model_path: str
     width: int
     height: int
     conf_threshold: float
+    classes_filter: Set[int]
 
     def __hash__(self):
-        return hash((self.model_path, self.width, self.height, self.conf_threshold))
+        return hash((self.model_path, self.width, self.height, self.conf_threshold, tuple(sorted(self.classes_filter))))
 
     def __eq__(self, other):
         if not isinstance(other, ModelConfig):
@@ -88,6 +93,7 @@ class ModelConfig:
             and self.width == other.width
             and self.height == other.height
             and self.conf_threshold == other.conf_threshold
+            and self.classes_filter == other.classes_filter
         )
 
 
@@ -131,33 +137,37 @@ class ModelManager:
             self.model_id = None
             self.class_names = []
 
-    def infer(self, frame_rgb: np.ndarray) -> tuple:
-        """Inference on RGB frame, returns (detections, latency_dict)"""
+    def infer(self, frame_rgb: np.ndarray, session_id: str) -> ai_pb2.Result:
+        """Inferencia sobre frame RGB"""
         if not self.session or not self.config:
             raise RuntimeError("Model not loaded")
 
-        # Preprocessing
-        t0 = time.perf_counter()
+        # Preprocesar
         input_tensor = self._preprocess(frame_rgb)
-        t1 = time.perf_counter()
 
-        # Inference
+        # Inferir
         input_name = self.session.get_inputs()[0].name
         outputs = self.session.run(None, {input_name: input_tensor})
-        t2 = time.perf_counter()
 
-        # Postprocessing
+        # Postprocesar
         detections = self._postprocess(outputs[0], frame_rgb.shape[:2])
-        t3 = time.perf_counter()
 
-        latency = {
-            "pre_ms": (t1 - t0) * 1000,
-            "infer_ms": (t2 - t1) * 1000,
-            "post_ms": (t3 - t2) * 1000,
-            "total_ms": (t3 - t0) * 1000,
-        }
+        # Crear Result con track_id estable
+        result = ai_pb2.Result()
+        result.session_id = session_id  # Incluir sessionId
+        
+        for idx, det in enumerate(detections):
+            d = result.detections.add()
+            d.cls = self.class_names[int(det[5])] if int(det[5]) < len(self.class_names) else f"class_{int(det[5])}"
+            d.conf = float(det[4])
+            d.bbox.x = float(det[0])
+            d.bbox.y = float(det[1])
+            d.bbox.w = float(det[2] - det[0])
+            d.bbox.h = float(det[3] - det[1])
+            # Track ID simple: T1, T2, T3... (por ahora siempre el mismo por frame)
+            d.track_id = f"T{idx + 1}"
 
-        return detections, latency
+        return result
 
     def _preprocess(self, frame_rgb: np.ndarray) -> np.ndarray:
         """Preprocesar frame para YOLO"""
@@ -284,67 +294,6 @@ class ModelManager:
         ]
 
 
-def nv12_to_rgb(data: bytes, width: int, height: int) -> np.ndarray:
-    """Convert NV12 to RGB"""
-    try:
-        import cv2
-        y_size = width * height
-        y_plane = np.frombuffer(data[:y_size], dtype=np.uint8).reshape((height, width))
-        uv_plane = np.frombuffer(data[y_size:], dtype=np.uint8).reshape((height // 2, width))
-        nv12 = np.zeros((height + height // 2, width), dtype=np.uint8)
-        nv12[:height, :] = y_plane
-        nv12[height:, :] = uv_plane
-        return cv2.cvtColor(nv12, cv2.COLOR_YUV2RGB_NV12)
-    except ImportError:
-        # Manual fallback
-        y_size = width * height
-        y = np.frombuffer(data[:y_size], dtype=np.uint8).reshape((height, width)).astype(np.float32)
-        uv = np.frombuffer(data[y_size:], dtype=np.uint8).reshape((height // 2, width))
-        u = np.repeat(np.repeat(uv[:, 0::2], 2, axis=0), 2, axis=1).astype(np.float32) - 128
-        v = np.repeat(np.repeat(uv[:, 1::2], 2, axis=0), 2, axis=1).astype(np.float32) - 128
-        r = np.clip(y + 1.402 * v, 0, 255)
-        g = np.clip(y - 0.344 * u - 0.714 * v, 0, 255)
-        b = np.clip(y + 1.772 * u, 0, 255)
-        return np.stack([r, g, b], axis=2).astype(np.uint8)
-
-
-def i420_to_rgb(data: bytes, width: int, height: int) -> np.ndarray:
-    """Convert I420 to RGB"""
-    try:
-        import cv2
-        y_size = width * height
-        u_size = width * height // 4
-        y = np.frombuffer(data[:y_size], dtype=np.uint8).reshape((height, width))
-        u = np.frombuffer(data[y_size:y_size + u_size], dtype=np.uint8).reshape((height // 2, width // 2))
-        v = np.frombuffer(data[y_size + u_size:], dtype=np.uint8).reshape((height // 2, width // 2))
-        i420 = np.zeros((height + height // 2, width), dtype=np.uint8)
-        i420[:height, :] = y
-        i420[height:height + height // 4, :width // 2] = u.reshape(-1, width // 2)
-        i420[height + height // 4:, :width // 2] = v.reshape(-1, width // 2)
-        return cv2.cvtColor(i420, cv2.COLOR_YUV2RGB_I420)
-    except ImportError:
-        # Manual fallback
-        y_size = width * height
-        u_size = width * height // 4
-        y = np.frombuffer(data[:y_size], dtype=np.uint8).reshape((height, width)).astype(np.float32)
-        u = np.frombuffer(data[y_size:y_size + u_size], dtype=np.uint8).reshape((height // 2, width // 2))
-        v = np.frombuffer(data[y_size + u_size:], dtype=np.uint8).reshape((height // 2, width // 2))
-        u = np.repeat(np.repeat(u, 2, axis=0), 2, axis=1).astype(np.float32) - 128
-        v = np.repeat(np.repeat(v, 2, axis=0), 2, axis=1).astype(np.float32) - 128
-        r = np.clip(y + 1.402 * v, 0, 255)
-        g = np.clip(y - 0.344 * u - 0.714 * v, 0, 255)
-        b = np.clip(y + 1.772 * u, 0, 255)
-        return np.stack([r, g, b], axis=2).astype(np.uint8)
-
-
-def jpeg_to_rgb(data: bytes) -> np.ndarray:
-    """Decode JPEG to RGB"""
-    import cv2
-    nparr = np.frombuffer(data, dtype=np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-
 def visualize_detections(frame_rgb, result, class_names):
     """
     Muestra el frame con las detecciones dibujadas usando OpenCV.
@@ -419,7 +368,7 @@ def visualize_detections(frame_rgb, result, class_names):
 
 
 class ConnectionHandler:
-    """v1 Protocol connection handler"""
+    """Gestor de conexión individual"""
 
     def __init__(
         self,
@@ -434,344 +383,178 @@ class ConnectionHandler:
         self.on_disconnect = on_disconnect
 
         self.peer = writer.get_extra_info("peername")
-        self.stream_id = None
-        self.initialized = False
-        self.window_size = 4
-        self.inflight = 0
-        self.tx_count = 0
-        self.rx_count = 0
-        self.last_frame_id = 0
-        
-        # Auto-tuning state
-        self.recent_latencies = []  # Last N latencies for averaging
-        self.max_recent_latencies = 10
-        self.high_latency_threshold_ms = 100.0  # Increase window if latency > this
-        self.low_latency_threshold_ms = 30.0   # Decrease window if latency < this
-        self.min_window_size = 2
-        self.max_window_size = 16
-        
-        # Metrics
-        self.window_size_set_events_total = 0
-        self.backpressure_timeouts_total = 0
+        self.credit = False  # Ventana 1
+        self.seq = 0
+        self.session_id = "unknown"  # Se actualiza con el primer frame
 
     async def handle(self):
-        """Main connection loop with v1 protocol validation"""
+        """Loop principal de la conexión"""
         logger.info(f"Client connected: {self.peer}")
 
         try:
             while True:
+                # Leer length-prefix (uint32LE)
+                logger.debug(f"Waiting for length-prefix from {self.peer}")
                 length_bytes = await self.reader.readexactly(4)
                 length = struct.unpack("<I", length_bytes)[0]
+                logger.debug(f"Received message length: {length} bytes from {self.peer}")
 
-                # Validate length
-                if length == 0 or length > 50 * 1024 * 1024:
-                    await self.send_error(pb.FRAME_TOO_LARGE, f"Invalid length: {length}")
-                    break
-
+                # Leer mensaje
                 msg_bytes = await self.reader.readexactly(length)
-                self.rx_count += 1
 
-                envelope = pb.Envelope()
+                # Decodificar
+                envelope = ai_pb2.Envelope()
                 envelope.ParseFromString(msg_bytes)
 
-                await self.handle_envelope(envelope)
+                # Procesar
+                await self.handle_message(envelope)
 
         except asyncio.IncompleteReadError:
             logger.info(f"Client disconnected: {self.peer}")
         except Exception as e:
-            logger.error(f"Error handling connection {self.peer}: {e}", exc_info=True)
+            logger.error(f"Error handling connection {self.peer}: {e}")
         finally:
             self.writer.close()
             await self.writer.wait_closed()
             await self.on_disconnect()
 
-    async def handle_envelope(self, envelope: pb.Envelope):
-        """Process envelope with v1 protocol validation"""
-        # Validate protocol version
-        if envelope.protocol_version != 1:
-            await self.send_error(pb.VERSION_UNSUPPORTED, f"Protocol version {envelope.protocol_version} not supported")
-            return
-
-        # Validate msg_type matches oneof
-        expected_type = self.get_expected_msg_type(envelope)
-        if expected_type != envelope.msg_type:
-            await self.send_error(pb.BAD_MESSAGE, f"msg_type {envelope.msg_type} does not match oneof")
-            return
-
-        # Store stream_id
-        if not self.stream_id:
-            self.stream_id = envelope.stream_id
-
-        # Validate sequence: first message must be Init
-        if not self.initialized and envelope.WhichOneof("msg") != "req":
-            await self.send_error(pb.BAD_SEQUENCE, "First message must be Request.Init")
-            return
-
-        # Route message
+    async def handle_message(self, envelope: ai_pb2.Envelope):
+        """Procesar mensaje entrante"""
         if envelope.HasField("req"):
             await self.handle_request(envelope.req)
         elif envelope.HasField("hb"):
             await self.handle_heartbeat(envelope.hb)
 
-    def get_expected_msg_type(self, envelope: pb.Envelope):
-        """Get expected msg_type from oneof"""
-        if envelope.HasField("req"):
-            if envelope.req.HasField("init"):
-                return pb.MT_INIT
-            elif envelope.req.HasField("frame"):
-                return pb.MT_FRAME
-            elif envelope.req.HasField("end"):
-                return pb.MT_END
-        elif envelope.HasField("res"):
-            if envelope.res.HasField("init_ok"):
-                return pb.MT_INIT_OK
-            elif envelope.res.HasField("window_update"):
-                return pb.MT_WINDOW_UPDATE
-            elif envelope.res.HasField("result"):
-                return pb.MT_RESULT
-            elif envelope.res.HasField("error"):
-                return pb.MT_ERROR
-        elif envelope.HasField("hb"):
-            return pb.MT_HEARTBEAT
-        return pb.MT_UNKNOWN
-
-    async def handle_request(self, req: pb.Request):
-        """Process Request"""
+    async def handle_request(self, req: ai_pb2.Request):
+        """Procesar Request"""
         if req.HasField("init"):
             await self.handle_init(req.init)
         elif req.HasField("frame"):
             await self.handle_frame(req.frame)
-        elif req.HasField("end"):
-            await self.handle_end()
+        elif req.HasField("shutdown"):
+            await self.handle_shutdown()
 
-    async def handle_init(self, init: pb.Init):
-        """Process Init"""
-        logger.info(f"Received Init: model={init.model}")
+    async def handle_init(self, init: ai_pb2.Init):
+        """Procesar Init"""
+        logger.info(f"Received Init: model={init.model_path}, resolution={init.width}x{init.height}")
 
-        # Extract config from caps
         config = ModelConfig(
-            model_path=init.model,
-            width=init.caps.max_width,
-            height=init.caps.max_height,
-            conf_threshold=0.35,
+            model_path=init.model_path,
+            width=init.width,
+            height=init.height,
+            conf_threshold=init.conf_threshold,
+            classes_filter=set(init.classes_filter),
         )
 
-        # Hot-reload if config changed
+        # Hot-reload si config cambió
         if self.model_manager.config != config:
             logger.info("Config changed, reloading model")
             self.model_manager.load(config)
 
-        # Build InitOk
-        init_ok = pb.InitOk()
-        init_ok.max_frame_bytes = config.width * config.height * 3 * 2
-
-        # Chosen config
-        init_ok.chosen.pixel_format = pb.PF_NV12
-        init_ok.chosen.codec = pb.CODEC_NONE
-        init_ok.chosen.width = config.width
-        init_ok.chosen.height = config.height
-        init_ok.chosen.fps_target = 10.0
-        init_ok.chosen.policy = pb.LATEST_WINS
-        init_ok.chosen.initial_credits = self.window_size
-        init_ok.chosen.color_space = "BT.709"
-        init_ok.chosen.color_range = "full"
+        # InitOk
+        init_ok = ai_pb2.InitOk()
+        init_ok.runtime = f"onnxruntime {ort.__version__}"
+        init_ok.model_version = os.path.basename(init.model_path)
+        init_ok.class_names.extend(self.model_manager.class_names)
+        init_ok.max_frame_bytes = 640 * 480 * 3 * 2  # 2x buffer
+        init_ok.providers.extend(self.model_manager.session.get_providers())
+        init_ok.model_id = self.model_manager.model_id
+        init_ok.preproc.layout = "NCHW"
+        init_ok.preproc.letterbox = True
 
         await self.send_response(init_ok=init_ok)
-        self.initialized = True
-        logger.info("Sent InitOk")
 
-    async def handle_frame(self, frame: pb.Frame):
-        """Process Frame with v1 protocol (NV12/I420/JPEG support)"""
-        if not self.initialized:
-            await self.send_error(pb.BAD_SEQUENCE, "Init required before Frame")
+        # Dar crédito inicial
+        ready = ai_pb2.Ready(seq=0)
+        await self.send_response(ready=ready)
+        self.credit = True
+
+        logger.info("Sent InitOk + Ready")
+
+    async def handle_frame(self, frame: ai_pb2.Frame):
+        """Procesar Frame"""
+        if not self.credit:
+            logger.warning(f"Received frame without credit, dropping seq={frame.seq}")
             return
+
+        self.credit = False
+        self.seq = frame.seq
         
-        # Backpressure: check window
-        if self.inflight >= self.window_size:
-            logger.warning(f"Backpressure timeout: inflight={self.inflight}, window={self.window_size}")
-            self.backpressure_timeouts_total += 1
-            logger.debug(f"Metrics: backpressure_timeouts_total={self.backpressure_timeouts_total}")
-            await self.send_error(pb.BACKPRESSURE_TIMEOUT, "Window full")
+        # Extraer session_id del frame si está disponible
+        if frame.session_id:
+            self.session_id = frame.session_id
+
+        logger.debug(f"Processing frame seq={frame.seq}, session={self.session_id}, size={len(frame.data)}")
+
+        # Validar tamaño del frame
+        expected_size = frame.height * frame.width * 3
+        if len(frame.data) != expected_size:
+            logger.error(f"Invalid frame size: expected={expected_size}, got={len(frame.data)}")
             return
-        
-        self.inflight += 1
-        logger.debug(f"Metrics: queue_depth={self.inflight}")
 
-        self.last_frame_id = frame.frame_id
-        logger.debug(f"Processing frame id={frame.frame_id}, size={len(frame.data)}")
-
-        # Validate planes if RAW
-        if frame.codec == pb.CODEC_NONE:
-            total_plane_size = sum(p.size for p in frame.planes)
-            if total_plane_size != len(frame.data):
-                await self.send_error(pb.INVALID_FRAME, f"Plane size mismatch: {total_plane_size} != {len(frame.data)}")
-                return
-
-        # Decode to RGB
+        # Decodificar RGB
         try:
-            if frame.codec == pb.CODEC_NONE:
-                if frame.pixel_format == pb.PF_NV12:
-                    frame_rgb = nv12_to_rgb(frame.data, frame.width, frame.height)
-                elif frame.pixel_format == pb.PF_I420:
-                    frame_rgb = i420_to_rgb(frame.data, frame.width, frame.height)
-                elif frame.pixel_format == pb.PF_RGB8:
-                    frame_rgb = np.frombuffer(frame.data, dtype=np.uint8).reshape((frame.height, frame.width, 3))
-                else:
-                    await self.send_error(pb.UNSUPPORTED_FORMAT, f"Unsupported pixel format: {frame.pixel_format}")
-                    return
-            elif frame.codec == pb.CODEC_JPEG:
-                frame_rgb = jpeg_to_rgb(frame.data)
-            else:
-                await self.send_error(pb.UNSUPPORTED_FORMAT, f"Unsupported codec: {frame.codec}")
-                return
-        except Exception as e:
-            await self.send_error(pb.INVALID_FRAME, f"Frame decode failed: {e}")
+            frame_rgb = np.frombuffer(frame.data, dtype=np.uint8).reshape((frame.height, frame.width, 3))
+        except ValueError as e:
+            logger.error(f"Failed to reshape frame: {e}")
             return
 
-        # Inference
-        detections, latency = self.model_manager.infer(frame_rgb)
+        # Inferir (pasar session_id)
+        start = time.perf_counter()
+        result = self.model_manager.infer(frame_rgb, self.session_id)
+        elapsed_ms = (time.perf_counter() - start) * 1000
 
-        # Build Result
-        result = pb.Result()
-        result.frame_id = frame.frame_id
-        result.frame_ref.ts_mono_ns = frame.ts_mono_ns
-        result.frame_ref.ts_utc_ns = frame.ts_utc_ns
-        result.frame_ref.session_id = frame.session_id
+        result.seq = frame.seq
+        result.ts_iso = frame.ts_iso
+        result.ts_mono_ns = frame.ts_mono_ns
 
-        result.model_family = "yolo"
-        result.model_name = os.path.basename(self.model_manager.config.model_path)
-        result.model_version = "v8"
+        logger.debug(f"Inference done: seq={frame.seq}, detections={len(result.detections)}, time={elapsed_ms:.1f}ms")
 
-        result.lat.pre_ms = latency["pre_ms"]
-        result.lat.infer_ms = latency["infer_ms"]
-        result.lat.post_ms = latency["post_ms"]
-        result.lat.total_ms = latency["total_ms"]
+        # Visualizar (si está habilitado)
+        visualize_detections(frame_rgb, result, self.model_manager.class_names)
 
-        # Add detections
-        for idx, det in enumerate(detections):
-            d = result.detections.items.add()
-            d.bbox.x1 = float(det[0])
-            d.bbox.y1 = float(det[1])
-            d.bbox.x2 = float(det[2])
-            d.bbox.y2 = float(det[3])
-            d.conf = float(det[4])
-            cls_idx = int(det[5])
-            d.cls = self.model_manager.class_names[cls_idx] if cls_idx < len(self.model_manager.class_names) else f"class_{cls_idx}"
-            d.track_id = f"T{idx + 1}"
-
-        logger.debug(f"Inference done: frame_id={frame.frame_id}, detections={len(detections)}, time={latency['total_ms']:.1f}ms")
-
+        # Enviar Result
         await self.send_response(result=result)
-        
-        # Release credit
-        if self.inflight > 0:
-            self.inflight -= 1
-            logger.debug(f"Metrics: queue_depth={self.inflight}")
-        
-        # Auto-tune window size based on latency
-        await self.auto_tune_window(latency['total_ms'])
 
-    async def handle_end(self):
-        """Process End"""
-        logger.info("Received End request")
+        # Dar crédito
+        self.credit = True
+
+    async def handle_shutdown(self):
+        """Procesar Shutdown"""
+        logger.info("Received Shutdown request")
         self.writer.close()
         await self.writer.wait_closed()
 
-    async def handle_heartbeat(self, hb: pb.Heartbeat):
-        """Process Heartbeat"""
-        logger.debug(f"Received Heartbeat: last_frame_id={hb.last_frame_id}")
-        hb_resp = pb.Heartbeat()
-        hb_resp.last_frame_id = self.last_frame_id
-        hb_resp.tx = self.tx_count
-        hb_resp.rx = self.rx_count
-        await self.send_message(hb=hb_resp)
+    async def handle_heartbeat(self, hb: ai_pb2.Heartbeat):
+        """Procesar Heartbeat"""
+        logger.debug(f"Received Heartbeat: ts_mono_ns={hb.ts_mono_ns}")
 
-    async def auto_tune_window(self, latency_ms: float):
-        """
-        Auto-tune window size based on recent latencies.
-        - If avg latency > threshold: decrease window (reduce load/backpressure)
-        - If avg latency < threshold: increase window (allow more parallelism)
-        """
-        self.recent_latencies.append(latency_ms)
-        if len(self.recent_latencies) > self.max_recent_latencies:
-            self.recent_latencies.pop(0)
-        
-        # Need at least 5 samples for tuning
-        if len(self.recent_latencies) < 5:
-            return
-        
-        avg_latency = sum(self.recent_latencies) / len(self.recent_latencies)
-        old_window = self.window_size
-        
-        # Invertir lógica: alta latencia → reducir ventana, baja latencia → aumentar ventana
-        if avg_latency > self.high_latency_threshold_ms and self.window_size > self.min_window_size:
-            # High latency: decrease window to reduce load
-            self.window_size = max(self.window_size - 1, self.min_window_size)
-        elif avg_latency < self.low_latency_threshold_ms and self.window_size < self.max_window_size:
-            # Low latency: increase window to allow more parallelism
-            self.window_size = min(self.window_size + 2, self.max_window_size)
-        
-        if self.window_size != old_window:
-            logger.info(f"Auto-tuned window size: {old_window} → {self.window_size} (avg_lat={avg_latency:.1f}ms)")
-            self.window_size_set_events_total += 1
-            logger.debug(f"Metrics: window_size_set_events_total={self.window_size_set_events_total}")
-            # Send WindowUpdate to client
-            window_update = pb.WindowUpdate()
-            window_update.new_window_size = self.window_size
-            await self.send_response(window_update=window_update)
+        # Responder con Heartbeat
+        hb_resp = ai_pb2.Heartbeat(ts_mono_ns=int(time.monotonic_ns()))
+        await self.send_message(ai_pb2.Envelope(hb=hb_resp))
 
-    async def send_response(self, init_ok=None, window_update=None, result=None, error=None):
-        """Send Response"""
-        resp = pb.Response()
-        msg_type = pb.MT_UNKNOWN
-        
+    async def send_response(self, init_ok=None, ready=None, result=None, error=None):
+        """Enviar Response"""
+        resp = ai_pb2.Response()
         if init_ok:
             resp.init_ok.CopyFrom(init_ok)
-            msg_type = pb.MT_INIT_OK
-        elif window_update:
-            resp.window_update.CopyFrom(window_update)
-            msg_type = pb.MT_WINDOW_UPDATE
+        elif ready:
+            resp.ready.CopyFrom(ready)
         elif result:
             resp.result.CopyFrom(result)
-            msg_type = pb.MT_RESULT
         elif error:
             resp.error.CopyFrom(error)
-            msg_type = pb.MT_ERROR
 
-        await self.send_message(res=resp, msg_type=msg_type)
+        await self.send_message(ai_pb2.Envelope(res=resp))
 
-    async def send_error(self, code, message: str):
-        """Send Error"""
-        error = pb.Error()
-        error.code = code
-        error.message = message
-        await self.send_response(error=error)
-
-    async def send_message(self, req=None, res=None, hb=None, msg_type=None):
-        """Send message with length-prefix"""
-        envelope = pb.Envelope()
-        envelope.protocol_version = 1
-        envelope.stream_id = self.stream_id or "worker"
-        
-        if req:
-            envelope.req.CopyFrom(req)
-        elif res:
-            envelope.res.CopyFrom(res)
-        elif hb:
-            envelope.hb.CopyFrom(hb)
-            msg_type = pb.MT_HEARTBEAT
-        
-        if msg_type:
-            envelope.msg_type = msg_type
-
+    async def send_message(self, envelope: ai_pb2.Envelope):
+        """Enviar mensaje con length-prefix"""
         msg_bytes = envelope.SerializeToString()
         length = struct.pack("<I", len(msg_bytes))
 
         self.writer.write(length)
         self.writer.write(msg_bytes)
         await self.writer.drain()
-        
-        self.tx_count += 1
 
 
 class AIWorker:
@@ -784,10 +567,10 @@ class AIWorker:
         self.idle_timer: Optional[asyncio.Task] = None
 
     async def start(self):
-        """Start AI Worker"""
+        """Iniciar worker"""
         logger.info(f"Starting AI Worker on {BIND_HOST}:{BIND_PORT}")
 
-        # Bootstrap (optional)
+        # Bootstrap (opcional)
         if BOOTSTRAP_MODEL_PATH and BOOTSTRAP_WIDTH and BOOTSTRAP_HEIGHT and BOOTSTRAP_CONF:
             logger.info("Bootstrap model loading enabled")
             config = ModelConfig(
@@ -795,12 +578,13 @@ class AIWorker:
                 width=BOOTSTRAP_WIDTH,
                 height=BOOTSTRAP_HEIGHT,
                 conf_threshold=BOOTSTRAP_CONF,
+                classes_filter=set(),
             )
             self.state = WorkerState.LOADING
             self.model_manager.load(config)
             self.state = WorkerState.READY
 
-        # TCP server
+        # Servidor TCP
         server = await asyncio.start_server(self.handle_connection, BIND_HOST, BIND_PORT)
 
         logger.info(f"AI Worker listening on {BIND_HOST}:{BIND_PORT}")

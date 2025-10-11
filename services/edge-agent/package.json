@@ -15,7 +15,8 @@
   "dependencies": {
     "dotenv": "^16.3.1",
     "long": "^5.2.3",
-    "protobufjs": "^7.2.5"
+    "protobufjs": "^7.2.5",
+    "sharp": "^0.34.4"
   },
   "devDependencies": {
     "@types/node": "^20.9.0",

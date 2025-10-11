@@ -2,16 +2,25 @@
 
 Sistema de captura y análisis de video basado en eventos, optimizado para baja latencia y resiliencia. Usa GStreamer + SHM (memoria compartida) como hub de video y una FSM (Orchestrator) para coordinar AI, streaming RTSP y persistencia de sesiones y detecciones.
 
-## 🚨 Fix Reciente: Detecciones No Relevantes (2025-10-08)
+## 📚 Documentación Rápida
 
-**Problema**: Personas frente a la cámara no se detectaban como relevantes.  
-**Causa**: Umbral de confianza muy alto (`AI_UMBRAL=0.8`).  
-**Solución**: Ajustado a `AI_UMBRAL=0.5` (valor recomendado).
+### Guías de Desarrollo
+| Documento | Descripción |
+|-----------|-------------|
+| [STYLE_GUIDE.md](docs/STYLE_GUIDE.md) | 🎨 Convenciones de estilo y mejores prácticas |
+| [CODE_ORGANIZATION.md](docs/CODE_ORGANIZATION.md) | 📋 Organización del código |
 
-📚 **Ver documentación completa**:
-- 🎯 [Guía Rápida del Fix](QUICK_FIX_GUIDE.md) - Resumen ejecutivo
-- 📖 [Documentación Técnica](docs/FIX_DETECTION_THRESHOLD.md) - Análisis completo
-- 🔧 [Scripts de Diagnóstico](scripts/diagnose-detections.sh) - Herramientas
+### Arquitectura y Sistema
+| Documento | Descripción |
+|-----------|-------------|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | 🏗️ Arquitectura del sistema |
+| [EVENTS.md](docs/EVENTS.md) | 📡 Sistema de eventos |
+| [ARCHITECTURE_DIAGRAM.md](docs/ARCHITECTURE_DIAGRAM.md) | 📊 Diagrama visual |
+
+### Troubleshooting
+| Documento | Descripción |
+|-----------|-------------|
+| [LOGGING.md](docs/LOGGING.md) | 🪵 Sistema de logging |
 
 ---
 
@@ -37,69 +46,60 @@ Sistema de captura y análisis de video basado en eventos, optimizado para baja 
 - Logging estructurado y métricas simples integradas
 
 ## Arquitectura y Componentes
-- Diagrama: `docs/GRAFICO.md`
 - Diseño: `docs/ARCHITECTURE.md`
 - Eventos: `docs/EVENTS.md`
 
-Componentes principales:
-- Camera Hub (`src/modules/camera-hub.ts`)
-  - Ingesta desde `v4l2src` o `rtspsrc`, decodifica/convierte a `I420 @ WxH`, y publica en `shmsink`.
-  - Criterio de readiness AND (pipeline PLAYING + socket SHM presente).
-  - Auto‑fallback V4L2 MJPEG → RAW ante negociación fallida.
-  - Auto‑restart con backoff, limpieza de socket y logs filtrados.
+Componentes principales (implementación actual):
+- Camera Hub (`src/modules/video/adapters/gstreamer/camera-hub-gst.ts`)
+  - RTSP/V4L2 → I420 @ WxH → `shmsink` (socket SHM)
+  - Criterio de readiness AND (pipeline PLAYING + socket presente)
+  - Fallback V4L2 MJPEG → RAW si negoc. falla; auto‑restart con backoff
 
-- AI Capture (`src/modules/ai-capture.ts`)
-  - `shmsrc → videorate → videoconvert/videoscale → RGB @ AI_WxH → fdsink(stdout)`.
-  - Modo dual‑rate (`idle/active`) controlado por Orchestrator.
-  - Entrega frames a IA mediante callback `onFrame(frame, meta)`.
-  - Limita buffer (máx. 3 frames) y auto‑restart con backoff.
+- NV12 Capture (`src/modules/video/adapters/gstreamer/nv12-capture-gst.ts`)
+  - `shmsrc → videorate → scale/convert → NV12/I420 @ AI_WxH → fdsink(stdout)`
+  - Entrega frames + metadatos de planos para protocolo v1 (AIFeeder)
 
-- AI Engine (`src/modules/ai-engine-tcp.ts`)
-  - Cliente TCP que se comunica con worker de IA (Python) via Protobuf.
-  - Publica `ai.detection` (relevante/no relevante) y `ai.keepalive`.
-  - Filtra detecciones por umbral de confianza y clases configuradas.
-  - Interfaz estable: `setModel(opts)`, `run(frame, meta)`.
-  - Sistema de backpressure para evitar saturar el worker.
+- AI Client + Feeder
+  - `AIClientTcp` (`src/modules/ai/client/ai-client-tcp.ts`): TCP + Protobuf
+  - `AIFeeder` (`src/modules/ai/ai-feeder.ts`): sliding window + latest‑wins; frame cache
 
-- Publisher (`src/modules/publisher.ts`)
-  - `shmsrc → encoder (auto) → rtspclientsink` hacia MediaMTX.
-  - Detecta encoder disponible (CPU/GPU), start/stop idempotente.
+- Publisher (`src/modules/streaming/adapters/gstreamer/publisher-gst.ts`)
+  - `shmsrc → encoder(H.264) → rtspclientsink` hacia MediaMTX
+  - Encoder auto‑detectado (`src/media/encoder.ts`)
 
-- Session Store (`src/modules/session-store.ts`)
-  - Abre/cierra sesión y persiste lotes de detecciones (batch + flush interval).
+- Session Store (`src/modules/store/adapters/http/session-store-http.ts`)
+  - Abre/cierra sesiones; la ingesta de detecciones la realiza `FrameIngester`
 
 - Orchestrator + FSM (`src/core/orchestrator/*.ts`)
-  - FSM pura genera comandos (side effects) y el Orchestrator los ejecuta.
-  - Gestiona timers `dwell`, `silence` y `postroll` que reinyectan eventos.
-  - Controla `SetAIFpsMode(idle/active)` y el ciclo de vida del publisher/sesiones.
+  - FSM pura genera comandos; Orchestrator ejecuta side effects
+  - Timers: `dwell` (fijo), `silence`, `postroll`
+  - Control: `SetAIFpsMode(idle/active)`, `Start/StopStream`, `Open/CloseSession`
 
 ## Modelo de Eventos (Bus + FSM)
 - Bus: `src/core/bus/bus.ts`, tipos en `src/core/bus/events.ts`.
-- Tópicos inter‑módulo: `ai.detection`, `ai.keepalive`, `session.open`, `session.close` (y futuros `stream.*`).
-- Tópicos internos de FSM: `fsm.t.dwell.ok`, `fsm.t.silence.ok`, `fsm.t.postroll.ok` (solo Orchestrator).
+- Tópicos: `ai.detection`, `ai.keepalive`, `session.open`, `session.close` (y futuros `stream.*`).
+- Timers FSM: `fsm.t.dwell.ok`, `fsm.t.silence.ok`, `fsm.t.postroll.ok`.
 - Flujo resumido:
-  1) `ai.detection` relevante → IDLE → DWELL (arma dwell timer)
+  1) `ai.detection` relevante → IDLE → DWELL (timer fijo)
   2) `fsm.t.dwell.ok` → DWELL → ACTIVE + comandos: `StartStream`, `OpenSession`, `SetAIFpsMode('active')`
-  3) En ACTIVE: `ai.*` resetea silencio y hace `AppendDetections` si hay `sessionId`
+  3) En ACTIVE: solo `ai.detection` relevante resetea silencio; `ai.keepalive` NO resetea
+     - La ingesta de frames + detecciones corre en `main.ts` con `FrameIngester`
   4) `fsm.t.silence.ok` → ACTIVE → CLOSING + `SetAIFpsMode('idle')`
   5) `fsm.t.postroll.ok` → CLOSING → IDLE + `StopStream` + `CloseSession`
-- Detalle completo: `docs/EVENTS.md`.
+  6) Re‑activación: detección relevante durante CLOSING → vuelve a ACTIVE (misma sesión)
+  
+Detalle: `docs/EVENTS.md`.
 
 ## Pipelines de GStreamer
 - Ingesta (hub SHM): `src/media/gstreamer.ts:buildIngest()`
   - RTSP: `rtspsrc ! depay ! parse ! avdec_h264 ! videoconvert ! videoscale ! video/x-raw,format=I420,width=WxH,framerate=fpsHub/1 ! shmsink`
   - V4L2: `v4l2src ! (mjpeg|raw) ! jpegdec? ! videoconvert ! videoscale ! videorate ! video/x-raw,format=I420,width=WxH,framerate=fpsHub/1 ! shmsink`
-  - Notas: `sync=true` en `shmsink` para mantener timestamps; `queue` leaky para backpressure.
-
-- Captura IA: `src/media/gstreamer.ts:buildCapture()`
-  - `shmsrc ! caps I420 WxH @ fpsHub ! queue(leaky) ! videorate → fps AI ! videoconvert/videoscale → RGB @ AI_WxH ! fdsink(fd=1)`
-  - Notas: videorate antes de conversiones para ahorrar CPU; frames RGB salen por stdout del proceso gst.
-
+- Captura AI (NV12 v1): `src/modules/video/adapters/gstreamer/nv12-capture-gst.ts`
+  - `shmsrc ! I420 WxH@fpsHub ! videorate → fpsAI ! videoscale/convert → NV12@AI_WxH ! fdsink(fd=1)`
 - Publicación RTSP: `src/media/gstreamer.ts:buildPublish()`
-  - `shmsrc ! caps I420 WxH @ fpsHub ! videoconvert ! encoder(h264) ! parse ! rtspclientsink(location=rtsp://... path)`
-  - Encoder auto‑detectado (`src/media/encoder.ts`).
+  - `shmsrc ! I420 WxH@fpsHub ! videoconvert ! encoder(h264) ! parse ! rtspclientsink(location=rtsp://.../path)`
 
-Requisitos I420: `SOURCE_WIDTH` y `SOURCE_HEIGHT` deben ser pares (YUV420 planar). El tamaño de SHM debe considerar al menos ~50 frames de I420 para fluidez.
+Requisitos I420: `SOURCE_WIDTH/HEIGHT` pares. SHM recomendado ≈ `50 * frameBytes`.
 
 ## Configuración (Variables de Entorno)
 
@@ -234,12 +234,10 @@ Uso con cámara física (Docker): montar `/dev/video*` y otorgar grupo `video` (
 - Comunicar vía Bus de eventos
 
 ## Referencias
-- Diagrama: `services/edge-agent/docs/GRAFICO.md`
 - Arquitectura: `services/edge-agent/docs/ARCHITECTURE.md`
 - Eventos: `services/edge-agent/docs/EVENTS.md`
 - Pipelines: `services/edge-agent/src/media/gstreamer.ts`
 - FSM: `services/edge-agent/src/core/orchestrator/fsm.ts`
 - Orchestrator: `services/edge-agent/src/core/orchestrator/orchestrator.ts`
-- Bus: `services/edge-agent/src/core/bus/bus.ts` y `services/edge-agent/src/core/bus/events.ts`
+- Bus: `services/edge-agent/src/core/bus/bus.ts`
 - Módulos: `services/edge-agent/src/modules/*`
-

@@ -68,17 +68,17 @@ export type AIDetectionEvent = {
 };
 
 /**
- * ai.keepalive - Confirmación de presencia de objetos
+ * ai.keepalive - Liveness del AI worker
  *
- * Emitido cuando hay objetos relevantes pero no son "nuevos".
- * Sirve para mantener sesión activa durante grabación.
+ * Emitido cuando AI procesa frame pero NO hay detecciones relevantes.
+ * Sirve para confirmar que AI está activo (no crasheado).
  *
- * Consumido por: Orchestrator (resetea timer de silence)
+ * Consumido por: Orchestrator (NO resetea timer - indica ausencia de detecciones)
  */
 export type AIKeepaliveEvent = {
   type: "ai.keepalive";
-  score: number; // Score de confianza
-  detections: Detection[]; // Objetos actuales (tracking)
+  score: number; // Siempre 0 (sin detecciones)
+  detections: Detection[]; // Siempre array vacío
   meta: FrameMeta;
 };
 

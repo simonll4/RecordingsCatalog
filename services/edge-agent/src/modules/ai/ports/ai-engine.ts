@@ -24,6 +24,12 @@ export interface AIEngine {
   }): Promise<void>;
 
   /**
+   * Establece el session ID activo para envío de frames al store.
+   * Debe llamarse cuando el orquestador abre una nueva sesión.
+   */
+  setSessionId(sessionId: string): void;
+
+  /**
    * Envía un frame RGB al worker para inferencia.
    * Respeta backpressure: si el cliente indica que no hay crédito,
    * no envía el frame (latest-wins se maneja en el cliente).

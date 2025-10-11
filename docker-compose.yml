@@ -54,6 +54,8 @@ services:
     ports:
       - "8080:8080"
     volumes:
+      # Frames persistentes (detecciones con imágenes)
+      - ./data/frames:/data/frames
       # Sincronización de TZ con el host
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro

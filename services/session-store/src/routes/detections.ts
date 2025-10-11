@@ -19,61 +19,57 @@ const parseIsoDate = (value: unknown): Date | null => {
   return parsed;
 };
 
-// POST /detections - Batch insert
+// POST /detections - Batch insert (metadata only, no frames)
 router.post('/', async (req: Request, res: Response) => {
-  const { batchId, sessionId, sourceTs, items } = req.body;
-
-  if (!sessionId || typeof sessionId !== 'string') {
-    return res.status(400).json({ error: 'Missing or invalid sessionId' });
-  }
-
-  if (!Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ error: 'Missing or invalid items array' });
-  }
-
   try {
+    const { sessionId, detections, ts } = req.body;
+
+    // Validate required fields
+    if (!sessionId || typeof sessionId !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid sessionId' });
+    }
+
+    if (!Array.isArray(detections) || detections.length === 0) {
+      return res.status(400).json({ error: 'Missing or invalid detections array' });
+    }
+
+    // Check if session exists
+    const session = await db.getSession(sessionId);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // Insert detections
     let inserted = 0;
-    let skipped = 0;
-
-    for (const item of items) {
-      if (!item.eventId || !item.ts || !item.detections) {
-        skipped++;
-        continue;
-      }
-
+    for (const det of detections) {
       try {
-        const result = await db.insertDetection({
+        await db.insertDetection({
           sessionId,
-          eventId: item.eventId,
-          ts: item.ts,
-          detections: item.detections
+          trackId: det.trackId || '',
+          cls: det.cls,
+          conf: det.conf,
+          bbox: {
+            x: det.bbox?.x || 0,
+            y: det.bbox?.y || 0,
+            w: det.bbox?.w || 0,
+            h: det.bbox?.h || 0,
+          },
+          captureTs: ts || new Date().toISOString(),
         });
-
-        if (result) {
-          inserted++;
-        } else {
-          skipped++;
-        }
-      } catch (err: any) {
-        // Conflict en event_id (duplicate)
-        if (err.code === '23505') {
-          skipped++;
-        } else {
-          throw err;
-        }
+        inserted++;
+      } catch (err) {
+        // Skip duplicates or errors
+        console.error('Failed to insert detection:', err);
       }
     }
 
-    res.status(201).json({
-      batchId,
-      sessionId,
+    return res.status(200).json({ 
       inserted,
-      skipped,
-      total: items.length
+      total: detections.length
     });
-  } catch (error) {
-    console.error('Error inserting detections batch', error);
-    res.status(500).json({ error: 'Failed to insert detections' });
+  } catch (err) {
+    console.error('Error in POST /detections:', err);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
