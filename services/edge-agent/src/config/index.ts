@@ -1,18 +1,20 @@
 /**
- * Config - Configuración Centralizada del Edge Agent
+ * Configuration - Centralized Edge Agent Configuration
  *
- * Este módulo es el PUNTO ÚNICO de acceso a configuración.
- * Lee variables de entorno, valida tipos, y exporta CONFIG singleton.
+ * This module is the SINGLE SOURCE OF TRUTH for configuration.
+ * It reads environment variables, validates types, and exports a CONFIG singleton.
  *
- * Responsabilidades:
+ * Responsibilities:
+ * =================
  *
- * 1. Leer .env y process.env
- * 2. Parsear strings → tipos correctos (numbers, arrays, enums)
- * 3. Validar valores (ej: width/height pares para I420)
- * 4. Proveer defaults sensatos
- * 5. Fallar rápido en startup si falta variable requerida
+ * 1. Read .env file and process.env variables
+ * 2. Parse strings → correct types (numbers, arrays, enums)
+ * 3. Validate values (e.g., width/height must be even for I420/NV12)
+ * 4. Provide sensible defaults for development
+ * 5. Fail fast on startup if required variables are missing
  *
- * Uso:
+ * Usage:
+ * ======
  *
  * ```typescript
  * import { CONFIG } from "./config/index.js";
@@ -22,32 +24,63 @@
  * console.log(CONFIG.fsm.dwellMs);     // 500
  * ```
  *
- * ¿Por qué singleton?
+ * Why Singleton?
+ * ==============
  *
- * - Configuración es global e inmutable (no cambia en runtime)
- * - Evita pasar CONFIG por parámetros en todos lados
- * - Type-safe (AppConfig garantiza estructura correcta)
- * - Fácil de testear (mock process.env antes de import)
+ * Immutability
+ *   - Configuration is global and immutable (doesn't change at runtime)
+ *   - Avoids passing CONFIG everywhere as parameter
  *
- * Variables de Entorno:
+ * Type Safety
+ *   - AppConfig type guarantees correct structure
+ *   - Compile-time checks for configuration access
  *
- * Ver .env.example para lista completa de variables.
- * Todas tienen defaults razonables para desarrollo local.
+ * Testability
+ *   - Easy to mock (set process.env before import)
+ *   - Isolated configuration for unit tests
+ *
+ * Environment Variables:
+ * ======================
+ *
+ * See .env.example for complete list of variables.
+ * All variables have reasonable defaults for local development.
+ *
+ * Required Variables:
+ *   - DEVICE_ID (defaults to "edge-dev")
+ *   - SOURCE_URI (defaults to "/dev/video0")
+ *
+ * Optional Variables (with defaults):
+ *   - LOG_LEVEL (default: "info")
+ *   - SOURCE_WIDTH, SOURCE_HEIGHT (default: 640×480)
+ *   - AI_FPS_IDLE, AI_FPS_ACTIVE (default: 5, 8)
+ *   - FSM_DWELL_MS, FSM_SILENCE_MS, FSM_POSTROLL_MS (default: 500, 2000, 2000)
+ *   - etc.
+ *
+ * Configuration Loading:
+ * ======================
+ *
+ * 1. dotenv.config() loads .env file (development only)
+ * 2. Docker passes env vars directly (production)
+ * 3. getEnv() reads from process.env with fallbacks
+ * 4. Validation checks ensure consistency
+ * 5. CONFIG singleton is exported
  */
 
 import dotenv from "dotenv";
 import { AppConfig } from "./schema.js";
 
-// Cargar .env al process.env (solo desarrollo, en prod usar docker env)
+// Load .env file into process.env (development only, production uses Docker env)
 dotenv.config();
 
 /**
- * getEnv - Lee string de env var con fallback
+ * Get Environment Variable (String)
  *
- * @param key - Nombre de la variable (ej: "DEVICE_ID")
- * @param fallback - Valor por defecto (opcional)
- * @returns Valor de la variable
- * @throws Error si variable no existe y no hay fallback
+ * Reads a string environment variable with optional fallback.
+ *
+ * @param key - Variable name (e.g., "DEVICE_ID")
+ * @param fallback - Default value (optional)
+ * @returns Variable value
+ * @throws Error if variable doesn't exist and no fallback provided
  */
 function getEnv(key: string, fallback?: string): string {
   const val = process.env[key] ?? fallback;
@@ -56,12 +89,15 @@ function getEnv(key: string, fallback?: string): string {
 }
 
 /**
- * getEnvNum - Lee number de env var con fallback
+ * Get Environment Variable (Number)
  *
- * @param key - Nombre de la variable (ej: "SOURCE_WIDTH")
- * @param fallback - Valor por defecto (opcional)
- * @returns Valor numérico parseado
- * @throws Error si variable no es número válido
+ * Reads a numeric environment variable with optional fallback.
+ * Validates that the value is a valid number.
+ *
+ * @param key - Variable name (e.g., "SOURCE_WIDTH")
+ * @param fallback - Default value (optional)
+ * @returns Parsed numeric value
+ * @throws Error if variable is not a valid number
  */
 function getEnvNum(key: string, fallback?: number): number {
   const val = process.env[key];
@@ -75,14 +111,17 @@ function getEnvNum(key: string, fallback?: number): number {
 }
 
 /**
- * getEnvArray - Lee array de strings (CSV) de env var
+ * Get Environment Variable (Array)
  *
- * Ejemplo: "person,car,truck" → ["person", "car", "truck"]
+ * Reads a comma-separated string and parses it as an array.
  *
- * @param key - Nombre de la variable (ej: "AI_CLASS_NAMES")
- * @param fallback - Array por defecto (opcional)
- * @returns Array de strings parseado
- * @throws Error si variable no existe y no hay fallback
+ * Example:
+ *   "person,car,truck" → ["person", "car", "truck"]
+ *
+ * @param key - Variable name (e.g., "AI_CLASSES_FILTER")
+ * @param fallback - Default array (optional)
+ * @returns Array of trimmed strings
+ * @throws Error if variable doesn't exist and no fallback provided
  */
 function getEnvArray(key: string, fallback?: string[]): string[] {
   const val = process.env[key];
@@ -94,20 +133,41 @@ function getEnvArray(key: string, fallback?: string[]): string[] {
 }
 
 /**
- * CONFIG - Singleton de configuración
+ * CONFIG Singleton - Application Configuration
  *
- * Objeto inmutable con toda la configuración del Edge Agent.
- * Se construye en startup (import time) y valida todas las env vars.
+ * Immutable object with all Edge Agent configuration.
+ * Built at startup (import time) and validates all environment variables.
  *
- * Secciones:
+ * Sections:
+ * =========
  *
- * - deviceId: ID único del edge (ej: "edge-dev-001")
- * - logLevel: Nivel de logging (debug/info/warn/error)
- * - source: Configuración de cámara (V4L2/RTSP)
- * - ai: Configuración de modelo YOLO
- * - mediamtx: Configuración de servidor RTSP
- * - fsm: Timers de máquina de estados
- * - store: Configuración de API de sesiones
+ * deviceId: Unique edge device identifier
+ *   - Example: "edge-dev-001"
+ *   - Used in session metadata
+ *
+ * logLevel: Log verbosity level
+ *   - Values: "debug", "info", "warn", "error"
+ *   - Default: "info"
+ *
+ * source: Video source configuration
+ *   - Camera type (V4L2/RTSP)
+ *   - Resolution, FPS, shared memory settings
+ *
+ * ai: AI model configuration
+ *   - YOLO model name, threshold, resolution
+ *   - Worker connection, FPS settings
+ *
+ * mediamtx: RTSP server configuration
+ *   - MediaMTX host, port, stream path
+ *
+ * fsm: State machine timers
+ *   - Dwell, silence, post-roll durations
+ *
+ * store: Session store API configuration
+ *   - HTTP endpoint, batching parameters
+ *
+ * bus: Event bus configuration
+ *   - Queue size limits
  */
 export const CONFIG: AppConfig = {
   deviceId: getEnv("DEVICE_ID", "edge-dev"),
@@ -147,9 +207,9 @@ export const CONFIG: AppConfig = {
   },
 
   fsm: {
-    dwellMs: getEnvNum("FSM_DWELL_MS", 500), // 0.5 seg - confirmación rápida
-    silenceMs: getEnvNum("FSM_SILENCE_MS", 2000), // 2 seg - detección de ausencia
-    postRollMs: getEnvNum("FSM_POSTROLL_MS", 2000), // 2 seg - post-roll
+    dwellMs: getEnvNum("FSM_DWELL_MS", 500), // 0.5s - quick confirmation
+    silenceMs: getEnvNum("FSM_SILENCE_MS", 2000), // 2s - inactivity detection
+    postRollMs: getEnvNum("FSM_POSTROLL_MS", 2000), // 2s - post-roll recording
   },
 
   store: {
@@ -158,28 +218,49 @@ export const CONFIG: AppConfig = {
     batchMax: getEnvNum("STORE_BATCH_MAX", 50),
     flushIntervalMs: getEnvNum("STORE_FLUSH_INTERVAL_MS", 2000),
   },
+
+  bus: {
+    maxQueueSize: getEnvNum("BUS_MAX_QUEUE_SIZE", 1024), // 1024 events per topic
+  },
 };
 
-// ==================== VALIDACIÓN ====================
+// ==================== VALIDATION ====================
 
 /**
- * Validaciones de startup
+ * Startup Validation
  *
- * Fallan rápido si configuración es inválida.
- * Mejor crashear en startup que en runtime con frames corruptos.
+ * Fail fast if configuration is invalid.
+ * Better to crash on startup than at runtime with corrupted frames.
+ *
+ * Validation Rules:
+ * =================
+ *
+ * YUV420 Format Requirements (I420/NV12)
+ *   - GStreamer YUV420 formats require even dimensions
+ *   - Width and height must be divisible by 2
+ *   - Applies to both source and AI resolution
+ *
+ * FPS Consistency
+ *   - Source FPS must be >= AI active FPS
+ *   - Otherwise AI worker can't process frames fast enough
+ *   - Would cause frame drops and lag
+ *
+ * Why These Constraints?
+ *   - I420: YUV 4:2:0 subsampling requires even dimensions
+ *   - FPS: AI can't process faster than frames are produced
  */
 
-// GStreamer I420 requiere dimensiones pares (YUV420 planar)
+// GStreamer YUV420 formats (I420/NV12) require even dimensions
 if (CONFIG.source.width % 2 !== 0 || CONFIG.source.height % 2 !== 0) {
-  throw new Error("Source width/height must be even for I420 format");
+  throw new Error("Source width/height must be even for YUV420 (I420/NV12)");
 }
 
-// AI también necesita dimensiones pares (RGB → YUV conversions)
+// AI target resolution must be even (YUV420 formats)
 if (CONFIG.ai.width % 2 !== 0 || CONFIG.ai.height % 2 !== 0) {
   throw new Error("AI width/height must be even");
 }
 
-// Source FPS debe ser >= AI active FPS (sino AI no puede procesar a tiempo)
+// Source FPS must be >= AI active FPS (otherwise AI can't keep up)
 if (CONFIG.source.fpsHub < CONFIG.ai.fps.active) {
   throw new Error("Source FPS hub must be >= AI active FPS");
 }

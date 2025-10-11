@@ -1,29 +1,158 @@
 /**
- * Child process helper con logging estructurado
- * Manejo de señales y kill group
+ * Child Process Helper - Structured Logging & Signal Management
+ *
+ * This module provides utilities for spawning and managing child processes
+ * with proper logging, error handling, and cleanup.
+ *
+ * Purpose:
+ * ========
+ *
+ * Edge Agent spawns multiple GStreamer processes (camera-hub, publisher).
+ * This module standardizes how we:
+ * - Launch processes with consistent configuration
+ * - Capture and log stdout/stderr
+ * - Handle process exit and crashes
+ * - Kill processes cleanly (SIGINT → SIGKILL)
+ *
+ * Features:
+ * =========
+ *
+ * Structured Logging
+ *   - All stdout/stderr automatically logged with module context
+ *   - Configurable log level based on content (ERROR, WARN, DEBUG)
+ *   - Optional silent mode for binary streams
+ *
+ * GStreamer-Aware Filtering
+ *   - Filters out known non-critical GStreamer warnings
+ *   - Prevents log spam from expected edge cases
+ *   - Examples: V4L2 crop failures, SHM client disconnect, etc.
+ *
+ * Signal Handling
+ *   - Graceful shutdown with SIGINT first (clean pipeline teardown)
+ *   - Force kill with SIGKILL after grace period
+ *   - Process group kill to cleanup zombie processes
+ *
+ * Exit Callbacks
+ *   - onExit hook for custom cleanup logic
+ *   - Provides exit code and signal for diagnostics
+ *   - Enables auto-restart on crash
+ *
+ * Usage Example:
+ * ==============
+ *
+ * ```typescript
+ * const proc = spawnProcess({
+ *   module: "camera-hub",
+ *   command: "gst-launch-1.0",
+ *   args: ["v4l2src", "!", "videoconvert", "!", "shmsink"],
+ *   env: { GST_DEBUG: "2" },
+ *   onExit: (code, signal) => {
+ *     if (code !== 0) {
+ *       console.log("Process crashed, restarting...");
+ *     }
+ *   }
+ * });
+ *
+ * // Later: graceful shutdown
+ * await killProcess(proc, "SIGINT");
+ * ```
+ *
+ * Known GStreamer Warnings (Filtered):
+ * =====================================
+ *
+ * These warnings appear frequently but are not actionable:
+ *
+ * - VIDIOC_S_CROP failed: V4L2 crop not supported (harmless)
+ * - Failed to get default compose region: V4L2 compose not available
+ * - VIDIOC_G_SELECTION: V4L2 selection API not supported
+ * - Uncertain or not enough buffers: V4L2 buffer pool warning
+ * - lost frames detected: Occasional frame drops (expected under load)
+ * - One client is gone, closing: SHM client disconnected (normal)
+ * - Passing event: RTSP internal events (noise)
+ * - Can't determine running time: RTP session initial latency
+ * - receive interrupted: RTSP stop (expected during shutdown)
+ * - PAUSE interrupted: RTSP pause (expected during state change)
+ *
+ * Why Filter These?
+ * =================
+ *
+ * GStreamer logs are very verbose. Filtering known non-issues:
+ * - Reduces log noise (easier to spot real problems)
+ * - Prevents false alarms in monitoring
+ * - Improves log readability
+ *
+ * Real errors (CRITICAL, ERROR, ASSERT) are always logged at error level.
  */
 
 import { spawn, ChildProcess } from "child_process";
 import { logger } from "./logging.js";
 
+/**
+ * Spawn Options Configuration
+ *
+ * Configures how a child process should be spawned and monitored.
+ */
 export type SpawnOptions = {
-  module: string;
-  command: string;
-  args: string[];
-  env?: NodeJS.ProcessEnv;
-  onStdout?: (line: string) => void;
-  onStderr?: (line: string) => void;
-  onExit?: (code: number | null, signal: string | null) => void;
-  /** Si true, no loguea stdout (útil para pipelines que envían datos binarios) */
+  module: string; // Module name for logging context (e.g., "camera-hub")
+  command: string; // Executable to run (e.g., "gst-launch-1.0")
+  args: string[]; // Command arguments array
+  env?: NodeJS.ProcessEnv; // Environment variables (merged with process.env)
+
+  // Lifecycle callbacks
+  onStdout?: (line: string) => void; // Called for each stdout line
+  onStderr?: (line: string) => void; // Called for each stderr line
+  onExit?: (code: number | null, signal: string | null) => void; // Called on process exit
+
+  /**
+   * Silent Stdout Mode
+   *
+   * If true, stdout is not logged (useful for binary pipelines).
+   * onStdout callback still fires if provided.
+   *
+   * Use case: Publisher streams video data to stdout - logging would spam.
+   */
   silentStdout?: boolean;
 };
 
-/** Spawn process con logging estructurado
- * - stdout y stderr loggeados con contexto
- * - manejo de exit y error
+/**
+ * Spawn Process with Structured Logging
+ *
+ * Launches a child process with automatic logging and monitoring.
+ *
+ * Behavior:
+ * =========
+ *
+ * 1. Merges provided env with process.env
+ * 2. Spawns with stdio pipes (stdout, stderr captured)
+ * 3. Logs all stdout lines at DEBUG level (unless silentStdout=true)
+ * 4. Logs stderr with smart level detection:
+ *    - ERROR: Lines containing "ERROR", "CRITICAL", "ASSERT"
+ *    - WARN: Lines containing "WARN", "WARNING"
+ *    - DEBUG: Everything else (or filtered if known GStreamer noise)
+ * 5. Calls onExit callback when process terminates
+ *
+ * Returns:
+ * ========
+ *
+ * ChildProcess instance - use for:
+ * - Sending signals (proc.kill(signal))
+ * - Monitoring PID (proc.pid)
+ * - Listening to events (proc.on('exit', ...))
+ *
+ * @param opts - Spawn configuration options
+ * @returns ChildProcess instance
  */
 export function spawnProcess(opts: SpawnOptions): ChildProcess {
-  const { module, command, args, env, onStdout, onStderr, onExit, silentStdout } = opts;
+  const {
+    module,
+    command,
+    args,
+    env,
+    onStdout,
+    onStderr,
+    onExit,
+    silentStdout,
+  } = opts;
 
   logger.debug(`Spawning process`, { module, command, args: args.join(" ") });
 

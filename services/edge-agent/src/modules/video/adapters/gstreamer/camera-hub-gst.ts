@@ -1,15 +1,93 @@
 /**
- * Camera Hub GStreamer - Implementación GStreamer del hub de cámara
+ * Camera Hub GStreamer - Always-On Video Capture Pipeline
  *
- * Hub de captura de video always-on que usa GStreamer para capturar desde
- * fuentes V4L2/RTSP y exponer frames vía memoria compartida (SHM).
+ * The Camera Hub is the foundation of the video pipeline. It captures video
+ * continuously from a camera source and exposes frames via shared memory (SHM)
+ * for consumption by other modules.
  *
- * Características:
- * - Usa buildIngest() de /media/gstreamer para construir pipeline
- * - Usa spawnProcess() de /shared/childproc para manejo limpio de procesos
- * - Política de restart con backoff exponencial
- * - AND-based ready criteria (PLAYING + socket exists)
- * - Auto-fallback MJPEG → RAW para V4L2
+ * Architecture:
+ * =============
+ *
+ * Input Sources:
+ *   - V4L2: USB/built-in cameras (e.g., /dev/video0)
+ *   - RTSP: Network cameras (e.g., rtsp://192.168.1.100:8554/cam)
+ *
+ * Output:
+ *   - Shared Memory (SHM): Unix domain socket with I420 frames
+ *   - Format: I420 (planar YUV 4:2:0)
+ *   - Consumers: NV12Capture, Publisher
+ *
+ * GStreamer Pipeline:
+ * ===================
+ *
+ * V4L2 Source:
+ *   v4l2src → videoconvert → videoscale → shmsink
+ *
+ * RTSP Source:
+ *   rtspsrc → rtph264depay → h264parse → avdec_h264 → videoconvert → shmsink
+ *
+ * Features:
+ * =========
+ *
+ * Pipeline Construction
+ *   - Delegates to buildIngest() in media layer
+ *   - Automatic format negotiation (MJPEG/RAW/H264)
+ *   - Configurable resolution and framerate
+ *
+ * Process Management
+ *   - Uses spawnProcess() for clean subprocess handling
+ *   - Structured logging of GStreamer output
+ *   - Graceful shutdown with timeout
+ *
+ * Reliability
+ *   - Auto-restart on crash with exponential backoff
+ *   - V4L2 format fallback (MJPEG → RAW if MJPEG fails)
+ *   - Ready detection via dual criteria (PLAYING state + socket exists)
+ *
+ * State Tracking
+ *   - Monitors GStreamer state transitions (NULL → READY → PAUSED → PLAYING)
+ *   - Polls for SHM socket creation (filesystem check)
+ *   - AND-based ready condition (both criteria must be met)
+ *
+ * Ready Criteria:
+ * ===============
+ *
+ * The hub is considered "ready" when BOTH conditions are true:
+ *
+ * 1. sawPlaying = true
+ *    - GStreamer pipeline reached PLAYING state
+ *    - Detected via log parsing ("state change: PAUSED -> PLAYING")
+ *
+ * 2. sawSocket = true
+ *    - SHM socket file exists on filesystem
+ *    - Detected via periodic polling (100ms interval)
+ *
+ * This dual-check prevents race conditions where pipeline is PLAYING
+ * but socket isn't created yet (or vice versa).
+ *
+ * Auto-Restart Behavior:
+ * ======================
+ *
+ * On unexpected exit (crash, source disconnected):
+ * - Delay = Math.min(2^attempts * 1000, 30000) ms
+ * - Max delay: 30 seconds
+ * - Infinite retries (always-on design)
+ * - Resets attempt counter on successful start
+ *
+ * V4L2 Format Fallback:
+ * =====================
+ *
+ * If MJPEG fails on first attempt:
+ * - Set tryRawFallback = true
+ * - Retry with RAW format (YUYV/YUY2)
+ * - More CPU usage but better compatibility
+ *
+ * Integration:
+ * ============
+ *
+ * - NV12Capture: Reads from SHM, converts to NV12
+ * - Publisher: Reads from SHM, encodes to H264, streams via RTSP
+ * - Orchestrator: Waits for ready() before starting other modules
  */
 
 import fs from "node:fs";
@@ -21,21 +99,39 @@ import { logger } from "../../../../shared/logging.js";
 import { CameraHub } from "../../ports/camera-hub.js";
 
 export class CameraHubGst implements CameraHub {
+  // GStreamer child process
   private proc?: ChildProcess;
+
+  // Ready promise resolution callbacks
   private readyResolve?: () => void;
   private readyReject?: (err: Error) => void;
-  private isReady = false;
-  private sawPlaying = false;
-  private sawSocket = false;
-  private readyTimeout?: NodeJS.Timeout;
-  private socketPoll?: NodeJS.Timeout;
-  private tryRawFallback = false;
-  private stoppedManually = false;
-  private restartAttempts = 0;
+
+  // Ready state flags
+  private isReady = false; // Final ready state (sawPlaying AND sawSocket)
+  private sawPlaying = false; // GStreamer reached PLAYING state
+  private sawSocket = false; // SHM socket file exists
+
+  // Timers
+  private readyTimeout?: NodeJS.Timeout; // 3s timeout for ready detection
+  private socketPoll?: NodeJS.Timeout; // 100ms polling for socket existence
+
+  // Restart & fallback logic
+  private tryRawFallback = false; // V4L2 format fallback flag (MJPEG → RAW)
+  private stoppedManually = false; // Prevents auto-restart during intentional shutdown
+  private restartAttempts = 0; // Counter for exponential backoff calculation
 
   /**
-   * Promesa que se resuelve cuando el hub está listo
-   * READY = sawPlaying AND sawSocket
+   * Wait for Camera Hub to be Ready
+   *
+   * Returns a promise that resolves when BOTH ready criteria are met:
+   * 1. GStreamer pipeline is in PLAYING state (sawPlaying = true)
+   * 2. SHM socket file exists on filesystem (sawSocket = true)
+   *
+   * If already ready, returns immediately.
+   * If not ready within timeout, rejects with error.
+   *
+   * @param timeoutMs - Max wait time in milliseconds (default: 5000ms)
+   * @returns Promise that resolves when ready, rejects on timeout
    */
   async ready(timeoutMs: number = 5000): Promise<void> {
     if (this.isReady) return Promise.resolve();
@@ -52,7 +148,22 @@ export class CameraHubGst implements CameraHub {
   }
 
   /**
-   * Inicia el hub de captura
+   * Start Camera Hub
+   *
+   * Lifecycle:
+   * 1. Validate configuration (source type, paths, dimensions)
+   * 2. Clean up previous SHM socket file (if exists)
+   * 3. Build GStreamer pipeline arguments via buildIngest()
+   * 4. Spawn gst-launch-1.0 subprocess
+   * 5. Start socket polling (100ms interval)
+   * 6. Set ready timeout (3s max wait)
+   * 7. Wait for ready criteria via log parsing + socket detection
+   *
+   * Auto-Restart:
+   * If process exits unexpectedly, auto-restart with exponential backoff.
+   *
+   * V4L2 Fallback:
+   * If first attempt fails with MJPEG, retry with RAW format.
    */
   async start(): Promise<void> {
     if (this.proc) {
@@ -64,12 +175,12 @@ export class CameraHubGst implements CameraHub {
 
     const { socketPath } = CONFIG.source;
 
-    // Limpiar socket previo
+    // Clean up stale socket file from previous run
     try {
       fs.unlinkSync(socketPath);
     } catch {}
 
-    // Construir pipeline usando media layer
+    // Build GStreamer pipeline arguments via media layer
     const args = buildIngest(CONFIG.source, this.tryRawFallback);
 
     logger.info("Starting camera hub", {
@@ -78,7 +189,7 @@ export class CameraHubGst implements CameraHub {
       tryRawFallback: this.tryRawFallback,
     });
 
-    // Spawn proceso con logging estructurado
+    // Spawn GStreamer process with structured logging
     this.proc = spawnProcess({
       module: "camera-hub-gst",
       command: "gst-launch-1.0",
@@ -92,7 +203,8 @@ export class CameraHubGst implements CameraHub {
       onExit: (code, signal) => this.handleExit(code, signal),
     });
 
-    // Polling del socket file
+    // Poll for SHM socket file creation (100ms interval)
+    // This is needed because GStreamer may reach PLAYING before socket is created
     this.socketPoll = setInterval(() => {
       try {
         if (!this.sawSocket && fs.existsSync(socketPath)) {
@@ -102,7 +214,8 @@ export class CameraHubGst implements CameraHub {
       } catch {}
     }, 100);
 
-    // Timeout de 3s según spec - debe fallar
+    // Ready timeout: must become ready within 3s or fail
+    // This matches the specification timeout requirement
     this.readyTimeout = setTimeout(() => {
       if (!this.isReady && this.readyReject) {
         logger.error("Camera hub ready timeout (3s)", {

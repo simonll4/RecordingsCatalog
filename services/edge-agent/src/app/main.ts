@@ -1,14 +1,39 @@
 /**
- * Main - Edge Agent Bootstrap
+ * Main - Edge Agent Bootstrap & Dependency Injection Root
  *
- * Composition root with NV12/I420 support:
- * - Camera Hub: Always-on capture → SHM (I420)
- * - NV12 Capture: SHM → NV12 frames
- * - AI Feeder: Frame coordination + backpressure
- * - AI Client TCP: Binary protocol
- * - Publisher: SHM → RTSP (on-demand)
- * - Session Store: Batch detections
- * - Orchestrator: FSM coordination
+ * This is the composition root that wires all modules together and manages
+ * the complete lifecycle of the Edge Agent application.
+ *
+ * Architecture Overview:
+ * =====================
+ *
+ * Video Pipeline:
+ * - CameraHub: Always-on video capture (V4L2/RTSP) → Shared Memory (I420 format)
+ * - NV12Capture: Reads from SHM and converts I420 → NV12 frames for AI processing
+ * - Publisher: On-demand RTSP streaming (SHM → MediaMTX) for remote viewing
+ *
+ * AI Pipeline:
+ * - AIFeeder: Frame coordinator with backpressure control and sliding window
+ * - AIClientTcp: Binary protocol communication with AI worker (protobuf over TCP)
+ * - FrameCache: In-memory cache for correlating detections with original frames
+ *
+ * State Management:
+ * - Bus: Event-driven pub/sub system for decoupled communication
+ * - Orchestrator: Finite State Machine (FSM) that coordinates system behavior
+ * - SessionManager: Tracks active recording sessions and frame ingestion
+ *
+ * Storage:
+ * - SessionStore: HTTP API client for persisting sessions and detections
+ * - FrameIngester: Batches and uploads frames with detection metadata
+ *
+ * Flow:
+ * =====
+ * 1. CameraHub captures video continuously to SHM
+ * 2. NV12Capture reads frames when AI is ready
+ * 3. AIFeeder sends frames to worker, receives detections
+ * 4. Detections trigger FSM state changes (IDLE→DWELL→ACTIVE→CLOSING)
+ * 5. During ACTIVE, frames+detections are ingested to session-store
+ * 6. Publisher streams on-demand when external clients connect
  */
 
 // === Core ===
@@ -17,13 +42,13 @@ import { Bus } from "../core/bus/bus.js";
 import { Orchestrator } from "../core/orchestrator/orchestrator.js";
 
 // === Modules ===
-import { CameraHubGst } from "../modules/video/adapters/gstreamer/camera-hub-gst.js";
-import { NV12CaptureGst } from "../modules/video/adapters/gstreamer/nv12-capture-gst.js";
-import { AIFeeder } from "../modules/ai/ai-feeder.js";
-import { AIClientTcp } from "../modules/ai/client/ai-client-tcp.js";
-import { PublisherGst } from "../modules/streaming/adapters/gstreamer/publisher-gst.js";
-import { SessionStoreHttp } from "../modules/store/adapters/http/session-store-http.js";
-import { FrameIngester } from "../modules/ai/ingest/frame-ingester.js";
+import { CameraHubGst, NV12CaptureGst } from "../modules/video/index.js";
+import { AIFeeder, AIClientTcp, FrameIngester } from "../modules/ai/index.js";
+import { MediaMtxOnDemandPublisherGst } from "../modules/streaming/index.js";
+import { SessionStoreHttp } from "../modules/store/index.js";
+
+// === App ===
+import { SessionManager } from "./session.js";
 
 // === Shared ===
 import { logger } from "../shared/logging.js";
@@ -35,81 +60,108 @@ async function main() {
   logger.info("Configuration loaded", { module: "main", config: CONFIG });
 
   // ============================================================
-  // INITIALIZATION
+  // MODULE INITIALIZATION
   // ============================================================
+  // All modules are instantiated here following Dependency Injection pattern.
+  // This makes the codebase testable and dependencies explicit.
 
+  // Event Bus - Central communication hub for all modules
   const bus = new Bus();
 
-  // --- Video Pipeline ---
-  const camera = new CameraHubGst();      // V4L2/RTSP → SHM (I420)
-  const nv12Capture = new NV12CaptureGst(); // SHM → NV12 frames
-  const publisher = new PublisherGst();    // SHM → RTSP (on-demand)
+  // --- Video Pipeline Components ---
+  // CameraHub: Captures from V4L2/RTSP device → writes I420 to shared memory
+  const camera = new CameraHubGst();
 
-  // --- AI Pipeline ---
-  const aiClient = new AIClientTcp(CONFIG.ai.worker.host, CONFIG.ai.worker.port);
+  // NV12Capture: Reads from shared memory → provides NV12 frames to AI pipeline
+  const nv12Capture = new NV12CaptureGst();
+
+  // Publisher: On-demand RTSP streaming to MediaMTX (activated by external viewers)
+  const publisher = new MediaMtxOnDemandPublisherGst();
+
+  // --- AI Pipeline Components ---
+  // TCP client for binary communication with AI worker process
+  const aiClient = new AIClientTcp(
+    CONFIG.ai.worker.host,
+    CONFIG.ai.worker.port
+  );
+
+  // Frame coordinator with flow control, caching, and backpressure management
   const aiFeeder = new AIFeeder(nv12Capture, CONFIG.ai.frameCacheTtlMs);
 
-  // --- Storage ---
+  // --- Storage Components ---
+  // HTTP client for session-store service (sessions + detections API)
   const store = new SessionStoreHttp();
+
+  // Frame ingestion coordinator (uploads frames with detection metadata)
   const frameIngester = new FrameIngester(CONFIG.store.baseUrl);
 
-  // ============================================================
-  // CONFIGURATION
-  // ============================================================
+  // --- Session Management ---
+  // Frame cache is shared between AIFeeder and SessionManager
+  // This allows SessionManager to retrieve original frames when detections arrive
+  const frameCache = aiFeeder.getFrameCache();
+  const sessionManager = new SessionManager(frameCache, frameIngester);
 
-  // Configure AI Feeder with model settings
+  // ============================================================
+  // MODULE CONFIGURATION
+  // ============================================================
+  // Configure modules with runtime settings before starting them
+
+  // Configure AI Feeder with model parameters and flow control policy
   aiFeeder.init({
-    model: CONFIG.ai.modelName,
-    width: CONFIG.ai.width,
-    height: CONFIG.ai.height,
-    maxInflight: 4,
-    policy: "LATEST_WINS",
-    preferredFormat: "NV12",
+    model: CONFIG.ai.modelName, // YOLO model name (e.g., "yolov8n")
+    width: CONFIG.ai.width, // Frame width for inference
+    height: CONFIG.ai.height, // Frame height for inference
+    maxInflight: 4, // Max frames in-flight (sliding window size)
+    policy: "LATEST_WINS", // Drop old pending frames when window is full
+    preferredFormat: "NV12", // Pixel format for AI worker
   });
 
-  // Wire AI Client + Feeder
+  // Wire AI Client to Feeder (bidirectional dependency)
+  // Client calls feeder methods, feeder uses client's send function
   aiClient.setFeeder(aiFeeder);
 
   // ============================================================
-  // SESSION TRACKING & EVENT HANDLING
+  // EVENT SUBSCRIPTIONS & CALLBACKS
   // ============================================================
-
-  // Session state for detection ingestion
-  let currentSessionId: string | null = null;
-  let frameSeqNo = 0;
-
-  // Frame cache for metadata (timestamps, dimensions)
-  const frameCache = aiFeeder.getFrameCache();
+  // Wire up event handlers for session lifecycle and AI results
 
   // Synchronization flags to prevent race conditions during startup
+  // orchestratorReady: Ensures FSM is subscribed to bus before AI starts publishing events
+  // feederStarted: Prevents double-start on AI reconnection
   let orchestratorReady = false;
   let feederStarted = false;
 
-  // --- Session Lifecycle Events ---
+  // --- Session Lifecycle Event Handlers ---
+  // These events are published by the Orchestrator FSM when state transitions occur
 
+  // Handle session.open event (FSM enters ACTIVE state)
   bus.subscribe("session.open", (event: any) => {
-    currentSessionId = event.sessionId;
-    frameSeqNo = 0;
-    logger.info("Session opened", {
-      module: "main",
-      sessionId: event.sessionId,
-    });
+    sessionManager.openSession(event.sessionId);
   });
 
+  // Handle session.close event (FSM exits CLOSING state back to IDLE)
   bus.subscribe("session.close", (event: any) => {
-    currentSessionId = null;
-    frameSeqNo = 0;
-    logger.info("Session closed", {
-      module: "main",
-      sessionId: event.sessionId,
-    });
+    sessionManager.closeSession(event.sessionId);
   });
 
-  // --- AI Callbacks ---
+  // --- AI Worker Callbacks ---
+  // These callbacks are invoked by AIFeeder when AI worker state changes
 
   aiFeeder.setCallbacks({
+    /**
+     * onReady - Called when AI worker handshake completes successfully
+     *
+     * This callback fires:
+     * - On initial connection after Init/InitOk handshake
+     * - On reconnection after worker crash/restart
+     *
+     * Flow Control:
+     * - Only starts frame capture once (feederStarted flag)
+     * - Waits for orchestrator initialization (orchestratorReady flag)
+     * - This prevents publishing events before FSM is subscribed to bus
+     */
     onReady: () => {
-      // Only start feeder once, not on every reconnect
+      // Guard: Don't restart feeder on reconnection
       if (feederStarted) {
         logger.info("AI reconnected, feeder already running", {
           module: "main",
@@ -121,8 +173,9 @@ async function main() {
         module: "main",
       });
 
-      // Wait for orchestrator to initialize before starting frame capture
-      // This prevents events from being published before FSM is subscribed
+      // Polling loop: Wait for orchestrator to initialize before starting frame flow
+      // This is critical to prevent race conditions where events are published
+      // before the FSM has subscribed to the bus
       const startWhenReady = () => {
         if (orchestratorReady) {
           logger.info("Orchestrator ready, starting frame capture", {
@@ -141,12 +194,35 @@ async function main() {
     },
 
     /**
-     * onResult - AI detection callback
-     * 
-     * Responsibilities:
-     * 1. Filter detections by configured classes
-     * 2. Ingest frames + detections to session store (if session active)
-     * 3. Publish events to bus for orchestrator FSM
+     * onResult - AI Detection Result Handler
+     *
+     * This is the core callback that processes every detection result from the AI worker.
+     * It's called for EVERY frame processed, regardless of whether detections were found.
+     *
+     * Three Main Responsibilities:
+     * ============================
+     *
+     * 1. Filter Detections by Configured Classes
+     *    - Only classes in CONFIG.ai.classesFilter are considered "relevant"
+     *    - Example: ["person", "car"] ignores cats, dogs, etc.
+     *
+     * 2. Ingest Frames + Detections to Session Store
+     *    - Only happens when session is ACTIVE and relevant detections exist
+     *    - Retrieves original NV12 frame from cache by frameId
+     *    - Uploads frame with detection metadata via FrameIngester
+     *
+     * 3. Publish Events to Event Bus for Orchestrator FSM
+     *    - ai.detection: When relevant detections found (triggers state transitions)
+     *    - ai.keepalive: When no relevant detections (proves AI is alive, doesn't affect state)
+     *
+     * FSM State Transitions Triggered:
+     * ================================
+     * - IDLE → DWELL: First ai.detection event
+     * - DWELL → ACTIVE: ai.detection during dwell window
+     * - ACTIVE: Each ai.detection resets silence timer
+     * - CLOSING → ACTIVE: ai.detection during post-roll re-activates session
+     *
+     * @param result - Protobuf Result message from AI worker
      */
     onResult: (result) => {
       const detections = result.detections?.items || [];
@@ -157,7 +233,11 @@ async function main() {
         totalDetections: detections.length,
       });
 
-      // --- 1. Filter Detections ---
+      // =========================================================
+      // STEP 1: Filter Detections by Configured Classes
+      // =========================================================
+      // Only detections matching CONFIG.ai.classesFilter are "relevant"
+      // This prevents false positives from triggering recordings
       const relevantDetections = detections.filter((det) =>
         CONFIG.ai.classesFilter.includes(det.cls || "")
       );
@@ -171,68 +251,41 @@ async function main() {
         hasRelevant,
       });
 
-      // --- 2. Ingest Frames + Detections (if session active) ---
-      if (currentSessionId && hasRelevant) {
-        // Map detections to ingest format
+      // =========================================================
+      // STEP 2: Ingest Frames + Detections (if session active)
+      // =========================================================
+      // Only ingest when:
+      // - Session is ACTIVE (orchestrator opened a session)
+      // - Relevant detections exist (matching configured classes)
+      if (sessionManager.hasActiveSession() && hasRelevant) {
+        // Transform protobuf detections to ingest API format
         const ingestDetections = relevantDetections.map((det, idx) => ({
-          trackId: det.trackId || `track_${Date.now()}_${idx}`,
+          trackId: det.trackId || `track_${Date.now()}_${idx}`, // Fallback if no tracking
           cls: det.cls || "",
           conf: det.conf || 0,
           bbox: {
             x: det.bbox?.x1 || 0,
             y: det.bbox?.y1 || 0,
-            w: (det.bbox?.x2 || 0) - (det.bbox?.x1 || 0),
-            h: (det.bbox?.y2 || 0) - (det.bbox?.y1 || 0),
+            w: (det.bbox?.x2 || 0) - (det.bbox?.x1 || 0), // Convert x2 to width
+            h: (det.bbox?.y2 || 0) - (det.bbox?.y1 || 0), // Convert y2 to height
           },
         }));
 
-        // Try to get NV12 frame from cache
+        // Retrieve original NV12 frame from cache using frameId correlation
         const frameId = result.frameId?.toString() ?? null;
 
         if (frameId !== null) {
-          const cachedFrame = frameCache.get(frameId);
-
-          if (cachedFrame) {
-            const payload = {
-              sessionId: currentSessionId!,
-              seqNo: frameSeqNo++,
-              captureTs: cachedFrame.captureTs,
-              detections: ingestDetections,
-            };
-
-            // Send NV12 frame + detections to /ingest endpoint
-            void frameIngester
-              .ingestNV12(payload, cachedFrame.data, cachedFrame.meta)
-              .then((success: boolean) => {
-                if (success) {
-                  logger.debug("Frame + detections ingested", {
-                    module: "main",
-                    sessionId: currentSessionId || undefined,
-                    seqNo: payload.seqNo,
-                    frameId,
-                    detections: ingestDetections.length,
-                  });
-                }
-              })
-              .catch((err: Error) => {
-                logger.error("Failed to ingest frame", {
-                  module: "main",
-                  frameId,
-                  error: err.message,
-                });
-              });
-          } else {
-            logger.warn("No cached NV12 frame available for ingestion", {
-              module: "main",
-              requestedFrameId: frameId,
-            });
-          }
+          // Ingest frame + detections via SessionManager
+          // This batches the upload and handles retries
+          void sessionManager.ingestFrame(frameId, ingestDetections);
         }
       }
 
-      // --- 3. Publish Events to Bus (FSM) ---
+      // =========================================================
+      // STEP 3: Publish Events to Bus (FSM State Management)
+      // =========================================================
       if (hasRelevant) {
-        // Map protobuf detections to bus event format
+        // Transform protobuf detections to bus event format
         const eventDetections = relevantDetections.map((det) => ({
           cls: det.cls || "",
           conf: det.conf || 0,
@@ -246,33 +299,41 @@ async function main() {
         }));
 
         // Try to get frame metadata from cache for accurate timestamps
+        // Fallback to current time if frame not in cache (shouldn't happen)
         const frameId = result.frameId?.toString() ?? null;
         const cachedFrame = frameId ? frameCache.get(frameId) : null;
 
         const frameMeta = cachedFrame
           ? {
-              ts: cachedFrame.captureTs,
+              ts: cachedFrame.captureTs, // Original capture timestamp
               width: cachedFrame.meta.width,
               height: cachedFrame.meta.height,
               pixFmt: "NV12" as const,
             }
           : {
-              ts: new Date().toISOString(),
+              ts: new Date().toISOString(), // Fallback to current time
               width: CONFIG.ai.width,
               height: CONFIG.ai.height,
               pixFmt: "NV12" as const,
             };
 
-        // Publish ai.detection event (triggers FSM: IDLE→DWELL, DWELL→ACTIVE, resets ACTIVE silence)
+        // Publish ai.detection event to bus
+        // This triggers FSM transitions:
+        // - IDLE → DWELL (first detection)
+        // - DWELL → ACTIVE (confirmation)
+        // - ACTIVE: Resets silence timer
+        // - CLOSING → ACTIVE (re-activation during post-roll)
         bus.publish("ai.detection", {
           type: "ai.detection",
           relevant: true,
-          score: Math.max(...eventDetections.map((d) => d.conf), 0),
+          score: Math.max(...eventDetections.map((d) => d.conf), 0), // Highest confidence
           detections: eventDetections,
           meta: frameMeta,
         });
       } else {
-        // Publish ai.keepalive (liveness only - does NOT reset silence timer)
+        // No relevant detections found
+        // Publish ai.keepalive event to prove AI worker is alive
+        // NOTE: This does NOT reset silence timer in ACTIVE state
         const frameMeta = {
           ts: new Date().toISOString(),
           width: CONFIG.ai.width,
@@ -288,77 +349,154 @@ async function main() {
         });
       }
     },
+
+    /**
+     * onError - AI Worker Error Handler
+     *
+     * Called when:
+     * - TCP connection fails
+     * - Protobuf parsing errors
+     * - Worker crashes
+     *
+     * AIClientTcp handles reconnection automatically with exponential backoff
+     */
     onError: (err) => {
       logger.error("AI error", { module: "main", error: err.message });
     },
   });
 
   // ============================================================
-  // ORCHESTRATOR (FSM)
+  // ORCHESTRATOR (FINITE STATE MACHINE)
   // ============================================================
+  // The Orchestrator is the brain of the system - it coordinates all modules
+  // based on events and manages the recording lifecycle FSM
 
-  // AI Adapter - Compatibility interface for orchestrator
+  /**
+   * AI Adapter - Compatibility Layer for Orchestrator
+   *
+   * The orchestrator expects an AIEngine interface, but we use AIFeeder directly.
+   * This adapter bridges the gap and propagates session IDs to the feeder.
+   */
   const aiAdapter = {
+    /**
+     * Set model configuration (legacy interface)
+     * Not actually used - AIFeeder is configured via init() above
+     */
     async setModel(cfg: any) {
       logger.info("Model config set", { module: "main", config: cfg });
     },
+
+    /**
+     * Run inference on frame (legacy interface)
+     * Not used - AIFeeder handles frame submission directly via NV12Capture subscription
+     */
     async run(frame: Buffer, meta: any) {
-      // Not used - AI Feeder handles frame submission directly
+      // No-op: AIFeeder manages frame flow independently
     },
+
+    /**
+     * Set session ID for frame correlation
+     * This is the critical method - propagates sessionId from orchestrator to feeder
+     * so frames can be tagged with the correct session before sending to AI worker
+     */
     setSessionId(sessionId: string) {
-      // Propagate to feeder (single source of truth)
+      // Propagate to feeder (single source of truth for sessionId)
       aiFeeder.setSessionId(sessionId);
       logger.debug("AI adapter session ID set", { module: "main", sessionId });
     },
   };
 
+  // Create orchestrator with all module adapters
+  // Orchestrator will coordinate state transitions and call adapter methods
   const orch = new Orchestrator(bus, {
-    camera,
-    capture: aiFeeder as any,
-    ai: aiAdapter as any,
-    publisher,
-    store,
+    camera, // Video capture control
+    capture: aiFeeder as any, // Frame rate control (setFps method)
+    ai: aiAdapter as any, // AI session correlation
+    publisher, // RTSP streaming control
+    store, // Session lifecycle API
   });
 
   // ============================================================
   // STARTUP SEQUENCE
   // ============================================================
-  // Critical order to prevent race conditions:
-  // 1. Camera hub starts (always-on I420 stream)
-  // 2. AI client connects (triggers onReady callback, but waits for orchestrator)
-  // 3. Orchestrator initializes (subscribes to bus events)
-  // 4. Set orchestratorReady flag (allows AI feeder to start)
+  // Critical initialization order to prevent race conditions:
+  //
+  // 1. Camera hub starts first
+  //    - Begins continuous I420 capture to shared memory
+  //    - Must be ready before any module tries to read from SHM
+  //
+  // 2. AI client connects to worker
+  //    - Performs Init/InitOk handshake
+  //    - Triggers onReady callback, but waits for orchestrator
+  //    - Sets up bidirectional communication channel
+  //
+  // 3. Orchestrator initializes
+  //    - Subscribes to all bus events
+  //    - FSM enters IDLE state
+  //    - Ready to process ai.detection events
+  //
+  // 4. Set orchestratorReady flag
+  //    - Signals AI feeder it's safe to start publishing events
+  //    - Prevents race where events are published before FSM subscribes
+  //    - AIFeeder.start() is called from onReady callback after this
 
+  logger.info("Starting camera hub", { module: "main" });
   await camera.start();
+
+  logger.info("Connecting to AI worker", { module: "main" });
   await aiClient.connect();
+
+  logger.info("Initializing orchestrator FSM", { module: "main" });
   await orch.init();
 
-  orchestratorReady = true; // Signal AI feeder can start
+  // Signal that orchestrator is ready (allows AI feeder to start)
+  // This unblocks the polling loop in onReady callback
+  orchestratorReady = true;
 
   logger.info("=== Edge Agent Ready ===", { module: "main" });
 
   // ============================================================
-  // SHUTDOWN HANDLER
+  // GRACEFUL SHUTDOWN HANDLER
   // ============================================================
+  // Handles SIGINT (Ctrl+C) and SIGTERM (Docker stop, systemd, etc.)
+  //
+  // Shutdown Order (reverse of startup):
+  // 1. Orchestrator: Close active session, stop timers, unsubscribe from bus
+  // 2. AI Feeder: Stop frame capture, clear cache
+  // 3. AI Client: Close TCP connection gracefully
+  // 4. Camera Hub: Stop GStreamer pipeline, cleanup SHM
+  //
+  // Timeout: 2 seconds max (prevents hanging on unresponsive modules)
 
   const shutdown = async () => {
     logger.info("Shutdown signal received", { module: "main" });
 
+    // Force exit if graceful shutdown takes too long
     const timeout = setTimeout(() => {
       logger.error("Shutdown timeout (2s), forcing exit", { module: "main" });
       process.exit(1);
     }, 2000);
 
     try {
+      // Stop modules in reverse dependency order
+      logger.debug("Shutting down orchestrator", { module: "main" });
       await orch.shutdown();
+
+      logger.debug("Stopping AI feeder", { module: "main" });
       await aiFeeder.stop();
+
+      logger.debug("Disconnecting AI client", { module: "main" });
       await aiClient.shutdown();
+
+      logger.debug("Stopping camera hub", { module: "main" });
       await camera.stop();
 
+      // Success - clear timeout and exit cleanly
       clearTimeout(timeout);
       logger.info("Shutdown complete", { module: "main" });
       process.exit(0);
     } catch (err) {
+      // Shutdown error - log and exit with error code
       clearTimeout(timeout);
       logger.error("Shutdown error", {
         module: "main",
@@ -368,8 +506,9 @@ async function main() {
     }
   };
 
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  // Register signal handlers
+  process.on("SIGINT", shutdown); // Ctrl+C
+  process.on("SIGTERM", shutdown); // Docker/systemd stop
 }
 
 main().catch((err) => {

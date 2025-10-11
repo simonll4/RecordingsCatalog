@@ -7,4 +7,6 @@
  * Re-exports the protobuf types from ai_pb.d.ts
  */
 
-export * from "./ai_pb.js";
+// Re-export protobuf types so consumers can import from 'ai_pb_wrapper'
+// TypeScript will resolve './ai_pb' to './ai_pb.d.ts'
+export * from "./ai_pb";

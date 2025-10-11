@@ -41,7 +41,7 @@ Sistema de captura y análisis de video basado en eventos, optimizado para baja 
 - Bus de eventos tipado con backpressure por tópico
 - Un único hub SHM I420 (WxH @ fpsHub) para múltiples consumidores
 - Streaming RTSP bajo demanda hacia MediaMTX (encoder auto‑detectado)
-- Motor de IA simulada listo para sustituir por IA real
+- Motor de IA externo (worker-ai) vía Protocolo v1 (NV12/I420), sin simulación
 - Batching + retry de detecciones hacia Session Store
 - Logging estructurado y métricas simples integradas
 
@@ -61,7 +61,7 @@ Componentes principales (implementación actual):
 
 - AI Client + Feeder
   - `AIClientTcp` (`src/modules/ai/client/ai-client-tcp.ts`): TCP + Protobuf
-  - `AIFeeder` (`src/modules/ai/ai-feeder.ts`): sliding window + latest‑wins; frame cache
+  - `AIFeeder` (`src/modules/ai/feeder/ai-feeder.ts`): sliding window + latest‑wins; frame cache
 
 - Publisher (`src/modules/streaming/adapters/gstreamer/publisher-gst.ts`)
   - `shmsrc → encoder(H.264) → rtspclientsink` hacia MediaMTX

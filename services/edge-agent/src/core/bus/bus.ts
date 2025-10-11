@@ -1,121 +1,192 @@
 /**
- * Event Bus - Canal Central de Comunicación
+ * Event Bus - Central Communication Channel
  *
- * Implementa patrón Publisher-Subscriber con backpressure para evitar
- * memory leaks cuando los consumidores son más lentos que los productores.
+ * Implements Publisher-Subscriber pattern with backpressure to prevent
+ * memory leaks when consumers are slower than producers.
  *
- * Características:
- * - Type-safe: Eventos tipados con topics conocidos
- * - Backpressure: Límite de 1024 eventos en vuelo por topic
- * - Metrics: Contadores de publicaciones y drops
- * - Async-safe: Usa setImmediate para decrementar contadores
+ * Features:
+ * =========
  *
- * Ejemplo:
+ * Type Safety
+ *   - Events are strongly typed with known topics
+ *   - Compile-time validation of event payloads
+ *   - IntelliSense support for event properties
+ *
+ * Backpressure
+ *   - Configurable limit of in-flight events per topic (default: 1024)
+ *   - Drops new events when queue is full (fail-fast vs OOM)
+ *   - Logs warnings periodically to alert operators
+ *
+ * Metrics
+ *   - Counts published events per topic (bus_publish_total)
+ *   - Tracks dropped events per topic (bus_drops_total)
+ *   - Exposes statistics for monitoring
+ *
+ * Async Safety
+ *   - Uses setImmediate to decrement counters
+ *   - Prevents race conditions in event counting
+ *   - Ensures accurate backpressure tracking
+ *
+ * Usage Example:
+ * ==============
+ *
  * ```typescript
- * // Publicar
+ * // Publish event
  * bus.publish("ai.detection", {
  *   type: "ai.detection",
  *   relevant: true,
  *   detections: [...]
  * });
  *
- * // Suscribir
+ * // Subscribe to events
  * const unsub = bus.subscribe("ai.detection", (event) => {
- *   console.log("Detección recibida:", event.detections);
+ *   console.log("Detection received:", event.detections);
  * });
  *
- * // Desuscribir cuando ya no se necesite
+ * // Unsubscribe when done
  * unsub();
  * ```
  *
- * Backpressure:
- * - Si hay > 1024 eventos en vuelo en un topic, se droppean nuevos
- * - Se loggea warning cada 100 eventos droppeados
- * - Métrica bus_drops_total se incrementa por cada drop
+ * Backpressure Behavior:
+ * ======================
  *
- * ¿Por qué backpressure?
- * Sin límite, un consumer lento puede acumular eventos infinitamente
- * causando OOM (Out Of Memory). Preferimos droppear que crashear.
+ * When to Drop:
+ *   - Topic has > maxQueueSize events in-flight
+ *   - New event is rejected immediately
+ *   - publish() returns false (caller can decide how to handle)
+ *
+ * Warning Frequency:
+ *   - Every 100 dropped events (reduces log spam)
+ *   - Always increments bus_drops_total metric
+ *
+ * Why Backpressure?
+ * =================
+ *
+ * Without limits, a slow consumer can accumulate events infinitely,
+ * causing Out Of Memory (OOM) crashes. We prefer dropping events
+ * over crashing the entire system.
+ *
+ * Common causes of backpressure:
+ * - Slow database writes (session-store)
+ * - Network latency (frame uploads)
+ * - CPU-bound processing (frame encoding)
+ *
+ * Configuration:
+ * ==============
+ * - BUS_MAX_QUEUE_SIZE env var (default: 1024)
+ * - Set in CONFIG.bus.maxQueueSize
  */
 
 import { EventEmitter } from "events";
 import { KnownTopic, EventOf } from "./events.js";
 import { metrics } from "../../shared/metrics.js";
-
-// Límite de eventos en vuelo por topic (previene OOM)
-const MAX_QUEUE_PER_TOPIC = 1024;
+import { CONFIG } from "../../config/index.js";
 
 type Unsubscribe = () => void;
 
 export class Bus extends EventEmitter {
-  // Contadores de eventos "en vuelo" por topic
+  // In-flight event counters per topic
+  // Tracks how many events are currently being processed
   private bufferCounts = new Map<string, number>();
 
-  // Contadores de eventos droppeados por backpressure
+  // Dropped event counters per topic (for backpressure monitoring)
   private droppedCounts = new Map<string, number>();
+
+  // Maximum in-flight events per topic (prevents OOM)
+  // Configurable via CONFIG.bus.maxQueueSize
+  private maxQueueSize: number;
 
   constructor() {
     super();
-    // Prevenir warnings de EventEmitter (múltiples listeners es normal aquí)
+
+    // Prevent EventEmitter warnings (multiple listeners is normal here)
+    // Orchestrator, SessionManager, and others all subscribe
     this.setMaxListeners(50);
+
+    // Load queue size limit from configuration
+    this.maxQueueSize = CONFIG.bus.maxQueueSize;
   }
 
   /**
-   * Publica un evento en un topic
+   * Publish Event to Topic
    *
-   * Si el buffer del topic está lleno (> MAX_QUEUE_PER_TOPIC),
-   * el evento se droppea y retorna false.
+   * Emits event to all subscribers of the topic.
+   * If backpressure limit is reached, event is dropped.
    *
-   * @param topic - Topic del evento (ai.detection, ai.keepalive, etc.)
-   * @param event - Payload del evento (debe matchear tipo del topic)
-   * @returns true si se publicó, false si se droppeó por backpressure
+   * Backpressure Logic:
+   * ===================
+   * 1. Check if topic queue is full (>= maxQueueSize)
+   * 2. If full: increment drop counter, log warning, return false
+   * 3. If OK: increment in-flight counter, emit event
+   * 4. After emit: schedule counter decrement for next tick
+   *
+   * The decrement is delayed using setImmediate to ensure it happens
+   * AFTER all synchronous event handlers complete. This prevents
+   * race conditions where counter is decremented before processing starts.
+   *
+   * @param topic - Event topic (ai.detection, ai.keepalive, etc.)
+   * @param event - Event payload (must match topic type signature)
+   * @returns true if published, false if dropped due to backpressure
    */
   publish<T extends KnownTopic>(topic: T, event: EventOf<T>): boolean {
     const count = this.bufferCounts.get(topic) ?? 0;
 
-    // Backpressure: si cola llena, droppear
-    if (count >= MAX_QUEUE_PER_TOPIC) {
+    // Backpressure: drop event if queue is full
+    if (count >= this.maxQueueSize) {
       const dropped = this.droppedCounts.get(topic) ?? 0;
       this.droppedCounts.set(topic, dropped + 1);
 
+      // Increment metrics counter
       metrics.inc("bus_drops_total", { topic });
 
-      // Warning cada 100 drops para no spam logs
+      // Log warning every 100 drops (reduce log spam)
       if (dropped % 100 === 0) {
         console.warn(
           `[Bus] Backpressure on topic ${topic}: ${dropped} events dropped`
         );
       }
 
-      return false;
+      return false; // Signal caller that event was dropped
     }
 
-    // Incrementar contador de eventos "en vuelo"
+    // Increment in-flight counter
     this.bufferCounts.set(topic, count + 1);
     metrics.inc("bus_publish_total", { topic });
 
-    // Emitir evento a todos los subscribers
+    // Emit event to all subscribers
     this.emit(topic, event);
 
-    // Decrementar contador en próximo tick (async-safe)
-    // Asume que handler consume el evento en este tick
+    // Decrement counter on next tick (after synchronous handlers complete)
+    // This assumes handlers process event synchronously in current tick
     setImmediate(() => {
       const current = this.bufferCounts.get(topic) ?? 0;
       this.bufferCounts.set(topic, Math.max(0, current - 1));
     });
 
-    return true;
+    return true; // Successfully published
   }
 
   /**
-   * Suscribe un handler a un topic
+   * Subscribe to Topic
    *
-   * El handler se ejecutará por cada evento publicado en ese topic.
-   * Handlers deben ser síncronos o async fire-and-forget.
+   * Registers a handler function to be called whenever an event
+   * is published to the specified topic.
    *
-   * @param topic - Topic a escuchar
-   * @param handler - Función callback (event) => void
-   * @returns Función para desuscribirse
+   * Handler Execution:
+   * ==================
+   * - Handlers are called synchronously when event is published
+   * - If handler is async, it runs fire-and-forget (no await)
+   * - Errors in handlers don't affect other handlers or publisher
+   * - Handlers should complete quickly to avoid backpressure
+   *
+   * Unsubscribing:
+   * ==============
+   * Call the returned function to remove the handler.
+   * Always unsubscribe when handler is no longer needed to prevent leaks.
+   *
+   * @param topic - Topic to listen to
+   * @param handler - Callback function (event) => void
+   * @returns Function to unsubscribe (removes this handler)
    */
   subscribe<T extends KnownTopic>(
     topic: T,
@@ -126,11 +197,25 @@ export class Bus extends EventEmitter {
   }
 
   /**
-   * Obtiene estadísticas del bus
+   * Get Bus Statistics
    *
-   * Útil para debugging y monitoreo.
+   * Returns current state of event buffers and drop counters.
+   * Useful for debugging, monitoring, and capacity planning.
    *
-   * @returns Objeto con buffers (eventos en cola) y dropped (total droppeados)
+   * Example output:
+   * ```javascript
+   * {
+   *   buffers: {
+   *     "ai.detection": 3,      // 3 events in-flight
+   *     "ai.keepalive": 0       // all processed
+   *   },
+   *   dropped: {
+   *     "ai.detection": 127     // 127 events dropped (backpressure!)
+   *   }
+   * }
+   * ```
+   *
+   * @returns Object with buffers (in-flight counts) and dropped (total drops)
    */
   getStats() {
     return {
@@ -140,9 +225,14 @@ export class Bus extends EventEmitter {
   }
 
   /**
-   * Resetea contadores de eventos droppeados
+   * Reset Dropped Event Counters
    *
-   * Útil para tests o para limpiar stats después de troubleshooting.
+   * Clears all drop statistics. Useful for:
+   * - Unit tests (clean slate between tests)
+   * - Post-troubleshooting cleanup
+   * - Periodic stats reset in monitoring
+   *
+   * Note: Does NOT affect in-flight counters (bufferCounts)
    */
   resetDroppedCounters() {
     this.droppedCounts.clear();

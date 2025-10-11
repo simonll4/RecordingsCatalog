@@ -1,18 +1,35 @@
 /**
- * Logging - Sistema de Logging Estructurado
+ * Logging - Structured Logging System
  *
- * Logger centralizado con niveles configurables y formato consistente.
- * Usado por todos los módulos del Edge Agent.
+ * Centralized logger with configurable levels and consistent formatting.
+ * Used by all Edge Agent modules for uniform log output.
  *
- * Características:
+ * Features:
+ * =========
  *
- * - 4 niveles: debug, info, warn, error
- * - Formato estructurado: timestamp + level + mensaje + fields
- * - Fields opcionales: module, deviceId, sessionId, state, event, etc.
- * - Configurable: setLevel() para filtrar por nivel
- * - Singleton: logger importado desde cualquier módulo
+ * Log Levels
+ *   - debug: Internal details (e.g., each frame processed)
+ *   - info: Important events (e.g., state transitions)
+ *   - warn: Abnormal but recoverable situations (e.g., retry)
+ *   - error: Critical errors (e.g., module crash)
  *
- * Uso:
+ * Structured Format
+ *   - Timestamp + level + message + fields
+ *   - Optional fields: module, deviceId, sessionId, state, event, etc.
+ *   - Parseable output (easy to grep, filter, analyze)
+ *
+ * Runtime Configuration
+ *   - setLevel() to filter by minimum level
+ *   - LOG_LEVEL env var for initial level
+ *   - Can change level during runtime
+ *
+ * Singleton Pattern
+ *   - Single logger instance exported
+ *   - Import from any module
+ *   - Consistent format across codebase
+ *
+ * Usage Example:
+ * ==============
  *
  * ```typescript
  * import { logger } from "./shared/logging.js";
@@ -22,7 +39,8 @@
  * logger.error("Failed to connect", { module: "store", error: err.message });
  * ```
  *
- * Formato de salida:
+ * Output Format:
+ * ==============
  *
  * ```
  * 2024-01-15T10:30:45.123Z [INFO ] Server started | module="main" port=3000
@@ -30,38 +48,59 @@
  * 2024-01-15T10:30:47.789Z [ERROR] Failed to connect | module="store" error="ECONNREFUSED"
  * ```
  *
- * ¿Por qué structured logging?
+ * Why Structured Logging?
+ * =======================
  *
- * - Parseable: Fácil extraer campos (ej: grep module="ai")
- * - Consistente: Todos los logs tienen mismo formato
- * - Filtrable: Cambiar nivel en runtime (ej: LOG_LEVEL=debug)
- * - Context-aware: Fields proveen contexto sin verbosidad
+ * Parseable
+ *   - Easy to extract fields (e.g., grep module="ai")
+ *   - Machine-readable for log aggregation tools
+ *   - Enables filtering and analysis
+ *
+ * Consistent
+ *   - All logs follow same format
+ *   - Predictable structure across modules
+ *   - Easy to write log parsers
+ *
+ * Context-Aware
+ *   - Fields provide context without verbosity
+ *   - No need to embed values in message string
+ *   - Searchable by any field
+ *
+ * Filterable
+ *   - Change level at runtime (e.g., LOG_LEVEL=debug)
+ *   - Reduce noise in production
+ *   - Enable debug for troubleshooting
  */
 
 /**
- * LogLevel - Niveles de logging disponibles
+ * Log Level Enumeration
  *
- * - debug: Detalles internos (ej: cada frame procesado)
- * - info: Eventos importantes (ej: transiciones de estado)
- * - warn: Situaciones anormales pero recuperables (ej: retry)
- * - error: Errores críticos (ej: módulo crasheó)
+ * debug: Verbose internal details (disabled in production usually)
+ * info: Important events and state changes
+ * warn: Abnormal situations that are recoverable
+ * error: Critical errors requiring attention
  */
 type LogLevel = "debug" | "info" | "warn" | "error";
 
 /**
- * LogFields - Campos estructurados opcionales
+ * Log Fields - Structured Context
  *
- * Campos comunes:
+ * Optional key-value pairs attached to log messages.
  *
- * - module: Nombre del módulo (ej: "orchestrator", "ai", "camera")
- * - deviceId: ID del dispositivo edge
- * - sessionId: ID de sesión activa
- * - state: Estado actual de FSM (ej: "ACTIVE")
- * - event: Tipo de evento procesado (ej: "ai.detection")
- * - attempt: Número de intento (ej: retry #3)
- * - latMs: Latencia en milisegundos
+ * Common Fields:
+ * ==============
  *
- * Extensible: Cualquier campo adicional (key: valor)
+ * module: Module name (e.g., "orchestrator", "ai", "camera")
+ * deviceId: Edge device unique identifier
+ * sessionId: Active recording session UUID
+ * state: FSM current state (e.g., "ACTIVE")
+ * event: Event type being processed (e.g., "ai.detection")
+ * attempt: Retry attempt number
+ * latMs: Latency in milliseconds
+ * error: Error message string
+ * config: Configuration object (sanitized)
+ *
+ * Extensible: Add any custom fields as needed
  */
 type LogFields = {
   module?: string;
@@ -71,19 +110,29 @@ type LogFields = {
   event?: string;
   attempt?: number;
   latMs?: number;
-  [key: string]: unknown;
+  [key: string]: unknown;  // Allow any additional fields
 };
 
 /**
- * Logger - Clase principal de logging
+ * Logger Class - Main Logging Implementation
  *
- * Singleton exportado como `logger`.
- * Nivel configurado en main.ts desde CONFIG.logLevel.
+ * Singleton instance exported as `logger` constant.
+ *
+ * Configuration:
+ * ==============
+ *
+ * Log level is set in main.ts from CONFIG.logLevel.
+ * Default level: "info" (shows info, warn, error).
+ *
+ * Change level dynamically:
+ *   logger.setLevel("debug") - Show all logs
+ *   logger.setLevel("error") - Only critical errors
  */
 class Logger {
   private level: LogLevel = "info";
+  private baseFields: LogFields = {}; // For logger.child()
 
-  // Mapeo nivel → prioridad (para filtrado)
+  // Level → priority mapping (for filtering)
   private levels: Record<LogLevel, number> = {
     debug: 0,
     info: 1,
@@ -92,38 +141,74 @@ class Logger {
   };
 
   /**
-   * Configura nivel de logging
+   * Set Log Level
    *
-   * Solo logs con nivel >= configurado se imprimen.
-   * Ejemplo: setLevel("warn") → solo warn y error
+   * Only logs with level >= configured level are printed.
    *
-   * @param level - Nivel mínimo a loguear
+   * Example:
+   *   setLevel("warn") → only warn and error printed
+   *   setLevel("debug") → all logs printed
+   *
+   * @param level - Minimum level to log
    */
   setLevel(level: LogLevel) {
     this.level = level;
   }
 
   /**
-   * Determina si un log debe imprimirse
+   * Create Child Logger with Preloaded Fields
    *
-   * Compara prioridad del nivel del mensaje vs nivel configurado.
+   * Useful for avoiding repetition of common fields like module name.
+   * Child logger inherits parent's log level and adds base fields to every log.
    *
-   * @param level - Nivel del mensaje
-   * @returns true si debe loguearse
+   * Example:
+   * ```typescript
+   * const log = logger.child({ module: "ai-feeder" });
+   * log.info("Started"); // Automatically includes module="ai-feeder"
+   * log.debug("Frame sent", { frameId: "123" }); // Combines both fields
+   * ```
+   *
+   * Use Case:
+   *   - Module-level loggers: Each module creates a child with its name
+   *   - Session-scoped loggers: Include sessionId in all related logs
+   *   - Device-scoped loggers: Include deviceId automatically
+   *
+   * @param fields - Base fields to include in all logs from this logger
+   * @returns New logger instance with preloaded fields
+   */
+  child(fields: LogFields): Logger {
+    const childLogger = new Logger();
+    childLogger.level = this.level;
+    childLogger.baseFields = { ...this.baseFields, ...fields };
+    return childLogger;
+  }
+
+  /**
+   * Check if Log Should Be Printed
+   *
+   * Compares priority of message level vs configured level.
+   *
+   * @param level - Level of the message
+   * @returns true if should be logged
    */
   private shouldLog(level: LogLevel): boolean {
     return this.levels[level] >= this.levels[this.level];
   }
 
   /**
-   * Formatea mensaje de log con timestamp + nivel + fields
+   * Format Log Message
    *
-   * Formato: `{timestamp} [{level}] {message} | key="value" ...`
+   * Creates structured log line with timestamp + level + message + fields.
    *
-   * @param level - Nivel del log
-   * @param msg - Mensaje descriptivo
-   * @param fields - Campos estructurados opcionales
-   * @returns String formateado
+   * Format: `{timestamp} [{level}] {message} | key="value" ...`
+   *
+   * Example Output:
+   *   2024-01-15T10:30:45.123Z [INFO ] FSM transition | module="orchestrator" from="IDLE" to="DWELL"
+   *
+   * @param level - Log level (debug/info/warn/error)
+   * @param msg - Descriptive message
+   * @param fields - Optional structured fields
+   * @returns Formatted log string
    */
   private format(level: LogLevel, msg: string, fields?: LogFields): string {
     const timestamp = new Date().toISOString();
@@ -131,9 +216,12 @@ class Logger {
 
     let output = `${timestamp} [${levelUpper}] ${msg}`;
 
-    // Agregar fields como key="value" (JSON-parseable)
-    if (fields && Object.keys(fields).length > 0) {
-      const fieldsStr = Object.entries(fields)
+    // Merge baseFields (from child) with log-specific fields
+    const allFields = { ...this.baseFields, ...fields };
+
+    // Append fields as key="value" (JSON-parseable format)
+    if (Object.keys(allFields).length > 0) {
+      const fieldsStr = Object.entries(allFields)
         .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
         .join(" ");
       output += ` | ${fieldsStr}`;
@@ -143,13 +231,16 @@ class Logger {
   }
 
   /**
-   * Log a nivel DEBUG
+   * Log at DEBUG Level
    *
-   * Usado para detalles internos (ej: cada frame procesado).
-   * Solo visible con LOG_LEVEL=debug.
+   * Used for internal details (e.g., each frame processed).
+   * Only visible with LOG_LEVEL=debug.
    *
-   * @param msg - Mensaje descriptivo
-   * @param fields - Campos opcionales
+   * Example:
+   *   logger.debug("Frame submitted to AI", { frameId: "abc123", fps: 12 });
+   *
+   * @param msg - Descriptive message
+   * @param fields - Optional structured fields
    */
   debug(msg: string, fields?: LogFields) {
     if (this.shouldLog("debug")) {
@@ -158,13 +249,16 @@ class Logger {
   }
 
   /**
-   * Log a nivel INFO
+   * Log at INFO Level
    *
-   * Usado para eventos importantes (ej: transiciones de estado).
-   * Nivel por defecto en producción.
+   * Used for important events (e.g., state transitions, startup).
+   * Default level in production.
    *
-   * @param msg - Mensaje descriptivo
-   * @param fields - Campos opcionales
+   * Example:
+   *   logger.info("FSM transition", { from: "IDLE", to: "DWELL" });
+   *
+   * @param msg - Descriptive message
+   * @param fields - Optional structured fields
    */
   info(msg: string, fields?: LogFields) {
     if (this.shouldLog("info")) {
@@ -173,13 +267,16 @@ class Logger {
   }
 
   /**
-   * Log a nivel WARN
+   * Log at WARN Level
    *
-   * Usado para situaciones anormales pero recuperables (ej: retry).
-   * Indica problemas potenciales que no requieren intervención inmediata.
+   * Used for abnormal but recoverable situations (e.g., retry, fallback).
+   * Indicates potential issues that don't require immediate intervention.
    *
-   * @param msg - Mensaje descriptivo
-   * @param fields - Campos opcionales
+   * Example:
+   *   logger.warn("Connection failed, retrying", { attempt: 3, error: "ECONNREFUSED" });
+   *
+   * @param msg - Descriptive message
+   * @param fields - Optional structured fields
    */
   warn(msg: string, fields?: LogFields) {
     if (this.shouldLog("warn")) {
@@ -188,13 +285,16 @@ class Logger {
   }
 
   /**
-   * Log a nivel ERROR
+   * Log at ERROR Level
    *
-   * Usado para errores críticos (ej: módulo crasheó).
-   * Siempre se imprimen (a menos que LOG_LEVEL > error, imposible).
+   * Used for critical errors (e.g., module crash, unrecoverable failure).
+   * Always printed (unless LOG_LEVEL hypothetically set above error).
    *
-   * @param msg - Mensaje descriptivo
-   * @param fields - Campos opcionales
+   * Example:
+   *   logger.error("Failed to start camera", { error: err.message, device: "/dev/video0" });
+   *
+   * @param msg - Descriptive message
+   * @param fields - Optional structured fields
    */
   error(msg: string, fields?: LogFields) {
     if (this.shouldLog("error")) {
@@ -204,15 +304,18 @@ class Logger {
 }
 
 /**
- * logger - Singleton de Logger
+ * Logger Singleton Instance
  *
- * Importar desde cualquier módulo:
+ * Import from any module to access the shared logger.
  *
+ * Usage:
  * ```typescript
  * import { logger } from "./shared/logging.js";
  * logger.info("Hello", { module: "main" });
  * ```
  *
- * Nota: Nivel se configura desde main.ts después de cargar CONFIG
+ * Configuration:
+ *   Log level is set in main.ts after loading CONFIG.
+ *   Default level: "info" until configured.
  */
 export const logger = new Logger();

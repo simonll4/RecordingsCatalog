@@ -1,54 +1,128 @@
 /**
- * Schema - Esquema de Configuración del Edge Agent
+ * Configuration Schema - Type Definitions for Edge Agent Configuration
  *
- * Define tipos TypeScript para toda la configuración del sistema.
- * Estos tipos son usados por config/index.ts para validar env vars.
+ * This module defines TypeScript types for all configuration parameters.
+ * These types are used by config/index.ts to validate environment variables
+ * and provide type safety throughout the codebase.
  *
- * Estructura:
+ * Structure:
+ * ==========
  *
- * - AppConfig: Raíz del árbol de configuración
- *   - deviceId: ID único del dispositivo edge
- *   - logLevel: Nivel de logging (debug/info/warn/error)
- *   - source: Configuración de fuente de video (V4L2/RTSP)
- *   - ai: Configuración de modelo AI (YOLO)
- *   - mediamtx: Configuración de servidor RTSP (MediaMTX)
- *   - fsm: Timers de la máquina de estados
- *   - store: API de sesiones y detecciones
+ * AppConfig (Root)
+ *   ├── deviceId: Unique edge device identifier
+ *   ├── logLevel: Log verbosity level (debug/info/warn/error)
+ *   ├── source: Video source configuration (V4L2/RTSP)
+ *   ├── ai: AI model configuration (YOLO)
+ *   ├── mediamtx: RTSP server configuration (MediaMTX)
+ *   ├── fsm: State machine timers
+ *   ├── store: Session/detection API endpoints
+ *   └── bus: Event bus settings
  *
- * ¿Por qué tipos explícitos?
+ * Why Explicit Types?
+ * ===================
  *
- * - Validación: CONFIG debe cumplir AppConfig (type-safe)
- * - Autocomplete: IDE sugiere campos válidos
- * - Documentación: Tipos documentan qué configuración existe
- * - Refactoring: Cambiar campo → error de compilación
+ * Validation
+ *   - CONFIG must satisfy AppConfig (compile-time type checking)
+ *   - Invalid configuration caught at build time
+ *
+ * Autocomplete
+ *   - IDE suggests valid configuration fields
+ *   - Reduces typos and errors
+ *
+ * Documentation
+ *   - Types serve as living documentation
+ *   - Clear contracts for configuration structure
+ *
+ * Refactoring Safety
+ *   - Changing a field name → compilation errors
+ *   - Ensures all usages are updated
+ *
+ * Configuration Sources:
+ * ======================
+ *
+ * Environment Variables (primary)
+ *   - Read from .env file
+ *   - Overridable via shell exports
+ *   - Validated and parsed in config/index.ts
+ *
+ * Default Values (fallback)
+ *   - Sensible defaults for optional fields
+ *   - Documented in config/index.ts
+ *   - Production-ready out of the box
  */
 
 /**
- * SourceKind - Tipo de fuente de video
+ * Source Kind - Video Input Type
  *
- * - rtsp: Cámara IP (ej: rtsp://192.168.1.100:554/stream)
- * - v4l2: Cámara USB (ej: /dev/video0)
+ * rtsp: Network camera (IP camera)
+ *   - URL format: rtsp://host:port/path
+ *   - Example: rtsp://192.168.1.100:554/stream
+ *   - Supports H.264, MJPEG, etc.
+ *
+ * v4l2: USB/built-in camera (Video4Linux2)
+ *   - Device path format: /dev/videoN
+ *   - Example: /dev/video0
+ *   - Supports MJPEG, YUYV, NV12, etc.
  */
 export type SourceKind = "rtsp" | "v4l2";
 
 /**
- * SourceConfig - Configuración de fuente de video
+ * Source Configuration - Video Capture Settings
  *
- * Define cómo CameraHub debe capturar video.
+ * Defines how CameraHub captures video from the source.
  *
- * Campos:
+ * Fields:
+ * =======
  *
- * - kind: Tipo de fuente (rtsp/v4l2)
- * - uri: Path o URL (ej: /dev/video0 o rtsp://...)
- * - width/height: Resolución de captura (ej: 640x480)
- * - fpsHub: FPS de captura constante (ej: 12)
- * - socketPath: Path del socket SHM compartido (ej: /tmp/camera_shm)
- * - shmSizeMB: Tamaño del buffer SHM en MB (ej: 50)
+ * kind: Source type (rtsp/v4l2)
+ *   - Determines which GStreamer elements to use
+ *   - Affects pipeline construction logic
  *
- * GStreamer pipeline:
+ * uri: Device path or stream URL
+ *   - V4L2: /dev/video0, /dev/video1, etc.
+ *   - RTSP: rtsp://host:port/path
  *
- * - V4L2: v4l2src → videoconvert → shmsink
- * - RTSP: rtspsrc → decodebin → videoconvert → shmsink
+ * width/height: Capture resolution
+ *   - Must be supported by source
+ *   - Common: 640x480, 1280x720, 1920x1080
+ *   - Affects CPU usage and bandwidth
+ *
+ * fpsHub: Constant capture framerate
+ *   - Frames per second written to SHM
+ *   - Typical: 12-30 FPS
+ *   - Independent of AI processing rate
+ *
+ * socketPath: Shared memory socket path
+ *   - Unix domain socket for inter-process communication
+ *   - Multiple readers supported (NV12Capture, Publisher)
+ *   - Example: /tmp/camera_shm
+ *
+ * shmSizeMB: Shared memory buffer size
+ *   - Total memory allocated for frame buffers
+ *   - Must accommodate multiple frames
+ *   - Typical: 50-100 MB
+ *   - Formula: (width × height × 1.5) × num_buffers
+ *
+ * GStreamer Pipelines:
+ * ====================
+ *
+ * V4L2:
+ *   v4l2src device=/dev/video0
+ *   ! image/jpeg (or video/x-raw)
+ *   ! jpegdec (if MJPEG)
+ *   ! videoconvert
+ *   ! videoscale
+ *   ! video/x-raw,format=I420,width=640,height=480,framerate=12/1
+ *   ! shmsink socket-path=/tmp/camera_shm
+ *
+ * RTSP:
+ *   rtspsrc location=rtsp://...
+ *   ! rtph264depay
+ *   ! h264parse
+ *   ! avdec_h264
+ *   ! videoconvert
+ *   ! video/x-raw,format=I420,width=640,height=480,framerate=12/1
+ *   ! shmsink socket-path=/tmp/camera_shm
  */
 export type SourceConfig = {
   kind: SourceKind;
@@ -61,25 +135,75 @@ export type SourceConfig = {
 };
 
 /**
- * AIConfig - Configuración del modelo AI (YOLO)
+ * AI Configuration - Object Detection Model Settings
  *
- * Define parámetros del modelo de detección de objetos.
+ * Defines parameters for YOLO-based object detection.
  *
- * Campos:
+ * Fields:
+ * =======
  *
- * - modelName: Nombre del modelo YOLO (ej: yolov8n)
- * - umbral: Confianza mínima para detección (ej: 0.5 = 50%)
- * - width/height: Resolución de frames AI (ej: 640x480)
- * - classesFilter: Clases a reportar como relevantes (ej: ["person", "car"])
- * - fps.idle: FPS en estado IDLE (ej: 5)
- * - fps.active: FPS en estado ACTIVE (ej: 12)
- * - worker.host: Hostname del worker de IA (ej: worker-ai)
- * - worker.port: Puerto TCP del worker (ej: 7001)
+ * modelName: YOLO model identifier
+ *   - yolov8n: Nano (fastest, least accurate)
+ *   - yolov8s: Small
+ *   - yolov8m: Medium
+ *   - yolov8l: Large
+ *   - yolov8x: Extra large (slowest, most accurate)
  *
- * ¿Por qué dual-rate FPS?
+ * umbral: Minimum confidence threshold
+ *   - Range: 0.0 to 1.0
+ *   - Example: 0.5 = 50% confidence minimum
+ *   - Lower = more detections (more false positives)
+ *   - Higher = fewer detections (more false negatives)
  *
- * En IDLE no necesitamos detección rápida (ahorrar CPU).
- * En ACTIVE queremos máxima precisión (detectar todo).
+ * width/height: Inference resolution
+ *   - Frames resized to this before inference
+ *   - Affects accuracy and speed
+ *   - Common: 640×480, 640×640 (YOLO default)
+ *   - Higher = better accuracy, slower processing
+ *
+ * classesFilter: Relevant object classes
+ *   - Array of COCO class names
+ *   - Only these classes trigger recording
+ *   - Example: ["person", "car", "dog"]
+ *   - Full COCO list: person, bicycle, car, motorbike, etc.
+ *
+ * fps.idle: Processing rate when IDLE
+ *   - Low rate to save CPU/GPU
+ *   - Typical: 3-5 FPS
+ *   - Just monitoring for activity
+ *
+ * fps.active: Processing rate when ACTIVE
+ *   - Higher rate for accurate tracking
+ *   - Typical: 10-15 FPS
+ *   - Smooth object tracking during recording
+ *
+ * frameCacheTtlMs: Frame cache TTL
+ *   - How long to keep frames in memory
+ *   - Allows correlation between detection and original frame
+ *   - Typical: 2000ms (2 seconds)
+ *
+ * worker.host: AI worker hostname
+ *   - Docker service name or IP
+ *   - Example: "worker-ai" or "localhost"
+ *
+ * worker.port: AI worker TCP port
+ *   - Protocol v1 binary communication
+ *   - Default: 7001
+ *
+ * Why Dual-Rate FPS?
+ * ===================
+ *
+ * Power Efficiency
+ *   - Low FPS when idle saves CPU/GPU/battery
+ *   - Only ramp up when needed
+ *
+ * Detection Quality
+ *   - High FPS during recording ensures smooth tracking
+ *   - Better temporal resolution for fast-moving objects
+ *
+ * Cost Optimization
+ *   - Cloud/edge inference often billed per frame
+ *   - Minimize processing when nothing is happening
  */
 export type AIConfig = {
   modelName: string;
@@ -99,17 +223,32 @@ export type AIConfig = {
 };
 
 /**
- * MediaMTXConfig - Configuración de servidor RTSP
+ * MediaMTX Configuration - RTSP Server Settings
  *
- * Define endpoint de MediaMTX para publishing de stream.
+ * Defines MediaMTX endpoint for stream publishing.
  *
- * Campos:
+ * Fields:
+ * =======
  *
- * - host: Hostname del servidor MediaMTX (ej: mediamtx)
- * - port: Puerto RTSP (ej: 8554)
- * - path: Path del stream (ej: live)
+ * host: MediaMTX server hostname
+ *   - Docker service name: "mediamtx"
+ *   - IP address: "192.168.1.100"
+ *   - Localhost: "localhost" (for testing)
  *
- * Publisher conecta a: rtsp://{host}:{port}/{path}
+ * port: RTSP port
+ *   - Default: 8554 (standard RTSP)
+ *   - Alternative: 554 (privileged port)
+ *
+ * path: Stream path
+ *   - Example: "live" → rtsp://host:8554/live
+ *   - Can include device ID: "camera/{deviceId}"
+ *
+ * Full URL:
+ *   rtsp://{host}:{port}/{path}
+ *
+ * Publisher Connection:
+ *   MediaMtxOnDemandPublisherGst connects to this URL when ACTIVE.
+ *   Streams H.264 video using rtspclientsink element.
  */
 export type MediaMTXConfig = {
   host: string;
@@ -118,21 +257,55 @@ export type MediaMTXConfig = {
 };
 
 /**
- * FSMConfig - Timers de la máquina de estados
+ * FSM Configuration - State Machine Timers
  *
- * Define duraciones de ventanas temporales en la FSM.
+ * Defines temporal windows for finite state machine transitions.
  *
- * Campos:
+ * Fields:
+ * =======
  *
- * - dwellMs: Ventana de confirmación en DWELL (ej: 500ms)
- * - silenceMs: Timeout sin detecciones en ACTIVE (ej: 3000ms)
- * - postRollMs: Grabación extra en CLOSING (ej: 5000ms)
+ * dwellMs: Confirmation window in DWELL state
+ *   - How long to wait for second detection before returning to IDLE
+ *   - Prevents false positives from single spurious detections
+ *   - Typical: 500-2000ms
+ *   - Too short: Random noise triggers recording
+ *   - Too long: Slow response to real activity
  *
- * ¿Por qué estos valores?
+ * silenceMs: Inactivity timeout in ACTIVE state
+ *   - How long without detections before transitioning to CLOSING
+ *   - Grace period for temporary occlusion or frame drops
+ *   - Typical: 2000-5000ms
+ *   - Too short: Session closes if object briefly hidden
+ *   - Too long: Recording continues unnecessarily
  *
- * - dwellMs: Evitar falsos positivos (esperar confirmación)
- * - silenceMs: No cerrar sesión por frame perdido (dar margen)
- * - postRollMs: Capturar contexto después de detección (ej: persona saliendo)
+ * postRollMs: Post-roll recording in CLOSING state
+ *   - Extra recording time after last detection
+ *   - Captures context after activity (e.g., person exiting frame)
+ *   - Typical: 3000-10000ms
+ *   - Too short: May miss important exit context
+ *   - Too long: Wastes storage on empty frames
+ *
+ * Why These Timers?
+ * =================
+ *
+ * False Positive Prevention
+ *   - dwellMs filters out noise and single misdetections
+ *   - Requires sustained activity to trigger recording
+ *
+ * Robustness to Occlusion
+ *   - silenceMs prevents premature session close
+ *   - Tolerates brief periods where object is hidden
+ *
+ * Context Capture
+ *   - postRollMs ensures complete event capture
+ *   - Important for forensic review and analytics
+ *
+ * State Diagram:
+ *   IDLE --detection--> DWELL
+ *   DWELL --dwellMs timeout--> IDLE
+ *   DWELL --second detection--> ACTIVE
+ *   ACTIVE --silenceMs timeout--> CLOSING
+ *   CLOSING --postRollMs timeout--> IDLE
  */
 export type FSMConfig = {
   dwellMs: number;
@@ -141,21 +314,70 @@ export type FSMConfig = {
 };
 
 /**
- * StoreConfig - Configuración de API de sesiones
+ * Store Configuration - Session Store API Settings
  *
- * Define conexión a session-store service.
+ * Defines connection to session-store service (HTTP API).
  *
- * Campos:
+ * Fields:
+ * =======
  *
- * - baseUrl: URL base del API (ej: http://session-store:3001)
- * - apiKey: API key para autenticación (opcional)
- * - batchMax: Máximo de detecciones por batch (ej: 50)
- * - flushIntervalMs: Intervalo de flush automático (ej: 2000ms)
+ * baseUrl: API base URL
+ *   - Docker: http://session-store:3001
+ *   - Local: http://localhost:3001
+ *   - Includes protocol and port
  *
- * ¿Por qué batching?
+ * apiKey: Authentication key (optional)
+ *   - If provided, sent in Authorization header
+ *   - Format: "Bearer {apiKey}"
+ *   - Leave empty if API is unauthenticated
  *
- * Enviar detecciones de a 1 es ineficiente (muchos HTTP requests).
- * SessionStore acumula detecciones y las envía en batches.
+ * batchMax: Maximum detections per batch
+ *   - Batcher accumulates up to this many detections
+ *   - Then sends single POST /detections request
+ *   - Typical: 20-100
+ *   - Reduces HTTP overhead (fewer requests)
+ *
+ * flushIntervalMs: Auto-flush interval
+ *   - Even if batch not full, flush periodically
+ *   - Prevents detections from sitting in memory
+ *   - Typical: 1000-5000ms
+ *   - Too short: Defeats batching (many small batches)
+ *   - Too long: Detections delayed excessively
+ *
+ * Why Batching?
+ * =============
+ *
+ * Network Efficiency
+ *   - HTTP has per-request overhead (TCP handshake, headers)
+ *   - Batching reduces total requests by ~90%
+ *
+ * Server Load
+ *   - Session-store handles fewer requests
+ *   - Database can bulk insert detections
+ *
+ * End-to-End Latency
+ *   - Individual detection may wait up to flushIntervalMs
+ *   - But overall throughput is higher
+ *   - Trade-off: slight delay for better efficiency
+ *
+ * API Endpoints:
+ * ==============
+ *
+ * POST /sessions/open
+ *   - Create new recording session
+ *   - Returns sessionId
+ *
+ * POST /sessions/:sessionId/close
+ *   - Mark session as complete
+ *
+ * POST /detections
+ *   - Batch upload detections
+ *   - Body: { detections: [...] }
+ *
+ * POST /ingest
+ *   - Upload frame image
+ *   - Multipart form data
+ *   - Returns frameId
  */
 export type StoreConfig = {
   baseUrl: string;
@@ -165,29 +387,108 @@ export type StoreConfig = {
 };
 
 /**
- * AppConfig - Configuración completa de la aplicación
+ * Bus Configuration - Event Bus Queue Limits
  *
- * Raíz del árbol de configuración. Todos los módulos acceden
- * a CONFIG (singleton) que implementa este tipo.
+ * Defines backpressure limits for the event system.
  *
- * Campos:
+ * Fields:
+ * =======
  *
- * - deviceId: ID único del dispositivo edge (ej: edge-dev-001)
- * - logLevel: Nivel de logging (debug/info/warn/error)
- * - source: Configuración de cámara (V4L2/RTSP)
- * - ai: Configuración de modelo YOLO
- * - mediamtx: Configuración de servidor RTSP
- * - fsm: Timers de máquina de estados
- * - store: Configuración de API de sesiones
+ * maxQueueSize: Maximum queue size per topic
+ *   - Limit on pending events per topic
+ *   - Typical: 1024 events
+ *   - When exceeded, new events are dropped
+ *   - Prevents memory exhaustion under load
  *
- * Uso:
+ * Why Configurable?
+ * =================
+ *
+ * Load Adaptation
+ *   - Adjust backpressure threshold based on system capacity
+ *   - Higher limit = more buffering (more memory usage)
+ *   - Lower limit = stricter backpressure (more drops)
+ *
+ * Event Priority
+ *   - Critical events should complete quickly (not queue up)
+ *   - If queue fills, it indicates consumer can't keep up
+ *
+ * Failure Mode
+ *   - When bus is full, publish() logs warning and drops event
+ *   - Better to drop event than crash from OOM
+ *   - Monitoring can alert on dropped events
+ *
+ * Typical Values:
+ *   - Low-frequency events (state changes): 256
+ *   - High-frequency events (detections): 1024-4096
+ *   - Memory impact: ~1KB per queued event (depends on payload)
+ */
+export type BusConfig = {
+  maxQueueSize: number;
+};
+
+/**
+ * App Configuration - Complete Application Configuration
+ *
+ * Root of the configuration tree. All modules access the CONFIG singleton
+ * which implements this type.
+ *
+ * Fields:
+ * =======
+ *
+ * deviceId: Unique edge device identifier
+ *   - Example: "edge-dev-001", "camera-front-door"
+ *   - Used in session metadata and logs
+ *   - Helps identify source in multi-device deployments
+ *
+ * logLevel: Log verbosity level
+ *   - debug: All logs (verbose, for development)
+ *   - info: Important events (default for production)
+ *   - warn: Abnormal situations only
+ *   - error: Critical errors only
+ *
+ * source: Video source configuration
+ *   - See SourceConfig for details
+ *   - Defines camera type, resolution, FPS
+ *
+ * ai: AI model configuration
+ *   - See AIConfig for details
+ *   - Defines YOLO model, thresholds, worker connection
+ *
+ * mediamtx: RTSP server configuration
+ *   - See MediaMTXConfig for details
+ *   - Defines streaming endpoint
+ *
+ * fsm: State machine timers
+ *   - See FSMConfig for details
+ *   - Defines dwell, silence, post-roll durations
+ *
+ * store: Session store API configuration
+ *   - See StoreConfig for details
+ *   - Defines HTTP endpoint, batching parameters
+ *
+ * bus: Event bus configuration
+ *   - See BusConfig for details
+ *   - Defines queue limits
+ *
+ * Usage Example:
+ * ==============
  *
  * ```typescript
  * import { CONFIG } from "./config/index.js";
  *
  * console.log(CONFIG.deviceId); // "edge-dev-001"
  * console.log(CONFIG.fsm.dwellMs); // 500
+ * console.log(CONFIG.ai.classesFilter); // ["person", "car"]
  * ```
+ *
+ * Configuration Source:
+ * =====================
+ *
+ * CONFIG is loaded from environment variables in config/index.ts.
+ * See that file for:
+ * - Environment variable names (e.g., DEVICE_ID, VIDEO_SOURCE_KIND)
+ * - Default values for optional parameters
+ * - Validation logic
  */
 export type AppConfig = {
   deviceId: string;
@@ -197,4 +498,5 @@ export type AppConfig = {
   mediamtx: MediaMTXConfig;
   fsm: FSMConfig;
   store: StoreConfig;
+  bus: BusConfig;
 };

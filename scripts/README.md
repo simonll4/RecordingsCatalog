@@ -208,9 +208,9 @@ nano services/edge-agent/.env
 # El stream solo aparece cuando edge-agent está en estado ACTIVE
 # Esto ocurre cuando la IA detecta objetos relevantes
 
-# Con IA simulada: ciclo de ~10 segundos
-# Ver logs para confirmar transiciones:
-./scripts/run-edge-docker.sh logs
+# Recordatorio: el stream aparece en estado ACTIVE (detección relevante)
+# Ver logs para confirmar transiciones (FSM):
+./scripts/run-edge-docker.sh logs | grep -E "(FSM|detection)"
 ```
 
 ### Detecciones no se guardan
@@ -228,7 +228,7 @@ docker-compose logs session-store
 ## 📝 Notas
 
 - **Edge Agent Profile**: El edge-agent usa `profiles: [edge]` en docker-compose, por eso necesita `--profile edge` o el script `run-edge-docker.sh`
-- **IA Simulada**: Actualmente el edge-agent usa IA simulada (ciclos automáticos cada ~10s)
+ 
 - **GStreamer**: Necesario para ejecutar localmente, ya incluido en la imagen Docker
 - **Timezone**: Todos los servicios usan UTC, sincronizado con el host
 - **Detecciones**: Se almacenan en batch con idempotencia por event_id (ON CONFLICT DO NOTHING)
