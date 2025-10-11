@@ -36,6 +36,33 @@ export interface Track {
 // Session states
 export type SessionState = "IDLE" | "OPEN" | "ACTIVE" | "CLOSING";
 
+// Tracks compaction configuration
+export const TracksCompactionConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  method: z.enum(["iou", "deadband", "hybrid"]).default("hybrid"),
+  kf_similarity_iou: z.number().min(0).max(1).default(0.98),
+  eps_xy: z.number().min(0).default(0.005),
+  eps_wh: z.number().min(0).default(0.005),
+  min_kf_dt: z.number().min(0).default(0.03), // seconds
+});
+
+export type TracksCompactionConfig = z.infer<
+  typeof TracksCompactionConfigSchema
+>;
+
+// Backpressure configuration
+export const BackpressureConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  maxQueueSize: z.number().int().positive().default(8),
+  maxQueueLatencyMs: z.number().positive().default(400),
+  dropPolicy: z.enum(["drop_oldest", "drop_newest"]).default("drop_oldest"),
+  adaptCaptureFps: z.boolean().default(false),
+  minFps: z.number().positive().default(3),
+  maxFps: z.number().positive().default(15),
+});
+
+export type BackpressureConfig = z.infer<typeof BackpressureConfigSchema>;
+
 // Camera configuration schema
 export const CameraConfigSchema = z.object({
   id: z.string(),
@@ -52,6 +79,10 @@ export const CameraConfigSchema = z.object({
   postRollMs: z.number().positive(),
   maxSessionMs: z.number().positive().default(30000),
   captureProvider: z.enum(["opencv", "ffmpeg"]),
+  // Optional compaction config
+  tracksCompaction: TracksCompactionConfigSchema.optional(),
+  // Optional backpressure config
+  backpressure: BackpressureConfigSchema.optional(),
 });
 
 export type CameraConfig = z.infer<typeof CameraConfigSchema>;

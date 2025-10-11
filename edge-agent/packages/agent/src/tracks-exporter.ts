@@ -4,6 +4,7 @@ import type {
   SessionData,
   DetectionData,
   BoundingBox,
+  Keyframe,
 } from "@edge-agent/common";
 import pino from "pino";
 
@@ -35,13 +36,15 @@ export interface TracksJson {
  * @param sessionData Session metadata
  * @param detections All detections for this session
  * @param storageDir Base storage directory
+ * @param compactedTracks Optional pre-compacted tracks (keyframes already processed)
  * @returns HTTP URL to the generated tracks.json file
  */
 export async function generateTracksJson(
   sessionName: string,
   sessionData: SessionData,
   detections: DetectionData[],
-  storageDir: string
+  storageDir: string,
+  compactedTracks?: Map<string, { label: string; kf: Keyframe[] }>
 ): Promise<string> {
   try {
     // Create meta directory if it doesn't exist
@@ -53,37 +56,60 @@ export async function generateTracksJson(
     const endTs = sessionData.edgeEndTs ?? Date.now();
     const durationS = (endTs - startTs) / 1000;
 
-    // Build tracks object from detections
+    // Build tracks object
     const tracks: Record<string, TrackInfo> = {};
 
-    for (const detection of detections) {
-      const trackId = detection.trackId;
-
-      // Extract keyframes from trackDetails if available
-      let keyframes: TrackKeyframe[] = [];
-
-      if (detection.trackDetails && Array.isArray(detection.trackDetails.kf)) {
-        keyframes = detection.trackDetails.kf.map((kf: any) => ({
-          t: Number(kf.t || 0),
-          bbox: bboxToArray(kf.bbox),
-          score: kf.score,
-        }));
-      } else {
-        // Fallback: create single keyframe from detection data
-        const relativeTime = (detection.firstTs - startTs) / 1000;
-        keyframes = [
-          {
-            t: relativeTime,
-            bbox: bboxToArray(detection.bb),
-            score: detection.score,
-          },
-        ];
+    if (compactedTracks && compactedTracks.size > 0) {
+      // Use pre-compacted tracks from memory
+      for (const [trackId, trackData] of compactedTracks.entries()) {
+        tracks[trackId] = {
+          label: trackData.label,
+          kf: trackData.kf.map((kf) => ({
+            t: Number(kf.t.toFixed(3)),
+            bbox: [
+              Number(kf.bbox.x.toFixed(4)),
+              Number(kf.bbox.y.toFixed(4)),
+              Number(kf.bbox.w.toFixed(4)),
+              Number(kf.bbox.h.toFixed(4)),
+            ],
+            score: kf.score,
+          })),
+        };
       }
+    } else {
+      // Fallback: use detections from DB (legacy behavior)
+      for (const detection of detections) {
+        const trackId = detection.trackId;
 
-      tracks[trackId] = {
-        label: detection.class,
-        kf: keyframes,
-      };
+        // Extract keyframes from trackDetails if available
+        let keyframes: TrackKeyframe[] = [];
+
+        if (
+          detection.trackDetails &&
+          Array.isArray(detection.trackDetails.kf)
+        ) {
+          keyframes = detection.trackDetails.kf.map((kf: any) => ({
+            t: Number(kf.t || 0),
+            bbox: bboxToArray(kf.bbox),
+            score: kf.score,
+          }));
+        } else {
+          // Fallback: create single keyframe from detection data
+          const relativeTime = (detection.firstTs - startTs) / 1000;
+          keyframes = [
+            {
+              t: relativeTime,
+              bbox: bboxToArray(detection.bb),
+              score: detection.score,
+            },
+          ];
+        }
+
+        tracks[trackId] = {
+          label: detection.class,
+          kf: keyframes,
+        };
+      }
     }
 
     // Build final structure

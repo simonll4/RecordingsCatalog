@@ -98,7 +98,21 @@
       "classesOfInterest": ["person"],
       "threshold": 0.5,
       "postRollMs": 5000,
-      "maxSessionMs": 30000
+      "maxSessionMs": 30000,
+      "tracksCompaction": {
+        "enabled": true,
+        "method": "hybrid",
+        "kf_similarity_iou": 0.98,
+        "eps_xy": 0.005,
+        "eps_wh": 0.005,
+        "min_kf_dt": 0.03
+      },
+      "backpressure": {
+        "enabled": true,
+        "maxQueueSize": 8,
+        "maxQueueLatencyMs": 400,
+        "dropPolicy": "drop_oldest"
+      }
     }
   ]
 }

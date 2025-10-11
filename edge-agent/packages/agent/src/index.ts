@@ -7,18 +7,24 @@ import type {
   DetectionData,
   BoundingBox,
   Frame,
+  TracksCompactionConfig,
+  BackpressureConfig,
 } from "@edge-agent/common";
 import { DatabaseClient, SessionsRepo, DetectionsRepo } from "@edge-agent/db";
 import { PythonDetector } from "@edge-agent/detector";
 import { createCaptureProvider, CaptureProvider } from "@edge-agent/capture";
 import { generateTracksJson } from "./tracks-exporter";
 import { VideoRecorder } from "./video-recorder";
+import { compactAllTracks } from "./keyframes-compactor";
+import { BoundedFrameQueue, AdaptiveFpsController } from "./frame-queue";
 import { promises as fs } from "fs";
 import { join } from "path";
 
 // Re-export for external use
 export { generateTracksJson } from "./tracks-exporter";
 export { VideoRecorder } from "./video-recorder";
+export { compactKeyframes, compactAllTracks } from "./keyframes-compactor";
+export { BoundedFrameQueue, AdaptiveFpsController } from "./frame-queue";
 
 function serializeError(e: unknown) {
   if (e instanceof Error) {
@@ -76,6 +82,14 @@ export class EdgeAgent {
   private dbClient: DatabaseClient;
   private videoRecorder: VideoRecorder;
 
+  // Frame queue for backpressure
+  private frameQueue: BoundedFrameQueue | null = null;
+  private adaptiveFps: AdaptiveFpsController | null = null;
+
+  // Configurations with defaults
+  private compactionConfig: TracksCompactionConfig;
+  private backpressureConfig: BackpressureConfig;
+
   private sessionState: SessionManager;
   private running = false;
   private frameCount = 0;
@@ -86,6 +100,34 @@ export class EdgeAgent {
       name: "edge-agent",
       level: process.env.LOG_LEVEL || "info",
     });
+
+    // Initialize configurations with defaults
+    this.compactionConfig = config.camera.tracksCompaction ?? {
+      enabled: true,
+      method: "hybrid",
+      kf_similarity_iou: 0.98,
+      eps_xy: 0.005,
+      eps_wh: 0.005,
+      min_kf_dt: 0.03,
+    };
+
+    this.backpressureConfig = config.camera.backpressure ?? {
+      enabled: true,
+      maxQueueSize: 8,
+      maxQueueLatencyMs: 400,
+      dropPolicy: "drop_oldest",
+      adaptCaptureFps: false,
+      minFps: 3,
+      maxFps: 15,
+    };
+
+    // Warn if sessions are unlimited but compaction is disabled
+    const maxSessionMs = config.camera.maxSessionMs ?? 30000;
+    if (maxSessionMs === 0 && !this.compactionConfig.enabled) {
+      this.logger.warn(
+        "Unlimited sessions (maxSessionMs=0) without compaction may cause large tracks.json files"
+      );
+    }
 
     // Initialize components
     this.dbClient = new DatabaseClient();
@@ -125,13 +167,34 @@ export class EdgeAgent {
       height: config.camera.input.height,
     });
 
+    // Initialize frame queue for backpressure
+    if (this.backpressureConfig.enabled) {
+      this.frameQueue = new BoundedFrameQueue(this.backpressureConfig);
+
+      if (this.backpressureConfig.adaptCaptureFps) {
+        this.adaptiveFps = new AdaptiveFpsController(
+          this.backpressureConfig,
+          config.camera.fps
+        );
+      }
+
+      this.logger.info(
+        {
+          maxQueueSize: this.backpressureConfig.maxQueueSize,
+          dropPolicy: this.backpressureConfig.dropPolicy,
+          adaptiveFps: this.backpressureConfig.adaptCaptureFps,
+        },
+        "Frame queue initialized"
+      );
+    }
+
     this.sessionState = {
       state: "IDLE",
       postRollMs: config.camera.postRollMs,
       classes: new Set(),
       tracksKeyframes: new Map(),
-      // Enforce hard cap of 30s per requirement (sessions must NOT exceed 30s)
-      maxDurationMs: Math.min(30000, config.camera.maxSessionMs ?? 30000),
+      // Allow unlimited sessions if maxSessionMs=0, otherwise use configured value
+      maxDurationMs: maxSessionMs === 0 ? Infinity : maxSessionMs,
     };
   }
 
@@ -175,6 +238,12 @@ export class EdgeAgent {
       await this.closeSession();
     }
 
+    // Stop and cleanup frame queue
+    if (this.frameQueue) {
+      this.frameQueue.destroy();
+      this.logger.info("Frame queue destroyed");
+    }
+
     // Stop components
     await this.capture.stop();
     await this.dbClient.disconnect();
@@ -183,10 +252,59 @@ export class EdgeAgent {
   }
 
   private async processFrames(): Promise<void> {
+    if (this.frameQueue) {
+      // Use producer-consumer pattern with frame queue
+      this.logger.info(
+        "Starting producer-consumer frame processing with backpressure"
+      );
+
+      // Start both producer and consumer in parallel
+      await Promise.all([this.startFrameProducer(), this.startFrameConsumer()]);
+    } else {
+      // Legacy mode: direct processing without queue
+      this.logger.info("Starting direct frame processing (no backpressure)");
+      const targetFrameTime = 1000 / this.config.camera.fps;
+
+      while (this.running) {
+        const frameStart = Date.now();
+
+        try {
+          const frame = await this.capture.getFrame();
+          if (!frame) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            continue;
+          }
+
+          await this.processFrame(frame);
+          this.frameCount++;
+
+          // Frame rate control
+          const processingTime = Date.now() - frameStart;
+          const sleepTime = Math.max(0, targetFrameTime - processingTime);
+
+          if (sleepTime > 0) {
+            await new Promise((resolve) => setTimeout(resolve, sleepTime));
+          }
+        } catch (error) {
+          this.logger.error(
+            { err: serializeError(error) },
+            "Error processing frame"
+          );
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      }
+    }
+  }
+
+  /**
+   * Frame producer: Capture frames and enqueue them
+   * Runs in parallel with consumer
+   */
+  private async startFrameProducer(): Promise<void> {
     const targetFrameTime = 1000 / this.config.camera.fps;
 
     while (this.running) {
-      const frameStart = Date.now();
+      const start = Date.now();
 
       try {
         const frame = await this.capture.getFrame();
@@ -195,22 +313,70 @@ export class EdgeAgent {
           continue;
         }
 
-        await this.processFrame(frame);
-        this.frameCount++;
+        // Enqueue frame (will drop oldest if queue full)
+        const enqueued = this.frameQueue!.enqueue(frame);
 
-        // Frame rate control
-        const processingTime = Date.now() - frameStart;
-        const sleepTime = Math.max(0, targetFrameTime - processingTime);
+        if (!enqueued) {
+          this.logger.debug("Frame dropped (queue full, drop_newest policy)");
+        }
 
+        // Adaptive FPS adjustment check (every 30 frames)
+        if (this.adaptiveFps && this.frameCount % 30 === 0) {
+          const stats = this.frameQueue!.getStats();
+          const newFps = this.adaptiveFps.update(stats);
+
+          if (newFps !== null) {
+            this.logger.info(
+              {
+                currentFps: this.config.camera.fps,
+                suggestedFps: newFps,
+                queueSize: stats.size,
+                queueFillRatio: (stats.size / stats.maxSize).toFixed(2),
+              },
+              "Adaptive FPS suggestion (manual adjustment required)"
+            );
+          }
+        }
+
+        // Maintain target FPS for producer
+        const elapsed = Date.now() - start;
+        const sleepTime = Math.max(0, targetFrameTime - elapsed);
         if (sleepTime > 0) {
           await new Promise((resolve) => setTimeout(resolve, sleepTime));
         }
       } catch (error) {
         this.logger.error(
           { err: serializeError(error) },
-          "Error processing frame"
+          "Error in frame producer"
         );
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+  }
+
+  /**
+   * Frame consumer: Dequeue and process frames
+   * Runs in parallel with producer
+   */
+  private async startFrameConsumer(): Promise<void> {
+    while (this.running) {
+      try {
+        const frame = this.frameQueue!.dequeue();
+
+        if (!frame) {
+          // Queue empty, wait a bit
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          continue;
+        }
+
+        await this.processFrame(frame);
+        this.frameCount++;
+      } catch (error) {
+        this.logger.error(
+          { err: serializeError(error) },
+          "Error in frame consumer"
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
   }
@@ -460,6 +626,39 @@ export class EdgeAgent {
     // Close session in DB
     await this.sessionsRepo.close(this.sessionState.sessionId, classesArray);
 
+    // Apply compactation to in-memory tracks before generating tracks.json
+    if (
+      this.compactionConfig.enabled &&
+      this.sessionState.tracksKeyframes.size > 0
+    ) {
+      const originalTotalKf = Array.from(
+        this.sessionState.tracksKeyframes.values()
+      ).reduce((sum, track) => sum + track.kf.length, 0);
+
+      this.sessionState.tracksKeyframes = compactAllTracks(
+        this.sessionState.tracksKeyframes,
+        this.compactionConfig
+      );
+
+      const compactedTotalKf = Array.from(
+        this.sessionState.tracksKeyframes.values()
+      ).reduce((sum, track) => sum + track.kf.length, 0);
+
+      this.logger.info(
+        {
+          sessionId: this.sessionState.sessionId,
+          originalKeyframes: originalTotalKf,
+          compactedKeyframes: compactedTotalKf,
+          reductionPct: (
+            (1 - compactedTotalKf / originalTotalKf) *
+            100
+          ).toFixed(1),
+          method: this.compactionConfig.method,
+        },
+        "Tracks compacted"
+      );
+    }
+
     // Get session data and detections for tracks.json generation
     const sessionData = await this.sessionsRepo.findById(
       this.sessionState.sessionId
@@ -472,11 +671,18 @@ export class EdgeAgent {
     let metaUrl: string | undefined;
     if (sessionData && detections.length > 0) {
       try {
+        // Use compacted keyframes if available (after compaction was applied)
+        const tracksToExport =
+          this.sessionState.tracksKeyframes.size > 0
+            ? this.sessionState.tracksKeyframes
+            : undefined;
+
         metaUrl = await generateTracksJson(
           this.sessionState.sessionName!,
           sessionData,
           detections,
-          this.config.storageDir
+          this.config.storageDir,
+          tracksToExport
         );
         this.logger.info(
           {
