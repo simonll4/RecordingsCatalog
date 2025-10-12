@@ -79,8 +79,8 @@
  *
  * Resolution Mismatch:
  *   - Log error but continue (frames may be rejected later)
- *   - TODO: Reconfigure NV12 capture pipeline to match chosen resolution
- *   - Requires stopping capture, updating config, restarting
+ *   - Future enhancement: Reconfigure NV12 capture pipeline
+ *   - See docs/FUTURE_FEATURES.md for implementation plan
  *
  * Invalid Policy:
  *   - Force LATEST_WINS (only supported policy)
@@ -188,7 +188,7 @@ export function buildInitMessage(
  * Error Cases:
  *   - Missing chosen config → throws Error
  *   - Wrong policy → logs warning, continues with LATEST_WINS
- *   - Resolution mismatch → logs error, continues (TODO: reconfigure)
+ *   - Resolution mismatch → logs error, continues (see docs/FUTURE_FEATURES.md)
  *
  * @param initOk - InitOk message from worker
  * @param config - Original handshake config (for validation)
@@ -234,15 +234,11 @@ export function handleInitOk(
       module: "handshake",
       requested: { width: config.width, height: config.height },
       chosen: { width: chosenWidth, height: chosenHeight },
-      warning: "Worker may not process frames correctly",
+      warning: "Worker may not process frames correctly. See docs/FUTURE_FEATURES.md for reconfiguration plan.",
     });
 
-    // TODO: Re-configure capture pipeline to match chosen resolution
-    // This would require:
-    // 1. Stop current capture
-    // 2. Update config with chosen width/height
-    // 3. Restart capture with new resolution
-    // For now: log error and proceed (frames may be rejected)
+    // Future enhancement: Reconfigure capture pipeline to match chosen resolution
+    // See docs/FUTURE_FEATURES.md for implementation plan
   }
 
   const maxFrameBytes = initOk.maxFrameBytes || 0;

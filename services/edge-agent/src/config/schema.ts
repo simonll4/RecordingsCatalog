@@ -331,34 +331,8 @@ export type FSMConfig = {
  *   - Format: "Bearer {apiKey}"
  *   - Leave empty if API is unauthenticated
  *
- * batchMax: Maximum detections per batch
- *   - Batcher accumulates up to this many detections
- *   - Then sends single POST /detections request
- *   - Typical: 20-100
- *   - Reduces HTTP overhead (fewer requests)
- *
- * flushIntervalMs: Auto-flush interval
- *   - Even if batch not full, flush periodically
- *   - Prevents detections from sitting in memory
- *   - Typical: 1000-5000ms
- *   - Too short: Defeats batching (many small batches)
- *   - Too long: Detections delayed excessively
- *
- * Why Batching?
- * =============
- *
- * Network Efficiency
- *   - HTTP has per-request overhead (TCP handshake, headers)
- *   - Batching reduces total requests by ~90%
- *
- * Server Load
- *   - Session-store handles fewer requests
- *   - Database can bulk insert detections
- *
- * End-to-End Latency
- *   - Individual detection may wait up to flushIntervalMs
- *   - But overall throughput is higher
- *   - Trade-off: slight delay for better efficiency
+* Note: La ingesta de detecciones/frames se realiza con FrameIngester (/ingest)
+* y no requiere parámetros de batching aquí.
  *
  * API Endpoints:
  * ==============
@@ -370,14 +344,10 @@ export type FSMConfig = {
  * POST /sessions/:sessionId/close
  *   - Mark session as complete
  *
- * POST /detections
- *   - Batch upload detections
- *   - Body: { detections: [...] }
- *
- * POST /ingest
- *   - Upload frame image
- *   - Multipart form data
- *   - Returns frameId
+* POST /ingest
+*   - Upload frame image
+*   - Multipart form data
+*   - Returns frameId
  */
 export type StoreConfig = {
   baseUrl: string;

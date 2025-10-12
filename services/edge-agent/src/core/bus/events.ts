@@ -171,20 +171,9 @@ export type AIEvents = AIDetectionEvent | AIKeepaliveEvent;
  *   Emit when RTSP publisher successfully starts (pipeline state=PLAYING).
  *   Indicates stream is available on MediaMTX.
  *
- * Planned Flow:
- *   1. Orchestrator sends StartStream command
- *   2. Publisher starts GStreamer pipeline
- *   3. Pipeline reaches PLAYING state
- *   4. Publisher emits bus.publish("stream.start")
- *
- * TODO: Add bus.publish("stream.start") in MediaMtxOnDemandPublisherGst.start()
+ * See docs/FUTURE_FEATURES.md for implementation plan.
  *
  * @property reason - Start reason (e.g., "session_active", "manual_start")
- *
- * Future Consumers:
- *   - Orchestrator (logging)
- *   - Metrics (stream uptime)
- *   - Health checks (stream availability)
  */
 export type StreamStartEvent = {
   type: "stream.start";
@@ -199,19 +188,9 @@ export type StreamStartEvent = {
  * Future Purpose:
  *   Emit when RTSP publisher stops stream (normal shutdown).
  *
- * Planned Flow:
- *   1. Orchestrator sends StopStream command
- *   2. Publisher stops GStreamer pipeline (sends EOS)
- *   3. Pipeline shuts down gracefully
- *   4. Publisher emits bus.publish("stream.stop")
- *
- * TODO: Add bus.publish("stream.stop") in MediaMtxOnDemandPublisherGst.stop()
+ * See docs/FUTURE_FEATURES.md for implementation plan.
  *
  * @property reason - Stop reason (e.g., "session_ended", "shutdown", "error")
- *
- * Future Consumers:
- *   - Orchestrator (logging)
- *   - Metrics (stream duration)
  */
 export type StreamStopEvent = {
   type: "stream.stop";
@@ -227,21 +206,10 @@ export type StreamStopEvent = {
  *   Emit when fatal error occurs in RTSP streaming pipeline.
  *   Enables retry logic or alert notifications.
  *
- * Planned Flow:
- *   1. GStreamer pipeline crashes or errors out
- *   2. Publisher detects error in handleExit() or pipeline bus
- *   3. Publisher emits bus.publish("stream.error", { error: "..." })
- *   4. Orchestrator receives event, decides on retry policy
- *
- * TODO: Add bus.publish("stream.error") in MediaMtxOnDemandPublisherGst error handling
+ * See docs/FUTURE_FEATURES.md for implementation plan.
  *
  * @property module - Module that generated error (e.g., "publisher", "gstreamer")
  * @property error - Error message or description
- *
- * Future Consumers:
- *   - Orchestrator (retry logic, exponential backoff)
- *   - Metrics (error rate, alerting)
- *   - Logging (centralized error tracking)
  */
 export type StreamErrorEvent = {
   type: "stream.error";

@@ -379,16 +379,20 @@ async function main() {
    */
   const aiAdapter = {
     /**
-     * Set model configuration (legacy interface)
-     * Not actually used - AIFeeder is configured via init() above
+     * Set model configuration
+     * 
+     * Note: AIFeeder is configured once via init() during startup.
+     * This method is kept for interface compatibility with Orchestrator.
      */
     async setModel(cfg: any) {
       logger.info("Model config set", { module: "main", config: cfg });
     },
 
     /**
-     * Run inference on frame (legacy interface)
-     * Not used - AIFeeder handles frame submission directly via NV12Capture subscription
+     * Run inference on frame
+     * 
+     * Note: AIFeeder handles frame submission directly via NV12Capture subscription.
+     * This method is kept for interface compatibility with Orchestrator.
      */
     async run(frame: Buffer, meta: any) {
       // No-op: AIFeeder manages frame flow independently
@@ -396,8 +400,9 @@ async function main() {
 
     /**
      * Set session ID for frame correlation
-     * This is the critical method - propagates sessionId from orchestrator to feeder
-     * so frames can be tagged with the correct session before sending to AI worker
+     * 
+     * Propagates sessionId from orchestrator to feeder so frames can be
+     * tagged with the correct session before sending to AI worker.
      */
     setSessionId(sessionId: string) {
       // Propagate to feeder (single source of truth for sessionId)

@@ -63,32 +63,32 @@ services:
       postgres:
         condition: service_healthy
 
-  worker-ai:
-    build:
-      context: ./services/worker-ai
-    container_name: tpfinalv3-worker-ai
-    restart: unless-stopped
-    environment:
-      BIND_HOST: 0.0.0.0
-      BIND_PORT: 7001
-      IDLE_TIMEOUT_SEC: 60
-      # Bootstrap opcional (pre-carga modelo al arrancar)
-      # BOOTSTRAP_MODEL_PATH: /models/yolov8n.onnx
-      # BOOTSTRAP_WIDTH: 640
-      # BOOTSTRAP_HEIGHT: 480
-      # BOOTSTRAP_CONF: 0.35
-      TZ: UTC
-    volumes:
-      # Directorio de modelos (montar modelos ONNX aquí)
-      - ./data/models:/models:ro
-      # Sincronización de TZ con el host
-      - /etc/timezone:/etc/timezone:ro
-      - /etc/localtime:/etc/localtime:ro
-    healthcheck:
-      test: ["CMD", "python3", "healthcheck.py"]
-      interval: 10s
-      timeout: 2s
-      retries: 3
+  # worker-ai:
+  #   build:
+  #     context: ./services/worker-ai
+  #   container_name: tpfinalv3-worker-ai
+  #   restart: unless-stopped
+  #   environment:
+  #     BIND_HOST: 0.0.0.0
+  #     BIND_PORT: 7001
+  #     IDLE_TIMEOUT_SEC: 60
+  #     # Bootstrap opcional (pre-carga modelo al arrancar)
+  #     # BOOTSTRAP_MODEL_PATH: /models/yolov8n.onnx
+  #     # BOOTSTRAP_WIDTH: 640
+  #     # BOOTSTRAP_HEIGHT: 480
+  #     # BOOTSTRAP_CONF: 0.35
+  #     TZ: UTC
+  #   volumes:
+  #     # Directorio de modelos (montar modelos ONNX aquí)
+  #     - ./data/models:/models:ro
+  #     # Sincronización de TZ con el host
+  #     - /etc/timezone:/etc/timezone:ro
+  #     - /etc/localtime:/etc/localtime:ro
+  #   healthcheck:
+  #     test: ["CMD", "python3", "healthcheck.py"]
+  #     interval: 10s
+  #     timeout: 2s
+  #     retries: 3
 
   edge-agent:
     build:

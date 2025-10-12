@@ -128,6 +128,7 @@ import { spawn } from "child_process";
 import { CONFIG } from "../../../../config/index.js";
 import { logger } from "../../../../shared/logging.js";
 import { buildNV12Capture } from "../../../../media/gstreamer.js";
+import { normalizeNV12SplitFrame } from "../../utils/nv12-normalizer.js";
 
 /**
  * NV12 Frame Metadata
@@ -171,6 +172,7 @@ export class NV12CaptureGst {
   private maxConsecutiveFailures = 5; // Max failures before giving up
   private currentMode: "idle" | "active" = "idle"; // FPS mode (deprecated in v1)
   private stoppedManually = false; // Manual stop flag (prevents auto-restart)
+  private lastLoggedSeam: number | null = null; // Tracks last seam logged to avoid spam
 
   /**
    * Start NV12 Capture
@@ -178,7 +180,7 @@ export class NV12CaptureGst {
    * Launches GStreamer pipeline and starts delivering frames to callback.
    *
    * Pipeline:
- *   shmsrc → videoscale → videoconvert → NV12 → fdsink(stdout)
+   *   shmsrc → videoscale → videoconvert → NV12 → fdsink(stdout)
    *
    * @param onFrame - Callback for each captured frame
    */
@@ -425,7 +427,25 @@ export class NV12CaptureGst {
       };
 
       try {
-        this.onFrame?.(frameData, meta);
+        const { buffer: normalizedData, seam } = normalizeNV12SplitFrame(
+          frameData,
+          width,
+          height
+        );
+
+        if (seam !== this.lastLoggedSeam) {
+          this.lastLoggedSeam = seam;
+          if (seam !== null) {
+            logger.debug("Corrected split NV12 frame", {
+              module: "nv12-capture-gst",
+              seam,
+              width,
+              height,
+            });
+          }
+        }
+
+        this.onFrame?.(normalizedData, meta);
       } catch (e) {
         logger.error("onFrame callback error", {
           module: "nv12-capture-gst",

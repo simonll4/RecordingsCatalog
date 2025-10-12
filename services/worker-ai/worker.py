@@ -26,12 +26,12 @@ import onnxruntime as ort
 
 VISUALIZATION_ENABLED = False
 # Visualización (opcional, solo si CV2 está disponible)
-# try:
-#     import cv2
-#     VISUALIZATION_ENABLED = True
-# except ImportError:
-#     VISUALIZATION_ENABLED = False
-#     print("Warning: opencv-python not installed, visualization disabled")
+try:
+    import cv2
+    VISUALIZATION_ENABLED = True
+except ImportError:
+    VISUALIZATION_ENABLED = False
+    print("Warning: opencv-python not installed, visualization disabled")
 
 # Configuración
 BIND_HOST = os.getenv("BIND_HOST", "0.0.0.0")
@@ -39,15 +39,15 @@ BIND_PORT = int(os.getenv("BIND_PORT", "7001"))
 IDLE_TIMEOUT_SEC = int(os.getenv("IDLE_TIMEOUT_SEC", "60"))
 
 # Visualización
-ENABLE_VISUALIZATION = os.getenv("ENABLE_VISUALIZATION", "false").lower() == "true"
+ENABLE_VISUALIZATION = os.getenv("ENABLE_VISUALIZATION", "true").lower() == "true"
 VISUALIZATION_WINDOW_NAME = "AI Worker - Detections"
 
 if ENABLE_VISUALIZATION and VISUALIZATION_ENABLED:
-    print(f"✓ Visualization ENABLED (cv2 available)")
+    print("✓ Visualization ENABLED (cv2 available)")
 elif ENABLE_VISUALIZATION and not VISUALIZATION_ENABLED:
-    print(f"✗ Visualization requested but cv2 not available")
+    print("✗ Visualization requested but cv2 not available")
 else:
-    print(f"✗ Visualization DISABLED")
+    print("✗ Visualization DISABLED")
 
 # Bootstrap (opcional)
 BOOTSTRAP_MODEL_PATH = os.getenv("BOOTSTRAP_MODEL_PATH")
@@ -345,54 +345,64 @@ def jpeg_to_rgb(data: bytes) -> np.ndarray:
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
-def visualize_detections(frame_rgb, result, class_names):
+def visualize_detections(frame_rgb, result, class_names=None):
     """
     Muestra el frame con las detecciones dibujadas usando OpenCV.
     
     Args:
         frame_rgb: Frame en formato RGB (H, W, 3)
         result: Resultado de inferencia con detecciones
-        class_names: Lista de nombres de clases
+        class_names: (Opcional) Lista de nombres de clases disponibles
     """
-    if not VISUALIZATION_ENABLED or not ENABLE_VISUALIZATION:
+    if not (VISUALIZATION_ENABLED and ENABLE_VISUALIZATION):
         return
     
-    logger.debug(f"Visualizing seq={result.seq} with {len(result.detections)} detections")
-    
+    if result.WhichOneof("out") != "detections":
+        detections = []
+    else:
+        detections = result.detections.items
+
+    logger.debug(f"Visualizing frame_id={result.frame_id} with {len(detections)} detections")
+
+    # Crear ventana una sola vez
+    if not hasattr(visualize_detections, "_window_initialized"):
+        cv2.namedWindow(VISUALIZATION_WINDOW_NAME, cv2.WINDOW_NORMAL)
+        visualize_detections._window_initialized = True
+
     # Convertir RGB a BGR para OpenCV
     frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
     h, w = frame_bgr.shape[:2]
     
     # Dibujar cada detección
-    for det in result.detections:
-        # Bounding box - las coordenadas YA vienen en píxeles absolutos
-        x = int(det.bbox.x)
-        y = int(det.bbox.y)
-        box_w = int(det.bbox.w)
-        box_h = int(det.bbox.h)
-        
-        # Validar que la bbox está dentro del frame
-        if x < 0 or y < 0 or x + box_w > w or y + box_h > h:
+    for det in detections:
+        x1 = max(0, min(w - 1, int(det.bbox.x1)))
+        y1 = max(0, min(h - 1, int(det.bbox.y1)))
+        x2 = max(0, min(w - 1, int(det.bbox.x2)))
+        y2 = max(0, min(h - 1, int(det.bbox.y2)))
+
+        if x2 <= x1 or y2 <= y1:
             continue
         
         # Color verde para todas las detecciones
         color = (0, 255, 0)
         
         # Dibujar rectángulo
-        cv2.rectangle(frame_bgr, (x, y), (x + box_w, y + box_h), color, 2)
+        cv2.rectangle(frame_bgr, (x1, y1), (x2, y2), color, 2)
         
         # Texto con clase y confianza
-        label = f"{det.cls}: {det.conf:.2f}"
+        label_cls = det.cls if det.cls else "unknown"
+        label = f"{label_cls}: {det.conf:.2f}"
         
         # Fondo para el texto
         (text_w, text_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-        cv2.rectangle(frame_bgr, (x, y - text_h - 4), (x + text_w, y), color, -1)
+        text_y = max(y1, text_h + 4)
+        cv2.rectangle(frame_bgr, (x1, text_y - text_h - 4), (x1 + text_w, text_y), color, -1)
         
         # Texto blanco
         cv2.putText(
             frame_bgr,
             label,
-            (x, y - 2),
+            (x1, text_y - 2),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.5,
             (0, 0, 0),
@@ -401,7 +411,7 @@ def visualize_detections(frame_rgb, result, class_names):
         )
     
     # Info del frame
-    info_text = f"Seq: {result.seq} | Detections: {len(result.detections)}"
+    info_text = f"Frame: {result.frame_id} | Detections: {len(detections)}"
     cv2.putText(
         frame_bgr,
         info_text,
@@ -660,6 +670,8 @@ class ConnectionHandler:
             d.track_id = f"T{idx + 1}"
 
         logger.debug(f"Inference done: frame_id={frame.frame_id}, detections={len(detections)}, time={latency['total_ms']:.1f}ms")
+
+        visualize_detections(frame_rgb, result, self.model_manager.class_names)
 
         await self.send_response(result=result)
         

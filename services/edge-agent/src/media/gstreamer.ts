@@ -366,11 +366,17 @@ export function buildNV12Capture(
     "!",
     "videoscale", // Scale from hub resolution to AI resolution
     "!",
-    `video/x-raw,format=I420,width=${aiWidth},height=${aiHeight}`,
+    `video/x-raw,format=I420,width=${aiWidth},height=${aiHeight},framerate=${fps}/1`,
     "!",
     "videoconvert", // Convert I420 → NV12
     "!",
-    `video/x-raw,format=NV12`,
+    `video/x-raw,format=NV12,width=${aiWidth},height=${aiHeight},framerate=${fps}/1`,
+    "!",
+    "rawvideoparse",
+    "format=nv12",
+    `width=${aiWidth}`,
+    `height=${aiHeight}`,
+    `framerate=${fps}/1`,
     "!",
     "queue",
     "max-size-buffers=2", // Small buffer to smooth jitter

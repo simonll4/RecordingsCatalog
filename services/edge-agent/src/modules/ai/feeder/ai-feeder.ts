@@ -572,6 +572,22 @@ export class AIFeeder {
         ? pb.ai.PixelFormat.PF_NV12
         : pb.ai.PixelFormat.PF_I420;
 
+    const expectedFrameBytes =
+      Math.trunc(this.config.width * this.config.height * 1.5);
+
+    if (data.length !== expectedFrameBytes) {
+      logger.error("Frame size mismatch detected before send", {
+        module: "ai-feeder",
+        expected: expectedFrameBytes,
+        actual: data.length,
+        width: this.config.width,
+        height: this.config.height,
+        format: meta.format,
+      });
+      metrics.inc("ai_frame_size_mismatch_total");
+      return;
+    }
+
     // Build planes
     const planes = meta.planes.map((p) =>
       pb.ai.Plane.create({

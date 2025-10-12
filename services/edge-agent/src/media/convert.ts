@@ -13,47 +13,21 @@
  * ARCHITECTURE
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Supported conversions:
- *
- * 1. NV12/I420 → JPEG (grayscale)
- *    - Input: YUV 4:2:0 planar formats (camera capture, GStreamer output)
- *    - Process: Extract Y plane (luminance) → Compress to JPEG
- *    - Output: Grayscale JPEG (suitable for object detection)
- *    - Limitation: No color information (Sharp library doesn't support YUV)
- *
- * 2. RGB → JPEG (full color)
+* Supported conversions:
+*
+* 1. NV12/I420 → JPEG (full color)
+*    - Input: YUV 4:2:0 planar/semi-planar formats (camera capture, GStreamer output)
+*    - Process: Convert YUV (BT.601) → RGB (software) → JPEG (Sharp)
+*    - Output: Color JPEG
+*
+* 2. RGB → JPEG (full color)
  *    - Input: RGB 24-bit (3 bytes per pixel)
  *    - Process: Direct compression to JPEG with sRGB colorspace
  *    - Output: Color JPEG (full quality)
  *
- * ═══════════════════════════════════════════════════════════════════════════════
- * WHY GRAYSCALE FOR NV12/I420?
- * ═══════════════════════════════════════════════════════════════════════════════
- *
- * Problem: Sharp library doesn't natively support YUV formats
- *
- * Options considered:
- *
- * 1. Manual YUV→RGB conversion in JavaScript
- *    ✗ Very slow (JS is not optimized for pixel manipulation)
- *    ✗ High CPU usage (defeats purpose of hardware encoding)
- *    ✗ Complex (need to handle NV12 vs I420 plane layouts)
- *
- * 2. Use FFmpeg/GStreamer for conversion
- *    ✗ Requires spawning external process (overhead)
- *    ✗ Adds dependency and complexity
- *    ✓ Would provide full color conversion
- *
- * 3. Extract Y plane only (current implementation)
- *    ✓ Fast (single memcpy, no computation)
- *    ✓ Simple (works with Sharp's raw grayscale mode)
- *    ✓ Good enough for AI detection (models work on grayscale)
- *    ✗ Loses color information (not suitable for human viewing)
- *
- * Decision: Use grayscale (option 3) for AI pipeline efficiency
- * - AI detection models don't require color (YOLO works fine on grayscale)
- * - Huge performance gain (no conversion overhead)
- * - If color is needed later, can add FFmpeg conversion as optional path
+* Note on YUV support:
+* - Sharp no soporta NV12/I420 directamente; por eso convertimos a RGB en memoria
+*   respetando stride/offset y luego comprimimos con Sharp a JPEG.
  *
  * ═══════════════════════════════════════════════════════════════════════════════
  * YUV FORMAT DETAILS
@@ -72,10 +46,10 @@
  * - Total size: width × height × 1.5 bytes
  * - Memory layout: [Y Y Y Y ...] [U U U U ...] [V V V V ...]
  *
- * Current implementation:
- * - Reads entire buffer (Y + UV/U+V)
- * - Sharp extracts first (width × height) bytes as Y plane
- * - UV/U+V data is ignored (hence grayscale output)
+* Conversión actual:
+* - Leemos los planos Y y UV/U+V respetando stride/offset
+* - Convertimos YUV (BT.601) → RGB fila por fila
+* - Comprimimos a JPEG con Sharp (sRGB)
  *
  * ═══════════════════════════════════════════════════════════════════════════════
  * JPEG COMPRESSION SETTINGS
@@ -103,7 +77,7 @@
  * ```typescript
  * import { convertNV12ToJpeg, convertRGBToJpeg } from "./media/convert.js";
  *
- * // Example 1: NV12 → JPEG (grayscale)
+* // Example 1: NV12 → JPEG (color)
  * const nv12Buffer = Buffer.from(...); // Raw NV12 data from camera
  * const meta = {
  *   format: "NV12",
@@ -112,8 +86,8 @@
  *   planes: [{ offset: 0, stride: 1920 }],
  * };
  *
- * const jpegGrayscale = await convertNV12ToJpeg(nv12Buffer, meta);
- * // → Buffer (JPEG, grayscale, ~200 KB)
+* const jpegColor = await convertNV12ToJpeg(nv12Buffer, meta);
+* // → Buffer (JPEG, color)
  *
  * // Example 2: NV12 → JPEG with custom quality
  * const jpegHighQuality = await convertNV12ToJpeg(nv12Buffer, meta, {
@@ -180,43 +154,18 @@ export interface ConversionOptions {
 }
 
 /**
- * Converts NV12/I420 buffer to JPEG (grayscale)
+ * Converts NV12/I420 buffer to JPEG (full color)
  *
- * IMPORTANT LIMITATION:
- * This function produces grayscale JPEG images because Sharp library
- * doesn't support YUV formats natively. Only the Y plane (luminance)
- * is used, discarding color information (UV/U+V planes).
- *
- * Why grayscale is acceptable:
- * - AI detection models work fine on grayscale (YOLO, SSD, etc.)
- * - Huge performance gain (no YUV→RGB conversion overhead)
- * - If color is needed, use FFmpeg/GStreamer for proper YUV→RGB conversion
- *
- * For full-color conversion:
- * - Option 1: Use FFmpeg to convert NV12→RGB first
- * - Option 2: Use GStreamer jpegenc directly (bypasses Sharp)
- * - Option 3: Implement manual YUV→RGB in JS (slow, not recommended)
+ * Sharp does not natively support NV12, so we manually convert to RGB first.
+ * The conversion implements BT.601 YUV→RGB and honours the stride information
+ * provided in NV12FrameMeta to avoid artifacts.
  *
  * @param data - Raw NV12/I420 buffer (Y plane + UV/U+V planes)
  * @param meta - Frame metadata (format, width, height, planes)
  * @param options - Compression options (quality, chroma subsampling)
- * @returns Compressed JPEG buffer (grayscale)
+ * @returns Compressed JPEG buffer (color)
  *
- * @throws Error if Sharp fails to process the buffer
- *
- * @example
- * ```typescript
- * const meta: NV12FrameMeta = {
- *   format: "NV12",
- *   width: 1920,
- *   height: 1080,
- *   planes: [{ offset: 0, stride: 1920 }],
- * };
- *
- * const nv12Buffer = Buffer.from(...); // 3,110,400 bytes (1920×1080×1.5)
- * const jpeg = await convertNV12ToJpeg(nv12Buffer, meta);
- * // → ~200 KB JPEG (grayscale, quality 85)
- * ```
+ * @throws Error if conversion fails
  */
 export async function convertNV12ToJpeg(
   data: Buffer,
@@ -226,32 +175,30 @@ export async function convertNV12ToJpeg(
   const { jpegQuality = 85, chromaSubsampling = "4:2:0" } = options;
 
   try {
-    // Sharp doesn't support NV12/I420 natively
-    // We process only the Y plane (luminance) as grayscale
-    // This produces a valid B&W image (good enough for AI detection)
+    const rgbBuffer = nv12ToRgb(data, meta);
 
-    const jpegBuffer = await sharp(data, {
+    const jpegBuffer = await sharp(rgbBuffer, {
       raw: {
         width: meta.width,
         height: meta.height,
-        channels: 1, // Only Y channel (luminance, grayscale)
+        channels: 3, // RGB
       },
     })
+      .toColorspace("srgb")
       .jpeg({
         quality: jpegQuality,
         chromaSubsampling,
-        force: true, // Force JPEG output even for grayscale
+        force: true,
       })
       .toBuffer();
 
-    logger.debug("NV12→JPEG conversion successful (grayscale)", {
+    logger.debug("NV12→JPEG conversion successful", {
       module: "convert",
       format: meta.format,
       dimensions: `${meta.width}×${meta.height}`,
       originalSize: data.length,
       compressedSize: jpegBuffer.length,
       compressionRatio: ((jpegBuffer.length / data.length) * 100).toFixed(1) + "%",
-      note: "Grayscale output (color info discarded)",
     });
 
     return jpegBuffer;
@@ -365,4 +312,117 @@ export async function convertRGBToJpeg(
     });
     throw new Error(`RGB→JPEG conversion failed: ${error.message}`);
   }
+}
+
+/**
+ * Convert NV12/I420 buffer into packed RGB buffer (width × height × 3 bytes).
+ *
+ * Implements BT.601 conversion with clamping, iterating row-wise while respecting
+ * the stride values defined in NV12FrameMeta.
+ */
+function nv12ToRgb(data: Buffer, meta: NV12FrameMeta): Buffer {
+  const { width, height, format } = meta;
+  if (width <= 0 || height <= 0) {
+    throw new Error("Invalid NV12 frame dimensions");
+  }
+
+  if (!meta.planes || meta.planes.length < 2) {
+    throw new Error("NV12 frame meta missing plane information");
+  }
+
+  const rgb = Buffer.allocUnsafe(width * height * 3);
+
+  if (format === "NV12") {
+    const yPlane = meta.planes[0];
+    const uvPlane = meta.planes[1];
+
+    const yStride = yPlane.stride || width;
+    const uvStride = uvPlane.stride || width;
+
+    const yBase = yPlane.offset || 0;
+    const uvBase = uvPlane.offset || 0;
+
+    for (let row = 0; row < height; row++) {
+      const yRowOffset = yBase + row * yStride;
+      const uvRowOffset = uvBase + Math.floor(row / 2) * uvStride;
+
+      for (let col = 0; col < width; col++) {
+        const yValue = data[yRowOffset + col];
+        const uvIndex = uvRowOffset + Math.floor(col / 2) * 2;
+        const uValue = data[uvIndex];
+        const vValue = data[uvIndex + 1];
+
+        writePixel(rgb, row, col, width, yValue, uValue, vValue);
+      }
+    }
+
+    return rgb;
+  }
+
+  if (format === "I420") {
+    if (meta.planes.length < 3) {
+      throw new Error("I420 frame meta missing UV plane information");
+    }
+
+    const yPlane = meta.planes[0];
+    const uPlane = meta.planes[1];
+    const vPlane = meta.planes[2];
+
+    const yStride = yPlane.stride || width;
+    const uStride = uPlane.stride || Math.floor(width / 2);
+    const vStride = vPlane.stride || Math.floor(width / 2);
+
+    const yBase = yPlane.offset || 0;
+    const uBase = uPlane.offset || 0;
+    const vBase = vPlane.offset || 0;
+
+    for (let row = 0; row < height; row++) {
+      const yRowOffset = yBase + row * yStride;
+      const uvRow = Math.floor(row / 2);
+      const uRowOffset = uBase + uvRow * uStride;
+      const vRowOffset = vBase + uvRow * vStride;
+
+      for (let col = 0; col < width; col++) {
+        const c = col;
+        const yValue = data[yRowOffset + c];
+        const uValue = data[uRowOffset + Math.floor(c / 2)];
+        const vValue = data[vRowOffset + Math.floor(c / 2)];
+
+        writePixel(rgb, row, col, width, yValue, uValue, vValue);
+      }
+    }
+
+    return rgb;
+  }
+
+  throw new Error(`Unsupported pixel format for NV12 conversion: ${format}`);
+}
+
+function writePixel(
+  rgb: Buffer,
+  row: number,
+  col: number,
+  width: number,
+  yValue: number,
+  uValue: number,
+  vValue: number
+): void {
+  const c = yValue - 16;
+  const d = uValue - 128;
+  const e = vValue - 128;
+
+  const r = clamp((298 * c + 409 * e + 128) >> 8);
+  const g = clamp((298 * c - 100 * d - 208 * e + 128) >> 8);
+  const b = clamp((298 * c + 516 * d + 128) >> 8);
+
+  const index = (row * width + col) * 3;
+  rgb[index] = r;
+  rgb[index + 1] = g;
+  rgb[index + 2] = b;
+}
+
+function clamp(value: number): number {
+  if (value < 0) return 0;
+  if (value > 255) return 255;
+  return value;
 }

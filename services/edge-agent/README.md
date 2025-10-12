@@ -17,10 +17,17 @@ Sistema de captura y análisis de video basado en eventos, optimizado para baja 
 | [EVENTS.md](docs/EVENTS.md) | 📡 Sistema de eventos |
 | [ARCHITECTURE_DIAGRAM.md](docs/ARCHITECTURE_DIAGRAM.md) | 📊 Diagrama visual |
 
-### Troubleshooting
+### Implementación Técnica
+| Documento | Descripción |
+|-----------|-------------|
+| [PROTOCOL_V1_IMPLEMENTATION.md](docs/PROTOCOL_V1_IMPLEMENTATION.md) | 🔌 Protocolo binario v1 (AI worker) |
+| [PROTOCOL_V1_QUICKSTART.md](docs/PROTOCOL_V1_QUICKSTART.md) | 🚀 Guía rápida del protocolo v1 |
+
+### Troubleshooting y Planificación
 | Documento | Descripción |
 |-----------|-------------|
 | [LOGGING.md](docs/LOGGING.md) | 🪵 Sistema de logging |
+| [FUTURE_FEATURES.md](docs/FUTURE_FEATURES.md) | 🔮 Funcionalidades planificadas |
 
 ---
 

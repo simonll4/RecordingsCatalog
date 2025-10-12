@@ -10,5 +10,4 @@ export * from "./ports/session-store.js";
 // Implementaciones HTTP
 export * from "./adapters/http/session-store-http.js";
 
-// Utilidades
-export * from "./batching/batcher.js";
+// Utilidades (ninguna expuesta actualmente)
