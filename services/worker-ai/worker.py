@@ -17,12 +17,17 @@ import struct
 import time
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Dict, Optional, Set
 
 import ai_pb2 as pb
 import numpy as np
 import onnxruntime as ort
 
+try:
+    import tomllib  # Python 3.11+
+except ImportError:
+    import tomli as tomllib  # Fallback for Python < 3.11
 
 VISUALIZATION_ENABLED = False
 # Visualización (opcional, solo si CV2 está disponible)
@@ -33,14 +38,35 @@ except ImportError:
     VISUALIZATION_ENABLED = False
     print("Warning: opencv-python not installed, visualization disabled")
 
-# Configuración
-BIND_HOST = os.getenv("BIND_HOST", "0.0.0.0")
-BIND_PORT = int(os.getenv("BIND_PORT", "7001"))
-IDLE_TIMEOUT_SEC = int(os.getenv("IDLE_TIMEOUT_SEC", "60"))
+
+# ==================== LOAD CONFIGURATION ====================
+
+def load_config():
+    """Load configuration from config.toml file"""
+    config_path = Path(__file__).parent / "config.toml"
+    try:
+        with open(config_path, "rb") as f:
+            return tomllib.load(f)
+    except Exception as e:
+        raise RuntimeError(f"Failed to load config.toml: {e}")
+
+config = load_config()
+
+# Configuración del servidor
+BIND_HOST = config["server"]["bind_host"]
+BIND_PORT = config["server"]["bind_port"]
+IDLE_TIMEOUT_SEC = config["server"]["idle_timeout_sec"]
 
 # Visualización
-ENABLE_VISUALIZATION = os.getenv("ENABLE_VISUALIZATION", "true").lower() == "true"
-VISUALIZATION_WINDOW_NAME = "AI Worker - Detections"
+ENABLE_VISUALIZATION = config["visualization"]["enabled"]
+VISUALIZATION_WINDOW_NAME = config["visualization"]["window_name"]
+
+# Bootstrap
+BOOTSTRAP_ENABLED = config["bootstrap"]["enabled"]
+BOOTSTRAP_MODEL_PATH = config["bootstrap"]["model_path"] if BOOTSTRAP_ENABLED else None
+BOOTSTRAP_WIDTH = config["bootstrap"]["width"] if BOOTSTRAP_ENABLED else None
+BOOTSTRAP_HEIGHT = config["bootstrap"]["height"] if BOOTSTRAP_ENABLED else None
+BOOTSTRAP_CONF = config["bootstrap"]["conf_threshold"] if BOOTSTRAP_ENABLED else None
 
 if ENABLE_VISUALIZATION and VISUALIZATION_ENABLED:
     print("✓ Visualization ENABLED (cv2 available)")
@@ -48,12 +74,6 @@ elif ENABLE_VISUALIZATION and not VISUALIZATION_ENABLED:
     print("✗ Visualization requested but cv2 not available")
 else:
     print("✗ Visualization DISABLED")
-
-# Bootstrap (opcional)
-BOOTSTRAP_MODEL_PATH = os.getenv("BOOTSTRAP_MODEL_PATH")
-BOOTSTRAP_WIDTH = int(os.getenv("BOOTSTRAP_WIDTH", "640")) if os.getenv("BOOTSTRAP_WIDTH") else None
-BOOTSTRAP_HEIGHT = int(os.getenv("BOOTSTRAP_HEIGHT", "640")) if os.getenv("BOOTSTRAP_HEIGHT") else None
-BOOTSTRAP_CONF = float(os.getenv("BOOTSTRAP_CONF", "0.35")) if os.getenv("BOOTSTRAP_CONF") else None
 
 # Logging
 logging.basicConfig(

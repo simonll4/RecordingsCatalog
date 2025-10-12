@@ -13,7 +13,7 @@
     "arch:graph": "depcruise --config .dependency-cruiser.cjs --output-type dot src | dot -T svg > architecture-graph.svg"
   },
   "dependencies": {
-    "dotenv": "^16.3.1",
+    "@iarna/toml": "^2.2.5",
     "long": "^5.2.3",
     "protobufjs": "^7.2.5",
     "sharp": "^0.34.4"

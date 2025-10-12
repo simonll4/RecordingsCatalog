@@ -1,28 +1,36 @@
-import dotenv from 'dotenv';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import TOML from '@iarna/toml';
 
-dotenv.config();
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const configPath = join(__dirname, '..', 'config.toml');
 
-const env = (key: string, fallback?: string): string => {
-  const value = process.env[key];
-  if (value === undefined || value === '') {
-    if (fallback !== undefined) {
-      return fallback;
-    }
-    throw new Error(`Missing required environment variable ${key}`);
+/**
+ * Load TOML Configuration
+ *
+ * Reads and parses the config.toml file.
+ *
+ * @returns Parsed TOML object
+ * @throws Error if file doesn't exist or is malformed
+ */
+function loadTomlConfig(): any {
+  try {
+    const configFile = readFileSync(configPath, 'utf-8');
+    return TOML.parse(configFile);
+  } catch (error: any) {
+    throw new Error(`Failed to load config.toml: ${error.message}`);
   }
-  return value;
-};
+}
 
-const parseIntSafe = (value: string, fallback: number): number => {
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
-};
+const tomlConfig = loadTomlConfig();
 
 export const CONFIG = {
-  NODE_ENV: process.env.NODE_ENV ?? 'development',
-  PORT: parseInt(env('PORT', '8080'), 10),
-  DATABASE_URL: env('DATABASE_URL'),
-  MEDIAMTX_PLAYBACK_BASE_URL: env('MEDIAMTX_PLAYBACK_BASE_URL', 'http://mediamtx:9996'),
-  PLAYBACK_EXTRA_SECONDS: Math.max(0, parseIntSafe(env('PLAYBACK_EXTRA_SECONDS', '1'), 1)),
-  PLAYBACK_START_OFFSET_MS: Math.max(0, parseIntSafe(env('PLAYBACK_START_OFFSET_MS', '1500'), 1500))
+  NODE_ENV: tomlConfig.server.node_env ?? 'production',
+  PORT: tomlConfig.server.port,
+  DATABASE_URL: tomlConfig.database.url,
+  MEDIAMTX_PLAYBACK_BASE_URL: tomlConfig.mediamtx.playback_base_url,
+  PLAYBACK_EXTRA_SECONDS: tomlConfig.playback.extra_seconds,
+  PLAYBACK_START_OFFSET_MS: tomlConfig.playback.start_offset_ms,
+  FRAMES_STORAGE_PATH: tomlConfig.frames.storage_path,
 };

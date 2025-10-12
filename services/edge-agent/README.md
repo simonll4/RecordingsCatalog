@@ -70,7 +70,7 @@ Componentes principales (implementación actual):
   - `AIClientTcp` (`src/modules/ai/client/ai-client-tcp.ts`): TCP + Protobuf
   - `AIFeeder` (`src/modules/ai/feeder/ai-feeder.ts`): sliding window + latest‑wins; frame cache
 
-- Publisher (`src/modules/streaming/adapters/gstreamer/publisher-gst.ts`)
+- Publisher (`src/modules/streaming/adapters/gstreamer/media-mtx-on-demand-publisher-gst.ts`)
   - `shmsrc → encoder(H.264) → rtspclientsink` hacia MediaMTX
   - Encoder auto‑detectado (`src/media/encoder.ts`)
 
@@ -108,81 +108,67 @@ Detalle: `docs/EVENTS.md`.
 
 Requisitos I420: `SOURCE_WIDTH/HEIGHT` pares. SHM recomendado ≈ `50 * frameBytes`.
 
-## Configuración (Variables de Entorno)
+## Configuración
 
-Ver `.env.example` para configuración completa con comentarios detallados.
+El servicio se configura mediante `config.toml` ubicado en el root del servicio. Ver archivo completo para opciones avanzadas.
 
-**Variables principales:**
+**Secciones principales:**
 
-```bash
-# ============================================================================
-# LOGGING
-# ============================================================================
-LOG_LEVEL=info              # debug | info | warn | error
+```toml
+[logging]
+level = "info"  # debug | info | warn | error
 
-# ============================================================================
-# DEVICE IDENTIFICATION
-# ============================================================================
-DEVICE_ID=cam-local
+[device]
+id = "cam-local"
 
-# ============================================================================
-# VIDEO SOURCE (Camera)
-# ============================================================================
-SOURCE_KIND=v4l2            # v4l2 | rtsp
-SOURCE_URI=/dev/video0      # /dev/videoN | rtsp://ip:port/path
-SOURCE_WIDTH=640            # Debe ser par (I420)
-SOURCE_HEIGHT=480           # Debe ser par (I420)
-SOURCE_FPS_HUB=15
-SOURCE_SOCKET_PATH=/dev/shm/cam_raw.sock
-SOURCE_SHM_SIZE_MB=50
+[video]
+source_kind = "v4l2"     # v4l2 | rtsp
+source_uri = "/dev/video0"
+width = 640              # Debe ser par (I420)
+height = 480             # Debe ser par (I420)
+fps_hub = 15
+socket_path = "/dev/shm/cam_raw.sock"
+shm_size_mb = 50
 
-# ============================================================================
-# AI WORKER
-# ============================================================================
-AI_WORKER_HOST=localhost    # worker-ai para Docker
-AI_WORKER_PORT=7001
-AI_MODEL_NAME=models/yolov8n.onnx
-AI_UMBRAL=0.4               # 0.0 - 1.0
-AI_WIDTH=640
-AI_HEIGHT=640
-AI_CLASSES_FILTER=person    # Clases COCO, separadas por comas
-AI_FPS_IDLE=5
-AI_FPS_ACTIVE=12
+[ai]
+worker_host = "localhost"  # worker-ai para Docker
+worker_port = 7001
+model_name = "models/yolov8n.onnx"
+umbral = 0.4
+width = 640
+height = 640
+classes_filter = "person"  # Clases COCO, separadas por comas
+fps_idle = 5
+fps_active = 12
 
-# ============================================================================
-# MEDIAMTX (RTSP Server)
-# ============================================================================
-MEDIAMTX_HOST=localhost
-MEDIAMTX_PORT=8554
-MEDIAMTX_PATH=cam-local
+[mediamtx]
+host = "localhost"
+port = 8554
+path = "cam-local"
 
-# ============================================================================
-# FSM (Timers en ms)
-# ============================================================================
-FSM_DWELL_MS=500            # Ventana de confirmación
-FSM_SILENCE_MS=3000         # Timeout sin detecciones
-FSM_POSTROLL_MS=5000        # Grabación post-detección
+[fsm]
+dwell_ms = 500      # Ventana de confirmación
+silence_ms = 3000   # Timeout sin detecciones
+postroll_ms = 5000  # Grabación post-detección
 
-# ============================================================================
-# SESSION STORE
-# ============================================================================
-STORE_BASE_URL=http://localhost:8080
-STORE_BATCH_MAX=50
-STORE_FLUSH_INTERVAL_MS=250
+[store]
+base_url = "http://localhost:8080"
+batch_max = 50
+flush_interval_ms = 250
 ```
 
 **Notas de configuración:**
-- `SOURCE_WIDTH/HEIGHT` deben ser pares para I420
+- `width/height` deben ser pares para I420
 - I420 frame bytes ≈ `W*H*1.5`
 - SHM recomendado: `~50*frameBytes` en MB
-- `AI_CLASSES_FILTER`: Ver lista completa de 80 clases COCO en `.env.example`
+- `classes_filter`: Clases COCO válidas (80 clases disponibles, ver config.toml)
 - Para Docker: usar hostnames de servicios (ej: `worker-ai`, `mediamtx`)
 
 ## Puesta en Marcha
 Prerrequisitos: Node.js 20+, GStreamer 1.0+ (plugins base/good/bad/libav). MediaMTX y Session Store disponibles (ver Docker Compose).
 
 Local (dev):
-```
+```bash
 cd services/edge-agent
 npm install
 npm run dev

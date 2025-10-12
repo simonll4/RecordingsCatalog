@@ -6,6 +6,6 @@ dist
 services/**/node_modules
 services/**/dist
 data/recordings
-docs
-frames
-models
+data/frames
+# data/models  # Descomentar si no se quieren versionar modelos
+notas.txt

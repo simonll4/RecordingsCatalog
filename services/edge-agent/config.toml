@@ -1,0 +1,74 @@
+# Edge Agent Configuration
+# ========================
+# Este archivo es la fuente única de verdad para la configuración del edge-agent.
+# Todas las configuraciones deben definirse aquí, no mediante variables de entorno.
+
+# Identificador único del dispositivo edge
+[device]
+id = "cam-local"
+
+# Nivel de logging (debug, info, warn, error)
+[logging]
+level = "info"
+
+# Configuración de la fuente de video
+[source]
+# Tipo de fuente: "v4l2" para cámaras USB/integradas o "rtsp" para cámaras IP
+kind = "v4l2"
+# URI: /dev/videoN para v4l2 o rtsp://host:port/path para RTSP
+uri = "/dev/video0"
+# Resolución de captura
+width = 640
+height = 480
+# FPS constante de captura (frames por segundo)
+fps_hub = 15
+# Path del socket de memoria compartida
+socket_path = "/dev/shm/cam_raw.sock"
+# Tamaño del buffer de memoria compartida (MB)
+shm_size_mb = 50
+
+# Configuración del servidor MediaMTX (RTSP)
+[mediamtx]
+host = "mediamtx"
+port = 8554
+# Path de streaming (rtsp://mediamtx:8554/{path})
+path = "cam-local"
+
+# Configuración de la máquina de estados (FSM)
+[fsm]
+# Tiempo mínimo de permanencia en estado ACTIVE antes de poder salir (ms)
+dwell_ms = 500
+# Tiempo sin detecciones para salir de ACTIVE → IDLE (ms)
+silence_ms = 3000
+# Tiempo de grabación adicional después de última detección (ms)
+postroll_ms = 5000
+
+# Configuración del modelo de IA (YOLO)
+[ai]
+# Ruta al modelo ONNX dentro del contenedor
+model_name = "/models/yolov8n.onnx"
+# Umbral de confianza para las detecciones
+umbral = 0.4
+# Resolución de entrada del modelo
+width = 640
+height = 640
+# Clases disponibles (separadas por comas)
+class_names = "person,helmet,vest,vehicle"
+# Clases a detectar (filtro, separadas por comas)
+classes_filter = "person"
+# FPS de procesamiento en estado IDLE
+fps_idle = 5
+# FPS de procesamiento en estado ACTIVE
+fps_active = 12
+# Configuración del worker de IA
+worker_host = "worker-ai"
+worker_port = 7001
+
+# Configuración del Session Store (backend)
+[store]
+# URL base del servicio session-store
+base_url = "http://session-store:8080"
+# Tamaño máximo del batch de detecciones
+batch_max = 50
+# Intervalo de flush del batch (ms)
+flush_interval_ms = 250

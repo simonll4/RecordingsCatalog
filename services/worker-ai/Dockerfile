@@ -16,6 +16,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY ai_pb2.py .
 COPY worker.py .
 COPY healthcheck.py .
+# Copiar configuración TOML
+COPY config.toml .
 
 # Crear directorio para modelos
 RUN mkdir -p /models

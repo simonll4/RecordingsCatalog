@@ -10,54 +10,82 @@ Se ha agregado soporte completo para **detecciones** al session-store, permitien
 
 **Agregado**:
 ```sql
--- Tabla de detecciones
+-- Tabla de detecciones - PK compuesta (session_id, track_id)
 CREATE TABLE IF NOT EXISTS detections (
-    id SERIAL PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
-    event_id TEXT NOT NULL UNIQUE,
-    ts TIMESTAMPTZ NOT NULL,
-    detection_data JSONB NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    track_id TEXT NOT NULL,
+    cls TEXT NOT NULL,
+    conf NUMERIC NOT NULL CHECK (conf >= 0 AND conf <= 1),
+    bbox JSONB NOT NULL,  -- {x, y, w, h} normalizadas 0..1
+    url_frame TEXT,
+    first_ts TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_ts TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    capture_ts TIMESTAMPTZ NOT NULL,
+    ingest_ts TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (session_id, track_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_detections_session ON detections(session_id);
-CREATE INDEX IF NOT EXISTS idx_detections_ts ON detections(ts);
-CREATE INDEX IF NOT EXISTS idx_detections_event ON detections(event_id);
+CREATE INDEX IF NOT EXISTS idx_detections_last_ts ON detections(last_ts);
+CREATE INDEX IF NOT EXISTS idx_detections_cls ON detections(cls);
 ```
 
 **Características**:
+- ✅ Primary key compuesta (session_id, track_id)
 - ✅ Foreign key a sessions con CASCADE delete
-- ✅ event_id UNIQUE para idempotencia
-- ✅ Datos en JSONB para flexibilidad
-- ✅ Índices optimizados para queries
+- ✅ Almacena clase detectada, confianza y bbox normalizado
+- ✅ Timestamps first_ts/last_ts para tracking temporal
+- ✅ Índices optimizados para queries por sesión, tiempo y clase
 
 ### 2. `/services/session-store/src/db.ts` ✅
 
 **Agregadas interfaces**:
 ```typescript
 export interface DetectionRecord {
-  id: number;
   session_id: string;
-  event_id: string;
-  ts: string;
-  detection_data: any;
+  track_id: string;
+  cls: string;
+  conf: number;
+  bbox: { x: number; y: number; w: number; h: number };
+  url_frame: string | null;
+  first_ts: string;
+  last_ts: string;
+  capture_ts: string;
+  ingest_ts: string;
   created_at: string;
+  updated_at: string;
 }
 
 export interface DetectionInsertInput {
   sessionId: string;
-  eventId: string;
-  ts: string;
-  detections: any;
+  trackId: string;
+  cls: string;
+  conf: number;
+  bbox: { x: number; y: number; w: number; h: number };
+  captureTs: string;
+  urlFrame?: string;
 }
 ```
 
 **Agregadas funciones**:
 ```typescript
-async insertDetection(input: DetectionInsertInput): Promise<DetectionRecord>
+// UPSERT: Inserta o actualiza manteniendo máxima confianza
+async insertDetection(input: DetectionInsertInput): Promise<DetectionRecord | null>
+
+// Obtener detecciones de una sesión
 async getDetectionsBySession(sessionId: string): Promise<DetectionRecord[]>
+
+// Filtrar detecciones por rango temporal
 async getDetectionsByTimeRange(from: Date, to: Date, limit = 1000): Promise<DetectionRecord[]>
 ```
+
+**Lógica de UPSERT**:
+- Si (session_id, track_id) no existe → INSERT
+- Si existe → UPDATE solo si nueva conf > conf anterior
+- Actualiza last_ts en cada operación
+- Mantiene first_ts original del primer INSERT
 
 ### 3. `/services/session-store/src/routes/detections.ts` ✨ **NUEVO**
 
@@ -65,20 +93,21 @@ async getDetectionsByTimeRange(from: Date, to: Date, limit = 1000): Promise<Dete
 
 #### POST /detections
 - Recibe batch de detecciones del edge-agent
-- Idempotente por event_id
-- Retorna conteo de inserted/skipped
+- Valida sessionId y detecta si existe
+- Hace UPSERT de cada detección (trackId único)
+- Retorna conteo de inserted/total
 
 **Request**:
 ```json
 {
-  "batchId": "batch_123",
   "sessionId": "sess_abc",
-  "sourceTs": "2025-10-03T12:00:00Z",
-  "items": [
+  "ts": "2025-01-12T12:00:00Z",
+  "detections": [
     {
-      "eventId": "evt_1",
-      "ts": "2025-10-03T12:00:01Z",
-      "detections": { "person": 0.95, "car": 0.87 }
+      "trackId": "trk_1",
+      "cls": "person",
+      "conf": 0.95,
+      "bbox": { "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 }
     }
   ]
 }
@@ -87,24 +116,34 @@ async getDetectionsByTimeRange(from: Date, to: Date, limit = 1000): Promise<Dete
 **Response**:
 ```json
 {
-  "batchId": "batch_123",
-  "sessionId": "sess_abc",
   "inserted": 5,
-  "skipped": 2,
   "total": 7
 }
 ```
 
 #### GET /detections/session/:sessionId
 - Obtiene todas las detecciones de una sesión
-- Ordenadas por timestamp ASC
+- Ordenadas por last_ts ASC
 
 **Response**:
 ```json
 {
   "sessionId": "sess_abc",
   "count": 42,
-  "detections": [...]
+  "detections": [
+    {
+      "session_id": "sess_abc",
+      "track_id": "trk_1",
+      "cls": "person",
+      "conf": 0.95,
+      "bbox": { "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 },
+      "url_frame": null,
+      "first_ts": "2025-01-12T12:00:00Z",
+      "last_ts": "2025-01-12T12:00:05Z",
+      "capture_ts": "2025-01-12T12:00:00Z",
+      "ingest_ts": "2025-01-12T12:00:01Z"
+    }
+  ]
 }
 ```
 
@@ -115,8 +154,8 @@ async getDetectionsByTimeRange(from: Date, to: Date, limit = 1000): Promise<Dete
 **Response**:
 ```json
 {
-  "from": "2025-10-03T00:00:00Z",
-  "to": "2025-10-03T23:59:59Z",
+  "from": "2025-01-12T00:00:00Z",
+  "to": "2025-01-12T23:59:59Z",
   "count": 150,
   "detections": [...]
 }
@@ -132,22 +171,28 @@ app.use('/detections', detectionsRouter);
 
 ## 🎯 Funcionalidades Clave
 
-### ✅ Batch Insert Optimizado
-- Acepta múltiples detecciones en un solo request
-- Reduce overhead de red
-- Manejo individual de errores por item
+### ✅ UPSERT Inteligente
+- Usa PK compuesta (session_id, track_id)
+- Mantiene máxima confianza por track_id
+- Actualiza bbox/cls/url_frame solo si conf mejora
+- Actualiza last_ts en cada upsert
+- Preserva first_ts original
 
-### ✅ Idempotencia
-- Usa `ON CONFLICT (event_id) DO NOTHING`
-- Evita duplicados si el edge-agent reintenta
-- Retorna conteo de skipped items
+### ✅ Tracking Temporal
+- first_ts: timestamp primera detección del track
+- last_ts: timestamp última actualización
+- capture_ts: timestamp original de captura de frame
+- ingest_ts: timestamp de ingesta al DB
 
 ### ✅ Validación Robusta
-- Valida sessionId y items array
+- Valida sessionId existe antes de insertar
 - Skip de items inválidos sin fallar todo el batch
-- Manejo específico de conflictos (código 23505)
+- Retorna conteo de inserted/total
 
 ### ✅ Queries Eficientes
+- Índices en session_id, last_ts y cls
+- Soporte para filtrado por sesión o rango temporal
+- Límite configurable en queries temporales
 - Índice en session_id para lookup rápido
 - Índice en ts para queries por tiempo
 - Índice en event_id para idempotencia

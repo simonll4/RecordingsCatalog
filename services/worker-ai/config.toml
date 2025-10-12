@@ -1,0 +1,42 @@
+# Worker AI Configuration
+# ========================
+# Este archivo es la fuente única de verdad para la configuración del worker-ai.
+# Todas las configuraciones deben definirse aquí, no mediante variables de entorno.
+
+# Configuración del servidor TCP
+[server]
+# Host de escucha (0.0.0.0 para aceptar conexiones externas)
+bind_host = "0.0.0.0"
+# Puerto de escucha
+bind_port = 7001
+# Timeout de inactividad en segundos (cierra conexión si no hay actividad)
+idle_timeout_sec = 60
+
+# Configuración del modelo por defecto (opcional)
+# Si se define, el modelo se pre-carga al arrancar el worker
+[model]
+# Ruta al modelo ONNX por defecto (dejar vacío para no pre-cargar)
+default_path = ""
+# Resolución de entrada del modelo por defecto
+default_width = 640
+default_height = 640
+# Umbral de confianza por defecto
+default_conf = 0.35
+
+# Configuración de bootstrap (pre-carga de modelo al arranque)
+[bootstrap]
+# Habilitar bootstrap (true/false)
+enabled = false
+# Ruta al modelo para bootstrap (si enabled=true)
+model_path = "/models/yolov8n.onnx"
+# Configuración del modelo para bootstrap
+width = 640
+height = 640
+conf_threshold = 0.35
+
+# Configuración de visualización (debugging)
+[visualization]
+# Habilitar ventana de visualización con detecciones (solo para debugging)
+enabled = true
+# Nombre de la ventana
+window_name = "AI Worker - Detections"

@@ -454,9 +454,9 @@ export type BusConfig = {
  * Configuration Source:
  * =====================
  *
- * CONFIG is loaded from environment variables in config/index.ts.
+ * CONFIG is loaded from config.toml in config/index.ts.
  * See that file for:
- * - Environment variable names (e.g., DEVICE_ID, VIDEO_SOURCE_KIND)
+ * - TOML section names (e.g., [device], [video], [ai])
  * - Default values for optional parameters
  * - Validation logic
  */
