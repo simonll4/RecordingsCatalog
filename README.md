@@ -188,9 +188,7 @@ tpfinal-v3/
 │   └── mediamtx/
 │       └── mediamtx.yml       # Configuración MediaMTX
 ├── scripts/
-│   ├── run-worker-local.sh    # Desarrollo: worker con visualización
-│   ├── export-yolo-onnx.py    # Exportar modelo PyTorch → ONNX
-│   └── create-dummy-model.py  # Modelo dummy para testing
+│   └── run-worker-local.sh    # Desarrollo: worker local
 └── docs/
     ├── AI-FLOW.md             # Flujo de procesamiento IA
     ├── CAMERA_SETUP.md        # Setup de cámaras
@@ -212,12 +210,16 @@ tpfinal-v3/
 
 ### Cámara Física
 
-Para usar cámara USB/V4L2, descomentar en `docker-compose.yml`:
+El `docker-compose.yml` **ya mapea `/dev/video*` y `group_add=video` por defecto**. Si estás en un host sin cámara física o en entorno sin acceso a dispositivos (ej: Docker Desktop), **comentá esas líneas**:
 
 ```yaml
 edge-agent:
-  devices:
-    - "/dev/video0:/dev/video0"
+  # devices:
+  #   - "/dev/video0:/dev/video0"
+  #   - "/dev/video1:/dev/video1"
+  # group_add:
+  #   - "44"
+  # privileged: true
   group_add:
     - "44"  # GID grupo video
   privileged: true

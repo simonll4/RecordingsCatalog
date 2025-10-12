@@ -1,88 +1,135 @@
-# ✅ Session-Store - Actualización Completada
+# ✅ Session-Store - Documentación Completa
 
-## 🎯 Objetivo Cumplido
+## 🎯 Descripción
 
-Se ha agregado soporte completo para **detecciones de IA** al session-store, permitiendo la integración total con el edge-agent v2.0.
+Session-Store es el servicio backend que gestiona:
+- **Sesiones de grabación** - Metadata de grabaciones activadas por detecciones
+- **Detecciones de IA** - Objetos rastreados (tracks) con bbox, clase y confianza
+- **Frames** - Imágenes JPEG asociadas a detecciones (ingesta vía multipart)
 
 ---
 
-## 📦 Cambios Realizados
+## 📦 Esquema de Base de Datos
 
-### 1. Base de Datos - Migration Actualizada
-
-**Archivo**: `/services/session-store/migrations/001_init.sql`
+### Tabla: `sessions`
 
 ```sql
--- Nueva tabla de detecciones
-CREATE TABLE IF NOT EXISTS detections (
-    id SERIAL PRIMARY KEY,
-    session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
-    event_id TEXT NOT NULL UNIQUE,
-    ts TIMESTAMPTZ NOT NULL,
-    detection_data JSONB NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id TEXT PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    path TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    start_ts TIMESTAMPTZ NOT NULL,
+    end_ts TIMESTAMPTZ,
+    postroll_sec INTEGER,
+    reason TEXT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
-
--- Índices para performance
-CREATE INDEX IF NOT EXISTS idx_detections_session ON detections(session_id);
-CREATE INDEX IF NOT EXISTS idx_detections_ts ON detections(ts);
-CREATE INDEX IF NOT EXISTS idx_detections_event ON detections(event_id);
 ```
 
-**Características clave:**
-- ✅ Foreign key a sessions con CASCADE delete
-- ✅ event_id UNIQUE para idempotencia
-- ✅ JSONB para flexibilidad en estructura de detecciones
-- ✅ Índices optimizados para queries frecuentes
+**Campos:**
+- `session_id`: ID único de sesión (generado por edge-agent)
+- `device_id`: Identificador del dispositivo (ej: "cam-local")
+- `path`: Path RTSP de la grabación en MediaMTX
+- `status`: `"open"` | `"closed"`
+- `start_ts`: Timestamp inicio de grabación
+- `end_ts`: Timestamp fin de grabación (null si abierta)
+- `postroll_sec`: Segundos de postroll configurados
 
-### 2. TypeScript - Interfaces y DB Functions
+### Tabla: `detections`
 
-**Archivo**: `/services/session-store/src/db.ts`
+**Primary Key Compuesta**: `(session_id, track_id)`
 
-**Nuevas interfaces:**
-```typescript
-export interface DetectionRecord {
-  id: number;
-  session_id: string;
-  event_id: string;
-  ts: string;
-  detection_data: any;
-  created_at: string;
+```sql
+CREATE TABLE IF NOT EXISTS detections (
+    session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+    track_id TEXT NOT NULL,
+    cls TEXT NOT NULL,
+    conf NUMERIC NOT NULL CHECK (conf >= 0 AND conf <= 1),
+    bbox JSONB NOT NULL,
+    url_frame TEXT,
+    first_ts TIMESTAMPTZ NOT NULL,
+    last_ts TIMESTAMPTZ NOT NULL,
+    capture_ts TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (session_id, track_id)
+);
+```
+
+**Lógica UPSERT:**
+- Si `(session_id, track_id)` no existe → INSERT
+- Si existe → UPDATE solo si `nueva conf > conf actual`
+- Siempre actualiza `last_ts`
+- Preserva `first_ts` original
+
+---
+
+## 🔌 API REST
+
+### POST /sessions
+Crea o reabre una sesión.
+
+**Request:**
+```json
+{
+  "sessionId": "sess_abc",
+  "deviceId": "cam-local",
+  "path": "cam-local",
+  "startTs": "2025-01-12T10:00:00Z"
 }
+```
 
-export interface DetectionInsertInput {
-  sessionId: string;
-  eventId: string;
-  ts: string;
-  detections: any;
+**Response:**
+```json
+{
+  "record": { "session_id": "sess_abc", "status": "open", ... },
+  "created": true
 }
 ```
 
-**Nuevas funciones:**
-```typescript
-async insertDetection(input: DetectionInsertInput): Promise<DetectionRecord>
-async getDetectionsBySession(sessionId: string): Promise<DetectionRecord[]>
-async getDetectionsByTimeRange(from: Date, to: Date, limit = 1000): Promise<DetectionRecord[]>
+### PUT /sessions/:sessionId/close
+Cierra una sesión.
+
+**Request:**
+```json
+{
+  "endTs": "2025-01-12T10:05:00Z",
+  "postrollSec": 5
+}
 ```
 
-### 3. REST API - Endpoints de Detecciones
+### GET /sessions
+Lista sesiones recientes.
 
-**Archivo**: `/services/session-store/src/routes/detections.ts` ✨ **NUEVO**
+### GET /sessions/:sessionId/clip
+Genera URL de playback.
 
-#### POST /detections
+**Response:**
+```json
+{
+  "sessionId": "sess_abc",
+  "playbackUrl": "/api/playback?path=cam-local&start=..."
+}
+```
+
+---
+
+### POST /detections
 Recibe batch de detecciones del edge-agent.
 
 **Request:**
 ```json
 {
-  "batchId": "batch_123",
   "sessionId": "sess_abc",
-  "sourceTs": "2025-10-03T12:00:00Z",
-  "items": [
+  "ts": "2025-01-12T10:00:00Z",
+  "detections": [
     {
-      "eventId": "evt_1",
-      "ts": "2025-10-03T12:00:01Z",
-      "detections": { "person": 0.95, "car": 0.87 }
+      "trackId": "trk_1",
+      "cls": "person",
+      "conf": 0.95,
+      "bbox": { "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 }
     }
   ]
 }
@@ -91,274 +138,100 @@ Recibe batch de detecciones del edge-agent.
 **Response:**
 ```json
 {
-  "batchId": "batch_123",
-  "sessionId": "sess_abc",
   "inserted": 5,
-  "skipped": 2,
   "total": 7
 }
 ```
 
-**Características:**
-- ✅ Batch insert para eficiencia
-- ✅ Idempotencia por event_id
-- ✅ Conteo de inserted/skipped
-- ✅ Manejo individual de errores
-
-#### GET /detections/session/:sessionId
-Obtiene todas las detecciones de una sesión.
+### GET /detections/session/:sessionId
+Obtiene detecciones de una sesión.
 
 **Response:**
 ```json
 {
   "sessionId": "sess_abc",
   "count": 42,
-  "detections": [...]
+  "detections": [
+    {
+      "session_id": "sess_abc",
+      "track_id": "trk_1",
+      "cls": "person",
+      "conf": 0.95,
+      "bbox": { "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 },
+      "first_ts": "2025-01-12T10:00:00Z",
+      "last_ts": "2025-01-12T10:00:05Z",
+      ...
+    }
+  ]
 }
 ```
 
-#### GET /detections/range?from=...&to=...&limit=...
-Filtra detecciones por rango temporal.
+---
+
+## 📸 Ingesta de Frames
+
+### POST /ingest
+Ingesta multipart con frames JPEG.
+
+**Content-Type:** `multipart/form-data`
+
+**Body Parts:**
+- `sessionId`: ID de sesión (string)
+- `ts`: Timestamp captura (ISO string)
+- `detections`: JSON array de detecciones
+- `frames`: Array de archivos JPEG (cada uno nombrado como `trackId.jpg`)
+
+**Lógica:**
+1. Recibe batch de frames + metadata
+2. Guarda JPEGs en `/data/frames/{sessionId}/{trackId}.jpg`
+3. Actualiza `url_frame` en tabla detections
+4. Hace UPSERT de cada detección
 
 **Response:**
 ```json
 {
-  "from": "2025-10-03T00:00:00Z",
-  "to": "2025-10-03T23:59:59Z",
-  "count": 150,
-  "detections": [...]
+  "sessionId": "sess_abc",
+  "inserted": 5,
+  "framesStored": 3
 }
 ```
 
-### 4. Integración con App
+---
 
-**Archivo**: `/services/session-store/src/index.ts`
+## 🔗 Integración con Edge-Agent
+
+Edge-agent usa dos estrategias de ingesta:
+
+### 1. Metadata-only (POST /detections)
+Envío rápido de detecciones sin frames.
+
+### 2. Multipart con frames (POST /ingest)
+Envío batch con JPEGs asociados a tracks.
+
+**Archivo**: `services/edge-agent/src/modules/store/adapters/http/frame-ingester-http.ts`
 
 ```typescript
-import { detectionsRouter } from './routes/detections.js';
-app.use('/detections', detectionsRouter);
-```
+// Construye multipart con detections + frames
+const formData = new FormData();
+formData.append("sessionId", sessionId);
+formData.append("ts", ts);
+formData.append("detections", JSON.stringify(detections));
 
-### 5. Testing y Documentación
+for (const [trackId, jpegBuffer] of frames) {
+  formData.append("frames", new Blob([jpegBuffer]), `${trackId}.jpg`);
+}
 
-#### Script de Test Automático
-**Archivo**: `/scripts/test-integration.sh` ✨ **NUEVO**
-
-```bash
-./scripts/test-integration.sh
-```
-
-Verifica automáticamente:
-1. Health check
-2. Creación de sesión
-3. Batch insert de detecciones
-4. Consulta de detecciones
-5. Cierre de sesión
-6. Verificación de datos
-
-#### Documentación Actualizada
-- ✅ `/services/session-store/DETECTIONS_UPDATE.md` - Detalle completo de cambios
-- ✅ `/services/edge-agent/README.md` - Estado y referencias del edge-agent
-- ✅ `/scripts/README.md` - Guía de uso de scripts
-
----
-
-## 🔗 Integración Edge-Agent ↔️ Session-Store
-
-### Edge-Agent Envía
-
-```typescript
-// Edge Agent → Session Store (adaptador HTTP)
-// Módulo: services/edge-agent/src/modules/store/adapters/http/session-store-http.ts
-await fetch(`${baseUrl}/detections`, {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ sessionId, detections, ts: new Date().toISOString() })
-});
-```
-
-### Session-Store Recibe
-
-```typescript
-// Route: detections.ts
-router.post('/', async (req, res) => {
-  const { batchId, sessionId, sourceTs, items } = req.body;
-  // Inserta batch con idempotencia
-  for (const item of items) {
-    await db.insertDetection({ ... });
-  }
-  res.status(201).json({ inserted, skipped, total });
-});
-```
-
-### ✅ Compatibilidad 100%
-
-| Edge-Agent | Session-Store | Estado |
-|------------|---------------|--------|
-| POST /sessions/open | ✅ | Compatible |
-| POST /sessions/close | ✅ | Compatible |
-| POST /detections | ✅ | Compatible |
-| Formato de datos | ✅ | Compatible |
-| Timestamps ISO | ✅ | Compatible |
-
----
-
-## 🚀 Cómo Usar
-
-### 1. Borrar DB Anterior y Levantar Servicios
-
-```bash
-# Borrar volúmenes antiguos
-docker-compose down -v
-
-# Compilar y levantar servicios
-./scripts/setup-and-up.sh
-```
-
-### 2. Probar Session-Store (Opcional)
-
-```bash
-./scripts/test-integration.sh
-```
-
-### 3. Iniciar Edge-Agent
-
-```bash
-# Con Docker Compose
-./scripts/run-edge-docker.sh up --fg
-
-# O localmente
-./scripts/run-edge-local.sh
-```
-
-### 4. Verificar Funcionamiento
-
-```bash
-# Ver sesiones activas
-curl http://localhost:8080/sessions | jq
-
-# Ver detecciones de una sesión
-SESSION_ID=$(curl -s http://localhost:8080/sessions | jq -r '.sessions[0].session_id')
-curl http://localhost:8080/detections/session/$SESSION_ID | jq
-
-# Ver detecciones por rango de tiempo
-curl "http://localhost:8080/detections/range?from=2025-10-03T00:00:00Z&to=2025-10-03T23:59:59Z" | jq
+await fetch(`${baseUrl}/ingest`, { method: "POST", body: formData });
 ```
 
 ---
 
-## 🎯 Funcionalidades Clave
+## ✅ Features Implementadas
 
-### ✅ Batch Insert Optimizado
-- Múltiples detecciones en un solo HTTP request
-- Reduce latencia y overhead de red
-- Ideal para edge-agent que acumula detecciones
-
-### ✅ Idempotencia Garantizada
-- `ON CONFLICT (event_id) DO NOTHING`
-- Safe para reintentos automáticos
-- No genera duplicados
-
-### ✅ Queries Eficientes
-- Índice en `session_id` → lookup O(log n)
-- Índice en `ts` → range queries rápidas
-- Índice en `event_id` → idempotencia O(1)
-
-### ✅ Schema Flexible
-- JSONB permite evolución de estructura
-- No requiere cambios de schema para nuevos campos
-- Queries JSON con PostgreSQL
-
-### ✅ Relaciones Consistentes
-- Foreign key con CASCADE delete
-- Si se borra sesión → se borran detecciones
-- Integridad referencial garantizada
-
----
-
-## 📊 Arquitectura Completa
-
-```
-┌─────────────┐
-│ Edge-Agent  │
-│   (v2.0)    │
-│             │
-│ - FSM       │
-│ - GStreamer │
-│ - AI Module │
-│ - SessionIO │◄─┐
-└─────────────┘  │
-                 │ HTTP
-                 │
-        ┌────────▼────────┐
-        │ Session-Store   │
-        │                 │
-        │ Endpoints:      │
-        │ /sessions/open  │
-        │ /sessions/close │
-        │ /detections  ✨ │
-        └────────┬────────┘
-                 │
-        ┌────────▼────────┐
-        │   PostgreSQL    │
-        │                 │
-        │ - sessions      │
-        │ - detections ✨ │
-        └─────────────────┘
-```
-
----
-
-## 📝 Checklist Final
-
-### Implementación
-- [x] Tabla detections creada
-- [x] Índices optimizados
-- [x] Foreign keys con CASCADE
-- [x] Interfaces TypeScript
-- [x] DB functions (insert, get)
-- [x] POST /detections endpoint
-- [x] GET /detections/session/:id endpoint
-- [x] GET /detections/range endpoint
-- [x] Ruta registrada en app
-- [x] Validación de inputs
-- [x] Manejo de errores
-- [x] Idempotencia por event_id
-
-### Testing
-- [x] Compilación TypeScript OK
-- [x] Script de test creado
-- [x] Documentación completa
-- [x] Guía de troubleshooting
-
-### Integración
-- [x] Compatible con edge-agent
-- [x] Formato de datos validado
-- [x] Batch insert implementado
-- [x] Queries por sesión
-- [x] Queries por tiempo
-
----
-
-## ✅ Sistema 100% Funcional
-
-El **session-store está completamente integrado** con el edge-agent v2.0:
-
-✅ **Sesiones**: Apertura, cierre, queries  
-✅ **Detecciones**: Batch insert, queries por sesión/tiempo  
-✅ **Performance**: Índices optimizados, batch processing  
-✅ **Confiabilidad**: Idempotencia, foreign keys, validación  
-✅ **Testing**: Script automático de integración  
-✅ **Documentación**: Completa y actualizada  
-
----
-
-## 🎉 Próximos Pasos
-
-1. **Ejecutar**: `docker-compose down -v`
-2. **Levantar**: `./scripts/setup-and-up.sh`
-3. **Probar**: `./scripts/test-integration.sh`
-4. **Iniciar Edge**: `./scripts/run-edge-docker.sh up --fg`
-5. **Verificar**: Ver logs y queries de detecciones
-
-**¡Todo listo para producción!** 🚀
+- ✅ PK compuesta `(session_id, track_id)` para tracking único
+- ✅ UPSERT inteligente manteniendo máxima confianza
+- ✅ Timestamps `first_ts` / `last_ts` para tracking temporal
+- ✅ Ingesta multipart de frames JPEG
+- ✅ URLs relativas para frames (`/frames/{sessionId}/{trackId}.jpg`)
+- ✅ Cascade delete de detecciones al borrar sesión
+- ✅ Índices optimizados para queries por sesión/tiempo/clase

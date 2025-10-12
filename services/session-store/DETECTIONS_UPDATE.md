@@ -193,30 +193,32 @@ app.use('/detections', detectionsRouter);
 - Índices en session_id, last_ts y cls
 - Soporte para filtrado por sesión o rango temporal
 - Límite configurable en queries temporales
-- Índice en session_id para lookup rápido
-- Índice en ts para queries por tiempo
-- Índice en event_id para idempotencia
 
 ### ✅ Integración Completa con Edge-Agent
 
-El edge-agent envía (sessionio.ts):
+El edge-agent envía detecciones con trackId:
 ```typescript
-await axios.post(`${this.baseUrl}/detections`, {
-  batchId: batch.batchId,
-  sessionId: batch.sessionId,
-  sourceTs: batch.sourceTs,
-  items: batch.items
+await fetch(`${this.baseUrl}/detections`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    sessionId: sessionId,
+    ts: new Date().toISOString(),
+    detections: [
+      { trackId: "trk_1", cls: "person", conf: 0.95, bbox: {...} }
+    ]
+  })
 });
 ```
 
-El session-store recibe y procesa ✅
+El session-store hace UPSERT por (session_id, track_id) ✅
 
 ## 🧪 Testing
 
 ### 1. Borrar DB y levantar servicios
 ```bash
 docker-compose down -v
-./scripts/setup-and-up.sh
+docker-compose up -d
 ```
 
 ### 2. Iniciar edge-agent

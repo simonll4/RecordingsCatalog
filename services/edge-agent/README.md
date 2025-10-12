@@ -197,17 +197,16 @@ ffplay rtsp://localhost:8554/cam-local
 Uso con cámara física (Docker): montar `/dev/video*` y otorgar grupo `video` (ver `docker-compose.yml`, sección `edge-agent`).
 
 ## Operación
-- Logging: nivel configurable `LOG_LEVEL`. Filtra warnings ruidosos de GStreamer conocidos.
+- Logging: nivel configurable en `config.toml` → `[logging].level` (debug|info|warn|error). Filtra warnings ruidosos de GStreamer conocidos.
 - Métricas: contadores en memoria (Prometheus‑style) accesibles desde código (`src/shared/metrics.ts`).
 - Backpressure: el Bus limita 1024 eventos en vuelo por tópico (drop controlado + métricas).
 
 ## Solución de Problemas
-- Caps negotiation failed (V4L2): se auto‑intenta fallback RAW; si persiste, ajustar `SOURCE_WIDTH/HEIGHT` o plugins de GStreamer.
-- SHM insuficiente: incrementar `SOURCE_SHM_SIZE_MB` (cálculo arriba).
-- RTSP no disponible: verificar MediaMTX en `:8554` y `MEDIAMTX_*`.
+- Caps negotiation failed (V4L2): se auto‑intenta fallback RAW; si persiste, ajustar `width/height` en config.toml o plugins de GStreamer.
+- SHM insuficiente: incrementar `shm_size_mb` en config.toml (cálculo arriba).
+- RTSP no disponible: verificar MediaMTX en `:8554` y sección `[mediamtx]` en config.toml.
 - Permisos de cámara: asegurar acceso a `/dev/video0` y grupo `video` en Docker.
 - Falta de plugins: instalar `gstreamer1.0-plugins-{base,good,bad,ugly}` y `libav` según distro.
-
 ## Extensión
 
 ### Nuevos eventos

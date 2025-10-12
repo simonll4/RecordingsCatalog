@@ -67,8 +67,10 @@ group_add:
 ## ✅ Solución 2: Ejecutar Localmente (Recomendado para Desarrollo)
 
 ```bash
-# Opción más confiable - ejecutar fuera de Docker
-./scripts/run-edge-local.sh --camera-device=/dev/video0
+# Ejecutar edge-agent localmente (fuera de Docker)
+cd services/edge-agent
+npm install
+npm run dev
 ```
 
 **Ventajas:**
@@ -76,6 +78,8 @@ group_add:
 - ✅ Sin problemas de permisos de Docker
 - ✅ Debugging más fácil
 - ✅ Recarga rápida de código
+
+**Configuración**: Editar `services/edge-agent/config.toml` para ajustar parámetros de cámara.
 
 ---
 
@@ -136,7 +140,7 @@ docker compose --profile edge up edge-agent --build -d
 4. **Docker Desktop:**
    Si usas Docker Desktop, puede tener limitaciones. Opciones:
    - Usar Docker Engine nativo
-   - Ejecutar localmente con `./scripts/run-edge-local.sh`
+   - Ejecutar localmente: `cd services/edge-agent && npm run dev`
 
 ### Error: "Device or resource busy"
 
@@ -176,8 +180,8 @@ groups | grep video
 
 | Solución | Pros | Contras | Recomendado |
 |----------|------|---------|-------------|
-| **Local** (`run-edge-local.sh`) | ✅ Sin problemas de permisos<br>✅ Acceso directo a hardware<br>✅ Debug fácil | ❌ Requiere deps instaladas<br>❌ No containerizado | **✅ Desarrollo** |
-| **Docker + camera.yml** | ✅ Containerizado<br>✅ Reproducible | ❌ Problemas con Docker Desktop<br>❌ Requiere permisos | **✅ Producción** |
+| **Local** (`npm run dev`) | ✅ Sin problemas de permisos<br>✅ Acceso directo a hardware<br>✅ Debug fácil | ❌ Requiere deps instaladas<br>❌ No containerizado | **✅ Desarrollo** |
+| **Docker + devices** | ✅ Containerizado<br>✅ Reproducible | ❌ Problemas con Docker Desktop<br>❌ Requiere permisos | **✅ Producción** |
 | **videotestsrc** | ✅ Sin hardware necesario<br>✅ Funciona siempre | ❌ No es video real<br>❌ Requiere modificar código | **✅ Testing/CI** |
 
 ---
@@ -187,10 +191,12 @@ groups | grep video
 ### Desarrollo Local
 ```bash
 # Opción 1: Ejecutar localmente (más confiable)
-./scripts/run-edge-local.sh
+cd services/edge-agent
+npm install
+npm run dev
 
-# Opción 2: Docker con camera override
-docker compose -f docker-compose.yml -f docker-compose.camera.yml --profile edge up edge-agent -d
+# Opción 2: Docker con devices habilitados
+docker compose --profile edge up edge-agent -d
 ```
 
 ### Testing/CI (sin cámara)
@@ -249,16 +255,16 @@ curl http://localhost:8080/sessions | jq
 - Cámara: HP TrueVision HD Camera
 
 **Docker:**
-- Compose files: `docker-compose.yml`, `docker-compose.camera.yml`
+- Compose file: `docker-compose.yml` (devices ya mapeados por defecto)
 - Edge-agent profile: `edge`
 
 **Comandos rápidos:**
 ```bash
-# Con cámara
-docker compose -f docker-compose.yml -f docker-compose.camera.yml --profile edge up -d
+# Con cámara (Docker)
+docker compose --profile edge up -d
 
 # Sin cámara (local)
-./scripts/run-edge-local.sh
+cd services/edge-agent && npm run dev
 
 # Ver logs
 docker compose logs edge-agent -f

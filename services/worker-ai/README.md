@@ -224,42 +224,41 @@ aiClient.onResult((result) => {
 
 No cambia. Sigue escuchando `ai.detection` y `ai.keepalive`.
 
-## Variables de Entorno
+## Configuración TOML
 
 ### Edge Agent
 
-```bash
-# Worker AI
-AI_WORKER_HOST=worker-ai
-AI_WORKER_PORT=7001
+**Archivo**: `services/edge-agent/config.toml`
 
-# Modelo
-AI_MODEL_NAME=/models/yolov8n.onnx
-AI_WIDTH=640
-AI_HEIGHT=480
-AI_UMBRAL=0.35
-AI_CLASSES_FILTER=person,car
-
-# FPS dual-rate
-AI_FPS_IDLE=5
-AI_FPS_ACTIVE=12
+```toml
+[ai]
+worker_host = "worker-ai"
+worker_port = 7001
+model_name = "/models/yolov8n.onnx"
+width = 640
+height = 480
+umbral = 0.35
+classes_filter = "person,car"
+fps_idle = 5
+fps_active = 12
 ```
 
 ### Worker AI
 
-```bash
-# Servidor
-BIND_HOST=0.0.0.0
-BIND_PORT=7001
+**Archivo**: `services/worker-ai/config.toml`
 
-# Inactividad
-IDLE_TIMEOUT_SEC=60
+```toml
+[server]
+bind_host = "0.0.0.0"
+bind_port = 7001
+idle_timeout_sec = 60
 
-# Bootstrap (opcional, pre-carga modelo)
-BOOTSTRAP_MODEL_PATH=/models/yolov8n.onnx
-BOOTSTRAP_WIDTH=640
-BOOTSTRAP_HEIGHT=480
-BOOTSTRAP_CONF=0.35
+[bootstrap]
+enabled = false  # true para pre-cargar modelo al arranque
+model_path = "/models/yolov8n.onnx"
+width = 640
+height = 480
+conf = 0.35
 ```
 
 ## Docker Compose
@@ -269,9 +268,7 @@ services:
   worker-ai:
     build: ./services/worker-ai
     environment:
-      - BIND_HOST=0.0.0.0
-      - BIND_PORT=7001
-      - IDLE_TIMEOUT_SEC=60
+      - TZ=UTC
     volumes:
       - ./data/models:/models:ro
     healthcheck:
@@ -286,10 +283,10 @@ services:
       worker-ai:
         condition: service_healthy
     environment:
-      - AI_WORKER_HOST=worker-ai
-      - AI_WORKER_PORT=7001
-      - AI_MODEL_NAME=/models/yolov8n.onnx
+      - TZ=UTC
 ```
+
+**Nota**: La configuración se maneja vía `config.toml` en cada servicio, **no mediante variables de entorno**.
 
 ## Métricas
 
@@ -393,8 +390,8 @@ nc -zv worker-ai 7001
 # Ver logs del agent
 docker-compose logs edge-agent
 
-# Verificar variables
-docker-compose exec edge-agent env | grep AI_WORKER
+# Verificar configuración
+docker-compose exec edge-agent cat config.toml
 
 # Probar conexión desde container
 docker-compose exec edge-agent nc -zv worker-ai 7001

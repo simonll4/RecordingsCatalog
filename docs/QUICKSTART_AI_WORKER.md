@@ -202,9 +202,11 @@ print('Model OK!')
 
 ### Cambiar modelo
 
-```yaml
-# En docker-compose.yml
-AI_MODEL_NAME: /models/yolov8s.onnx  # Modelo más grande (mejor precisión)
+Editar `services/edge-agent/config.toml`:
+
+```toml
+[ai]
+model_name = "/models/yolov8s.onnx"  # Modelo más grande (mejor precisión)
 ```
 
 Descarga:
@@ -215,24 +217,29 @@ wget https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8s.onnx
 
 ### Ajustar resolución
 
-```yaml
-# En docker-compose.yml
-AI_WIDTH: 320      # Más rápido, menos preciso
-AI_HEIGHT: 240
+Editar `services/edge-agent/config.toml`:
+
+```toml
+[ai]
+width = 320      # Más rápido, menos preciso
+height = 240
 
 # O
-AI_WIDTH: 1280     # Más lento, más preciso
-AI_HEIGHT: 720
+width = 1280     # Más lento, más preciso
+height = 720
 ```
 
 ### Bootstrap (pre-carga modelo)
 
-```yaml
-# En docker-compose.yml, agregar al worker-ai:
-BOOTSTRAP_MODEL_PATH: /models/yolov8n.onnx
-BOOTSTRAP_WIDTH: 640
-BOOTSTRAP_HEIGHT: 480
-BOOTSTRAP_CONF: 0.35
+Editar `services/worker-ai/config.toml`:
+
+```toml
+[bootstrap]
+enabled = true
+model_path = "/models/yolov8n.onnx"
+width = 640
+height = 480
+conf = 0.35
 ```
 
 El worker cargará el modelo al arrancar (arranque más lento, pero primera inferencia más rápida).

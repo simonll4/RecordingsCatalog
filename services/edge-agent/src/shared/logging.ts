@@ -20,7 +20,7 @@
  *
  * Runtime Configuration
  *   - setLevel() to filter by minimum level
- *   - LOG_LEVEL env var for initial level
+ *   - CONFIG.logLevel from config.toml for initial level
  *   - Can change level during runtime
  *
  * Singleton Pattern
@@ -67,7 +67,7 @@
  *   - Searchable by any field
  *
  * Filterable
- *   - Change level at runtime (e.g., LOG_LEVEL=debug)
+ *   - Change level at runtime via setLevel()
  *   - Reduce noise in production
  *   - Enable debug for troubleshooting
  */
@@ -234,7 +234,7 @@ class Logger {
    * Log at DEBUG Level
    *
    * Used for internal details (e.g., each frame processed).
-   * Only visible with LOG_LEVEL=debug.
+   * Only visible when [logging].level=debug in config.toml.
    *
    * Example:
    *   logger.debug("Frame submitted to AI", { frameId: "abc123", fps: 12 });
@@ -288,7 +288,7 @@ class Logger {
    * Log at ERROR Level
    *
    * Used for critical errors (e.g., module crash, unrecoverable failure).
-   * Always printed (unless LOG_LEVEL hypothetically set above error).
+   * Always printed.
    *
    * Example:
    *   logger.error("Failed to start camera", { error: err.message, device: "/dev/video0" });

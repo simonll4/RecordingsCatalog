@@ -40,13 +40,39 @@ RTSP/V4L2 ──► CameraHubGst ── I420@WxH (SHM) ─►┐
 - Backpressure: créditos iniciales + `WindowUpdate` del Worker; no existe `Ready`.
 - Heartbeat: bidireccional cada ~2s; reconexión con backoff.
 
-## Variables de entorno relevantes
+## Configuración TOML Relevante
 
-- `AI_WORKER_HOST` / `AI_WORKER_PORT` – conexión al Worker
-- `AI_MODEL_NAME`, `AI_UMBRAL`, `AI_WIDTH`, `AI_HEIGHT`
-- `AI_FPS_IDLE` / `AI_FPS_ACTIVE` – dual‑rate controlado por Orchestrator
-- `SOURCE_*` – cámara/RTSP y SHM del hub
-- `STORE_*` – batch/flush hacia Session Store
+**Edge-Agent** (`services/edge-agent/config.toml`):
+```toml
+[ai]
+worker_host = "worker-ai"
+worker_port = 7001
+model_name = "models/yolov8n.onnx"
+umbral = 0.4
+width = 640
+height = 640
+fps_idle = 5
+fps_active = 12
+
+[video]
+source_kind = "v4l2"  # o "rtsp"
+source_uri = "/dev/video0"
+width = 640
+height = 480
+socket_path = "/dev/shm/cam_raw.sock"
+
+[store]
+base_url = "http://session-store:8080"
+batch_max = 50
+flush_interval_ms = 250
+```
+
+**Worker-AI** (`services/worker-ai/config.toml`):
+```toml
+[server]
+bind_host = "0.0.0.0"
+bind_port = 7001
+```
 
 ## Métricas clave
 
