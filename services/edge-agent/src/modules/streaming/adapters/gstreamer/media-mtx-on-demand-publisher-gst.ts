@@ -104,6 +104,8 @@ type PublisherState = "idle" | "starting" | "running" | "stopping";
 export class MediaMtxOnDemandPublisherGst implements Publisher {
   private proc?: ChildProcess;
   private state: PublisherState = "idle";
+  private shouldBeRunning: boolean = false; // Track if publisher should be active
+  private restartAttempt: number = 0;
 
   async start(): Promise<void> {
     if (this.state !== "idle") {
@@ -114,6 +116,12 @@ export class MediaMtxOnDemandPublisherGst implements Publisher {
       return;
     }
 
+    this.shouldBeRunning = true; // Mark that publisher should be running
+    this.restartAttempt = 0; // Reset restart counter on explicit start
+    await this.doStart();
+  }
+
+  private async doStart(): Promise<void> {
     this.state = "starting";
 
     const encoder = await detectEncoder();
@@ -130,6 +138,7 @@ export class MediaMtxOnDemandPublisherGst implements Publisher {
     logger.info("Starting publisher", {
       module: "media-mtx-on-demand-publisher-gst",
       encoder: encoder.element,
+      attempt: this.restartAttempt,
     });
 
     this.proc = spawnProcess({
@@ -138,10 +147,41 @@ export class MediaMtxOnDemandPublisherGst implements Publisher {
       args,
       env: { GST_DEBUG: "2", GST_DEBUG_NO_COLOR: "1" },
       silentStdout: true, // No loguear stdout (video stream)
-      onExit: () => {
+      onExit: (code, signal) => {
         this.proc = undefined;
-        if (this.state !== "stopping") {
-          this.state = "idle"; // Crash inesperado
+        
+        if (this.state === "stopping") {
+          // Expected shutdown
+          this.state = "idle";
+          return;
+        }
+
+        // Unexpected crash
+        logger.warn("Publisher crashed unexpectedly", {
+          module: "media-mtx-on-demand-publisher-gst",
+          code,
+          signal,
+          shouldBeRunning: this.shouldBeRunning,
+        });
+
+        this.state = "idle";
+
+        // Auto-restart if publisher should be running
+        if (this.shouldBeRunning) {
+          this.restartAttempt++;
+          const delay = Math.min(Math.pow(2, this.restartAttempt) * 500, 5000); // Max 5s delay
+          
+          logger.info("Auto-restarting publisher", {
+            module: "media-mtx-on-demand-publisher-gst",
+            delay,
+            attempt: this.restartAttempt,
+          });
+
+          setTimeout(() => {
+            if (this.shouldBeRunning && this.state === "idle") {
+              void this.doStart();
+            }
+          }, delay);
         }
       },
     });
@@ -150,7 +190,10 @@ export class MediaMtxOnDemandPublisherGst implements Publisher {
     metrics.inc("publisher_starts_total");
   }
 
-  async stop(graceMs: number = 1500): Promise<void> {
+  async stop(graceMs: number = 2000): Promise<void> {
+    // Mark that publisher should NOT be running (prevents auto-restart)
+    this.shouldBeRunning = false;
+
     if (this.state === "idle") {
       logger.debug("Publisher already idle", {
         module: "media-mtx-on-demand-publisher-gst",
@@ -182,6 +225,7 @@ export class MediaMtxOnDemandPublisherGst implements Publisher {
     killProcess(proc, "SIGINT");
 
     // Wait for graceful shutdown, then force kill if needed
+    // Increased grace period to 2000ms to allow SHM buffer to flush properly
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => {
         logger.warn("Publisher didn't stop gracefully, forcing kill", {

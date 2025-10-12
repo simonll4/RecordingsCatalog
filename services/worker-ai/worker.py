@@ -52,7 +52,7 @@ else:
 # Bootstrap (opcional)
 BOOTSTRAP_MODEL_PATH = os.getenv("BOOTSTRAP_MODEL_PATH")
 BOOTSTRAP_WIDTH = int(os.getenv("BOOTSTRAP_WIDTH", "640")) if os.getenv("BOOTSTRAP_WIDTH") else None
-BOOTSTRAP_HEIGHT = int(os.getenv("BOOTSTRAP_HEIGHT", "480")) if os.getenv("BOOTSTRAP_HEIGHT") else None
+BOOTSTRAP_HEIGHT = int(os.getenv("BOOTSTRAP_HEIGHT", "640")) if os.getenv("BOOTSTRAP_HEIGHT") else None
 BOOTSTRAP_CONF = float(os.getenv("BOOTSTRAP_CONF", "0.35")) if os.getenv("BOOTSTRAP_CONF") else None
 
 # Logging

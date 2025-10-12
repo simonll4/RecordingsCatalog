@@ -32,6 +32,7 @@
  * Auto-Recovery
  *   - Detects pipeline crashes
  *   - Restarts with exponential backoff
+ *   - Waits for Camera Hub socket availability
  *   - Gives up after max consecutive failures
  *
  * Architecture:
@@ -125,6 +126,7 @@
 
 import { ChildProcess } from "child_process";
 import { spawn } from "child_process";
+import { existsSync } from "fs";
 import { CONFIG } from "../../../../config/index.js";
 import { logger } from "../../../../shared/logging.js";
 import { buildNV12Capture } from "../../../../media/gstreamer.js";
@@ -468,8 +470,13 @@ export class NV12CaptureGst {
    * 3. If max failures reached → log error, give up
    * 4. Otherwise:
    *    - Calculate exponential backoff delay (250ms, 500ms, 750ms, ...)
-   *    - Wait delay
+   *    - Wait for Camera Hub socket to be available
    *    - Restart pipeline if still needed
+   *
+   * Socket Availability Check:
+   *   - Waits up to 10 seconds for socket to appear
+   *   - Checks every 500ms
+   *   - If Camera Hub is restarting, waits for it to be ready
    *
    * Backoff Formula:
    *   delay = min(250 × consecutiveFailures, 2000)
@@ -481,7 +488,7 @@ export class NV12CaptureGst {
    * @param code - Exit code (null if killed by signal)
    * @param signal - Signal that killed process (null if exited normally)
    */
-  private handleExit(code: number | null, signal: string | null) {
+  private async handleExit(code: number | null, signal: string | null) {
     if (this.stoppedManually) return;
 
     this.proc = undefined;
@@ -503,10 +510,38 @@ export class NV12CaptureGst {
       attempt: this.consecutiveFailures,
     });
 
-    setTimeout(() => {
-      if (!this.proc && !this.stoppedManually && this.onFrame) {
+    // Wait for initial backoff delay
+    await new Promise((res) => setTimeout(res, delay));
+
+    // Wait for Camera Hub socket to be available (up to 10 seconds)
+    const socketPath = CONFIG.source.socketPath;
+    const maxWaitMs = 10000;
+    const checkIntervalMs = 500;
+    const startTime = Date.now();
+
+    while (!this.stoppedManually && !this.proc && this.onFrame) {
+      if (existsSync(socketPath)) {
+        // Socket exists, restart pipeline
+        logger.info("Camera Hub socket available, restarting NV12 capture", {
+          module: "nv12-capture-gst",
+          socketPath,
+        });
         void this.launch(this.getFps());
+        return;
       }
-    }, delay);
+
+      const elapsed = Date.now() - startTime;
+      if (elapsed >= maxWaitMs) {
+        logger.error("Camera Hub socket not available after timeout, giving up", {
+          module: "nv12-capture-gst",
+          socketPath,
+          timeoutMs: maxWaitMs,
+        });
+        return;
+      }
+
+      // Wait before next check
+      await new Promise((res) => setTimeout(res, checkIntervalMs));
+    }
   }
 }

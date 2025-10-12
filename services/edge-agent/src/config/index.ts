@@ -174,24 +174,24 @@ export const CONFIG: AppConfig = {
   logLevel: getEnv("LOG_LEVEL", "info") as "debug" | "info" | "warn" | "error",
 
   source: {
-    kind: getEnv("SOURCE_KIND", "v4l2") as "rtsp" | "v4l2",
+    kind: getEnv("SOURCE_KIND", "v4l2") as "v4l2" | "rtsp",
     uri: getEnv("SOURCE_URI", "/dev/video0"),
     width: getEnvNum("SOURCE_WIDTH", 640),
     height: getEnvNum("SOURCE_HEIGHT", 480),
-    fpsHub: getEnvNum("SOURCE_FPS_HUB", 8),
+    fpsHub: getEnvNum("SOURCE_FPS_HUB", 15),
     socketPath: getEnv("SOURCE_SOCKET_PATH", "/dev/shm/cam_raw.sock"),
-    shmSizeMB: getEnvNum("SOURCE_SHM_SIZE_MB", 12),
+    shmSizeMB: getEnvNum("SOURCE_SHM_SIZE_MB", 50), // Increased from 12 to 50 MB to prevent SHM buffer overflow
   },
 
   ai: {
-    modelName: getEnv("AI_MODEL_NAME", "yolov8n.onnx"),
-    umbral: getEnvNum("AI_UMBRAL", 0.5),
+    modelName: getEnv("AI_MODEL_NAME", "models/yolov8n.onnx"),
+    umbral: getEnvNum("AI_UMBRAL", 0.4),
     width: getEnvNum("AI_WIDTH", 640),
-    height: getEnvNum("AI_HEIGHT", 480),
+    height: getEnvNum("AI_HEIGHT", 640),
     classesFilter: getEnvArray("AI_CLASSES_FILTER", ["person"]),
     fps: {
       idle: getEnvNum("AI_FPS_IDLE", 5),
-      active: getEnvNum("AI_FPS_ACTIVE", 8),
+      active: getEnvNum("AI_FPS_ACTIVE", 12),
     },
     worker: {
       host: getEnv("AI_WORKER_HOST", "worker-ai"),

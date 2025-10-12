@@ -130,19 +130,19 @@ DEVICE_ID=cam-local
 # ============================================================================
 SOURCE_KIND=v4l2            # v4l2 | rtsp
 SOURCE_URI=/dev/video0      # /dev/videoN | rtsp://ip:port/path
-SOURCE_WIDTH=1280           # Debe ser par (I420)
-SOURCE_HEIGHT=720           # Debe ser par (I420)
+SOURCE_WIDTH=640            # Debe ser par (I420)
+SOURCE_HEIGHT=480           # Debe ser par (I420)
 SOURCE_FPS_HUB=15
 SOURCE_SOCKET_PATH=/dev/shm/cam_raw.sock
-SOURCE_SHM_SIZE_MB=128
+SOURCE_SHM_SIZE_MB=50
 
 # ============================================================================
 # AI WORKER
 # ============================================================================
 AI_WORKER_HOST=localhost    # worker-ai para Docker
 AI_WORKER_PORT=7001
-AI_MODEL_NAME=yolov8n.onnx
-AI_UMBRAL=0.8               # 0.0 - 1.0
+AI_MODEL_NAME=models/yolov8n.onnx
+AI_UMBRAL=0.4               # 0.0 - 1.0
 AI_WIDTH=640
 AI_HEIGHT=640
 AI_CLASSES_FILTER=person    # Clases COCO, separadas por comas
