@@ -30,6 +30,12 @@ export interface AIEngine {
   setSessionId(sessionId: string): void;
 
   /**
+   * Notifica que la sesión actual finalizó.
+   * Debe limpiar el estado interno y enviar End al worker remoto.
+   */
+  closeSession(sessionId: string): Promise<void>;
+
+  /**
    * Envía un frame RGB al worker para inferencia.
    * Respeta backpressure: si el cliente indica que no hay crédito,
    * no envía el frame (latest-wins se maneja en el cliente).

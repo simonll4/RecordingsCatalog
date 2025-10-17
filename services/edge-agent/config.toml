@@ -45,15 +45,18 @@ postroll_ms = 5000
 
 # Configuración del modelo de IA (YOLO)
 [ai]
-# Ruta al modelo ONNX dentro del contenedor
-model_name = "/models/yolov8n.onnx"
+# Ruta al modelo ONNX
+# DESARROLLO LOCAL: path absoluto en el host donde corre el worker
+model_name = "/home/simonll4/Desktop/New Folder/tpfinal-v3/data/models/yolo11n.onnx"
+# PRODUCCIÓN (Docker): descomentar la siguiente línea
+# model_name = "/models/yolo11n.onnx"
 # Umbral de confianza para las detecciones
 umbral = 0.4
 # Resolución de entrada del modelo
 width = 640
 height = 640
 # Clases disponibles (separadas por comas)
-class_names = "person,helmet,vest,vehicle"
+class_names = "person"
 # Clases a detectar (filtro, separadas por comas)
 classes_filter = "person"
 # FPS de procesamiento en estado IDLE
@@ -61,8 +64,12 @@ fps_idle = 5
 # FPS de procesamiento en estado ACTIVE
 fps_active = 12
 # Configuración del worker de IA
-worker_host = "worker-ai"
+# ===== DESARROLLO LOCAL (worker-ai corriendo fuera de Docker) =====
+worker_host = "host.docker.internal"  # Usar host.docker.internal para worker-ai local
 worker_port = 7001
+# ===== PRODUCCIÓN (worker-ai en Docker Compose) =====
+# worker_host = "worker-ai"  # Descomentar para usar worker en Docker
+# worker_port = 7001
 
 # Configuración del Session Store (backend)
 [store]

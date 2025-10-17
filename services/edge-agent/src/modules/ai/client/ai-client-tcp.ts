@@ -217,20 +217,38 @@ export class AIClientTcp {
       this.reconnectTimer = undefined;
     }
     if (this.socket) {
-      if (this.streamId) {
-        const endMsg: pb.ai.IEnvelope = {
-          protocolVersion: 1,
-          streamId: this.streamId,
-          msgType: pb.ai.MsgType.MT_END,
-          req: { end: {} },
-        };
-        this.sendMessage(endMsg);
-      }
+      this.sendEnd();
       await new Promise((res) => setTimeout(res, 100));
       this.socket.destroy();
       this.socket = undefined;
     }
     logger.info("AI client shutdown", { module: "ai-client-tcp" });
+  }
+
+  sendEnd(): void {
+    if (!this.streamId) {
+      logger.warn("Cannot send End: streamId not set", {
+        module: "ai-client-tcp",
+      });
+      return;
+    }
+
+    const request = pb.ai.Request.create({
+      end: pb.ai.End.create({}),
+    });
+
+    const endMsg = pb.ai.Envelope.create({
+      protocolVersion: 1,
+      streamId: this.streamId,
+      msgType: pb.ai.MsgType.MT_END,
+      req: request,
+    });
+
+    this.sendMessage(endMsg);
+    logger.info("End message sent to worker", {
+      module: "ai-client-tcp",
+      streamId: this.streamId,
+    });
   }
 
   private sendMessage(envelope: pb.ai.IEnvelope): void {
@@ -244,7 +262,14 @@ export class AIClientTcp {
     // Allow sending in both CONNECTED and READY states
     // CONNECTED: Initial connection established
     // READY: After receiving InitOk from worker
-    if (this.state !== "CONNECTED" && this.state !== "READY") {
+    const isEndMessage = envelope.msgType === pb.ai.MsgType.MT_END;
+    const canSendInShutdown = this.state === "SHUTDOWN" && isEndMessage;
+
+    if (
+      this.state !== "CONNECTED" &&
+      this.state !== "READY" &&
+      !canSendInShutdown
+    ) {
       logger.warn("Cannot send message, invalid state", {
         module: "ai-client-tcp",
         state: this.state,

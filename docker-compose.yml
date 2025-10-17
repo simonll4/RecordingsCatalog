@@ -56,22 +56,23 @@ services:
       postgres:
         condition: service_healthy
 
-  worker-ai:
-    build:
-      context: ./services/worker-ai
-    container_name: tpfinalv3-worker-ai
-    restart: unless-stopped
-    environment:
-      TZ: UTC
-    volumes:
-      - ./data/models:/models:ro
-      - /etc/timezone:/etc/timezone:ro
-      - /etc/localtime:/etc/localtime:ro
-    healthcheck:
-      test: ["CMD", "python3", "healthcheck.py"]
-      interval: 10s
-      timeout: 2s
-      retries: 3
+  # worker-ai:
+  #   build:
+  #     context: ./services/worker-ai
+  #   container_name: tpfinalv3-worker-ai
+  #   restart: unless-stopped
+  #   environment:
+  #     TZ: UTC
+  #   volumes:
+  #     - ./services/worker-ai/data/tracks:/data/tracks  # Tracks persistidos
+  #     - ./data/models:/models:ro
+  #     - /etc/timezone:/etc/timezone:ro
+  #     - /etc/localtime:/etc/localtime:ro
+  #   healthcheck:
+  #     test: ["CMD", "python3", "healthcheck.py"]
+  #     interval: 10s
+  #     timeout: 2s
+  #     retries: 3
 
   edge-agent:
     build:
@@ -83,10 +84,12 @@ services:
         condition: service_started
       session-store:
         condition: service_started
-      worker-ai:
-        condition: service_healthy
+      #worker-ai:
+        #condition: service_healthy
     environment:
       TZ: UTC
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Permite conectar al worker-ai local
     volumes:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro

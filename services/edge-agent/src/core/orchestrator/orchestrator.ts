@@ -117,16 +117,16 @@ import { TimerManager } from "./timers.js";
 
 /**
  * Module Adapters - Dependency Injection Interface
- * 
+ *
  * The orchestrator controls these modules via abstract interfaces.
  * Concrete implementations are injected from main.ts.
  */
 type Adapters = {
-  camera: CameraHub;      // Video capture (V4L2/RTSP → SHM)
-  capture: any;           // NV12 capture with setMode(idle|active) method
-  ai: AIEngine;           // AI detection engine (session correlation)
-  publisher: Publisher;   // RTSP streaming (SHM → MediaMTX)
-  store: SessionStore;    // Session persistence API (create/close sessions)
+  camera: CameraHub; // Video capture (V4L2/RTSP → SHM)
+  capture: any; // NV12 capture with setMode(idle|active) method
+  ai: AIEngine; // AI detection engine (session correlation)
+  publisher: Publisher; // RTSP streaming (SHM → MediaMTX)
+  store: SessionStore; // Session persistence API (create/close sessions)
 };
 
 export class Orchestrator {
@@ -144,9 +144,9 @@ export class Orchestrator {
     this.bus = bus;
     this.adapters = adapters;
     this.timers = new TimerManager(bus, {
-      dwellMs: CONFIG.fsm.dwellMs,        // Confirmation window duration
-      silenceMs: CONFIG.fsm.silenceMs,    // Max silence before closing
-      postRollMs: CONFIG.fsm.postRollMs,  // Post-roll buffer duration
+      dwellMs: CONFIG.fsm.dwellMs, // Confirmation window duration
+      silenceMs: CONFIG.fsm.silenceMs, // Max silence before closing
+      postRollMs: CONFIG.fsm.postRollMs, // Post-roll buffer duration
     });
   }
 
@@ -348,6 +348,9 @@ export class Orchestrator {
       case "StopStream":
         // Stop RTSP publisher (releases socket resources)
         await this.adapters.publisher.stop();
+        if (cmd.sessionId) {
+          await this.adapters.ai.closeSession(cmd.sessionId);
+        }
         break;
 
       case "OpenSession":
@@ -370,6 +373,7 @@ export class Orchestrator {
       case "CloseSession":
         // Close session with end timestamp (finalizes in database)
         if (cmd.sessionId) {
+          await this.adapters.ai.closeSession(cmd.sessionId);
           await this.adapters.store.close(cmd.sessionId, cmd.at);
 
           // Publish session.close event to bus

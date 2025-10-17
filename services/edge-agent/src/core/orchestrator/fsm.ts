@@ -428,7 +428,7 @@ function handleClosingState(
   if (event.type === "fsm.t.postroll.ok") {
     // Post-roll complete → close session and return to IDLE
     return transition("CLOSING", "IDLE", { sessionId: undefined }, [
-      { type: "StopStream" },
+      { type: "StopStream", sessionId },
       { type: "CloseSession", sessionId: sessionId ?? "" },
     ]);
   }

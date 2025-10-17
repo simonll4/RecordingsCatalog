@@ -1,8 +1,8 @@
-# Worker AI - Arquitectura TCP + Protobuf
+# Worker AI - Arquitectura TCP + Protobuf + Tracking
 
 ## Objetivo
 
-Separar el worker de IA en su propio contenedor (Python + ONNX) y comunicarlo con el edge-agent (Node) mediante TCP + Protobuf con length-prefixed framing y backpressure de ventana 1 (latest-wins).
+Separar el worker de IA en su propio contenedor (Python + ONNX) y comunicarlo con el edge-agent (Node) mediante TCP + Protobuf con length-prefixed framing y backpressure de ventana 1 (latest-wins). Incluye tracking de objetos (BoT-SORT) y persistencia de sesiones en formato JSON.
 
 ## Arquitectura
 
@@ -12,8 +12,9 @@ Separar el worker de IA en su propio contenedor (Python + ONNX) y comunicarlo co
 │   (Node.js)     │        Length-prefixed            │   (Python)      │
 │                 │        Ventana 1 (Ready)          │                 │
 │  - AIClient     │                                   │  - ONNX Runtime │
-│  - AIEngineTcp  │                                   │  - YOLOv8       │
-│  - Orquestador  │                                   │  - Asyncio      │
+│  - AIEngineTcp  │                                   │  - YOLO11       │
+│  - Orquestador  │                                   │  - BoT-SORT     │
+│                 │                                   │  - Asyncio      │
 └─────────────────┘                                   └─────────────────┘
         │                                                     │
         │ ai.detection / ai.keepalive                        │
@@ -36,7 +37,153 @@ Separar el worker de IA en su propio contenedor (Python + ONNX) y comunicarlo co
                                     - LOADING (cargando)
                                     - READY (listo)
                                     - SESSION_ACTIVE (procesando)
+                                    
+                                    Tracking & Persistencia:
+                                    - BoT-SORT Tracker (IoU-based)
+                                    - Session Manager (por session_id)
+                                    - JSON persistence:
+                                      * tracks.jsonl (eventos)
+                                      * index.json (índice por segundo)
+                                      * meta.json (metadatos)
 ```
+
+## Setup y Ejecución
+
+### Prerequisitos
+
+- **Mamba/Conda**: Gestor de entornos Python
+- **Python 3.10.19**: Especificado en environment.yml
+- **CUDA** (opcional): Para aceleración GPU
+
+### Instalación con Mamba
+
+```bash
+# Navegar al directorio del worker
+cd /home/simonll4/Desktop/New\ Folder/tpfinal-v3/services/worker-ai
+
+# Crear entorno desde environment.yml
+mamba env create -f environment.yml
+
+# Activar entorno
+mamba activate worker-ai
+
+# Verificar instalación
+python --version  # Debe ser 3.10.19
+python -c "import onnxruntime as ort; print(f'ONNX Runtime: {ort.__version__}')"
+python -c "import cv2; print(f'OpenCV: {cv2.__version__}')"
+```
+
+### Ejecución Local
+
+**Opción 1: Script automático (recomendado)**
+```bash
+# Ejecutar con el script de conveniencia
+./run.sh
+
+# El script automáticamente:
+# - Verifica que mamba esté instalado
+# - Crea el entorno si no existe
+# - Activa el entorno
+# - Ejecuta el worker
+```
+
+**Opción 2: Manual**
+```bash
+# Activar entorno
+mamba activate worker-ai
+
+# Ejecutar worker
+python worker_new.py
+
+# El worker estará escuchando en 0.0.0.0:7001
+# Logs mostrarán: "AI Worker listening on 0.0.0.0:7001"
+```
+
+### Configuración
+
+Editar `config.toml` para ajustar parámetros:
+
+```toml
+[server]
+bind_host = "0.0.0.0"
+bind_port = 7001
+
+[tracker]
+enabled = true
+type = "botsort"
+config_path = "botsort.yaml"
+
+[sessions]
+output_dir = "/data/tracks"
+default_fps = 10.0
+```
+
+## Nuevas Funcionalidades
+
+### 1. Tracking de Objetos (BoT-SORT)
+
+El worker ahora incluye tracking de objetos usando un tracker basado en IoU (BoT-SORT simplificado). Cada detección recibe un `track_id` único que persiste a través de los frames.
+
+**Configuración**: `botsort.yaml`
+```yaml
+match_thresh: 0.3    # Umbral de IoU para matching
+max_age: 30          # Frames máximos sin detección antes de eliminar track
+min_hits: 3          # Detecciones mínimas para confirmar track
+track_buffer: 30     # Buffer de tracks
+```
+
+### 2. Gestión de Sesiones
+
+Cada sesión de grabación del edge-agent genera archivos JSON separados con los datos de tracking:
+
+> **Importante**: El edge-agent debe enviar un mensaje `End` cuando termine una sesión. El worker cierra los archivos (`tracks.jsonl`, `index.json`, `meta.json`) al recibirlo. Los frames sin `session_id` se procesan para detección pero no se persisten.
+
+**Estructura de archivos**:
+```
+/data/tracks/
+  └── {session_id}/
+      ├── meta.json        # Metadatos de la sesión
+      ├── tracks.jsonl     # Eventos de tracking (línea por frame)
+      └── index.json       # Índice por segundo para seeking rápido
+```
+
+**meta.json**:
+```json
+{
+  "session_id": "session_abc123",
+  "fps": 10.0,
+  "img_w": 640,
+  "img_h": 640,
+  "device_id": "cam-local",
+  "frame_count": 250,
+  "start_time": "2025-10-16T20:30:15",
+  "end_time": "2025-10-16T20:34:25"
+}
+```
+
+**tracks.jsonl** (evento por línea):
+```jsonl
+{"t": 0.0, "objs": [{"id": 1, "cls": "person", "conf": 0.85, "xyxy": [0.2, 0.3, 0.4, 0.5]}]}
+{"t": 0.1, "objs": [{"id": 1, "cls": "person", "conf": 0.87, "xyxy": [0.21, 0.31, 0.41, 0.51]}]}
+```
+
+**index.json**:
+```json
+{
+  "fps": 10.0,
+  "duration": 120.5,
+  "offsets": {
+    "0": 0,
+    "1": 234,
+    "2": 512,
+    ...
+  }
+}
+```
+
+### 3. Coordenadas Normalizadas
+
+Las coordenadas en los archivos JSON están normalizadas [0, 1] para facilitar el replay en diferentes resoluciones.
 
 ## Contrato Protobuf
 
@@ -234,7 +381,7 @@ No cambia. Sigue escuchando `ai.detection` y `ai.keepalive`.
 [ai]
 worker_host = "worker-ai"
 worker_port = 7001
-model_name = "/models/yolov8n.onnx"
+model_name = "/models/yolo11n.onnx"
 width = 640
 height = 480
 umbral = 0.35
@@ -255,7 +402,7 @@ idle_timeout_sec = 60
 
 [bootstrap]
 enabled = false  # true para pre-cargar modelo al arranque
-model_path = "/models/yolov8n.onnx"
+model_path = "/models/yolo11n.onnx"
 width = 640
 height = 480
 conf = 0.35
@@ -404,12 +551,12 @@ docker-compose exec edge-agent nc -zv worker-ai 7001
 docker-compose exec worker-ai ls -lh /models/
 
 # Verificar permisos
-docker-compose exec worker-ai stat /models/yolov8n.onnx
+docker-compose exec worker-ai stat /models/yolo11n.onnx
 
 # Probar carga manual
 docker-compose exec worker-ai python3 -c "
 import onnxruntime as ort
-session = ort.InferenceSession('/models/yolov8n.onnx')
+session = ort.InferenceSession('/models/yolo11n.onnx')
 print('OK')
 "
 ```
@@ -424,7 +571,7 @@ docker-compose logs worker-ai | grep "Inference done"
 docker stats worker-ai
 
 # Probar con modelo más pequeño
-# yolov8n.onnx → yolov8-nano.onnx
+# yolo11n.onnx → yolo11-nano.onnx
 ```
 
 ## Próximos Pasos
@@ -439,5 +586,5 @@ docker stats worker-ai
 
 - [Protobuf Docs](https://protobuf.dev/)
 - [ONNX Runtime](https://onnxruntime.ai/)
-- [YOLOv8](https://github.com/ultralytics/ultralytics)
+- [YOLO11](https://github.com/ultralytics/ultralytics)
 - [TCP Backpressure](https://ferd.ca/queues-don-t-fix-overload.html)

@@ -284,7 +284,13 @@ export class AIFeeder {
    * @param sessionId - Recording session UUID (null to clear)
    */
   setSessionId(sessionId: string | null): void {
-    this.sessionId = sessionId || undefined;
+    const normalized = sessionId?.trim();
+    this.sessionId = normalized || undefined;
+
+    if (!this.sessionId) {
+      // Limpiar frame pendiente para evitar enviar frames sin sesión
+      this.pendingFrame = undefined;
+    }
   }
 
   /**
@@ -564,6 +570,8 @@ export class AIFeeder {
       return;
     }
 
+    const sessionId = this.sessionId?.trim() ?? "";
+
     const frameId = this.frameIdCounter++;
 
     // Map pixel format
@@ -636,7 +644,7 @@ export class AIFeeder {
           data,
           colorSpace: "BT.709",
           colorRange: "full",
-          sessionId: this.sessionId || "",
+          sessionId,
         },
       },
     };

@@ -1,33 +1,44 @@
-FROM python:3.11-slim
+FROM python:3.10-slim
 
 WORKDIR /app
 
-# Instalar dependencias del sistema (placeholder para futuras deps)
+# Dependencias del sistema necesarias para OpenCV y ONNX Runtime
 RUN apt-get update && apt-get install -y \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiar requirements
-COPY requirements.txt .
+# Copiar environment y preparar micromamba
+COPY environment.yml .
+RUN curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj bin/micromamba && \
+    ./bin/micromamba create -y -f environment.yml -n worker-ai && \
+    ./bin/micromamba clean --all --yes
 
-# Instalar dependencias de Python
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copiar código (incluye Protobuf ya generado)
+# Copiar código (modular)
 COPY ai_pb2.py .
-COPY worker.py .
+COPY worker_new.py .
 COPY healthcheck.py .
-# Copiar configuración TOML
-COPY config.toml .
+COPY botsort.yaml .
+COPY src ./src
 
-# Crear directorio para modelos
-RUN mkdir -p /models
+# Usar config.docker.toml como config.toml dentro del contenedor
+COPY config.docker.toml ./config.toml
+
+# Crear directorios necesarios
+RUN mkdir -p /models /data/tracks
 
 # Health check
 HEALTHCHECK --interval=10s --timeout=2s --retries=3 \
-    CMD python3 healthcheck.py
+    CMD ./bin/micromamba run -n worker-ai python healthcheck.py
 
 # Usuario no-root
-RUN useradd -m -u 1000 worker && chown -R worker:worker /app
+RUN useradd -m -u 1000 worker && \
+    chown -R worker:worker /app /data
 USER worker
 
-CMD ["python3", "-u", "worker.py"]
+# Ejecutar worker modular
+CMD ["./bin/micromamba", "run", "-n", "worker-ai", "python", "-u", "worker_new.py"]

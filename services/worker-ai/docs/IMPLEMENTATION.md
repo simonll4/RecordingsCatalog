@@ -10,7 +10,8 @@ Se ha implementado exitosamente la separación del worker de IA en su propio con
 
 ✅ **Mensajes definidos:**
 - `Envelope` (wrapper con oneof)
-- `Request` → `Init`, `Frame`, `Shutdown`
+- `Request` → `Init`, `Frame`, `End`
+- `End` cierra la sesión activa en el worker y fuerza el cierre de archivos JSON.
 - `Response` → `InitOk`, `Ready`, `Result`, `Error`
 - `Heartbeat` (bidireccional)
 
@@ -29,10 +30,10 @@ Se ha implementado exitosamente la separación del worker de IA en su propio con
 - Hot-reload: Init diferente → recarga modelo
 - Ventana 1: backpressure natural
 - ONNX Runtime con soporte CPU/CUDA
-- YOLOv8 con NMS optimizado
+- YOLO11 con NMS optimizado
 
 ✅ **Archivos:**
-- `worker.py`: Servidor TCP asyncio
+- `worker_new.py`: Servidor TCP asyncio
 - `requirements.txt`: numpy, onnxruntime, protobuf
 - `Dockerfile`: Image Python 3.11-slim
 - `healthcheck.py`: Health check TCP
@@ -209,7 +210,7 @@ npm run test:integration
 **Agent:**
 - `AI_WORKER_HOST`: worker-ai
 - `AI_WORKER_PORT`: 7001
-- `AI_MODEL_NAME`: /models/yolov8n.onnx
+- `AI_MODEL_NAME`: /models/yolo11n.onnx
 - `AI_UMBRAL`: 0.35
 - `AI_FPS_IDLE`: 5
 - `AI_FPS_ACTIVE`: 12
@@ -232,14 +233,14 @@ tpfinal-v3/
 │   │   │       └── ai_pb.d.ts         # Generado
 │   │   └── package.json
 │   └── worker-ai/
-│       ├── worker.py                  # Worker Python
+│       ├── worker_new.py              # Worker Python
 │       ├── ai_pb2.py                  # Generado
 │       ├── requirements.txt
 │       ├── Dockerfile
 │       └── healthcheck.py
 ├── data/
 │   └── models/
-│       └── yolov8n.onnx              # Modelo ONNX
+│       └── yolo11n.onnx              # Modelo ONNX
 ├── scripts/
 │   ├── generate-proto.sh
 │   └── setup-ai-worker.sh
@@ -264,7 +265,7 @@ docker-compose exec edge-agent env | grep AI_WORKER
 ```bash
 docker-compose exec worker-ai python3 -c "
 import onnxruntime as ort
-session = ort.InferenceSession('/models/yolov8n.onnx')
+session = ort.InferenceSession('/models/yolo11n.onnx')
 print('OK')
 "
 ```
@@ -283,7 +284,7 @@ print('OK')
 
 - [Protobuf Docs](https://protobuf.dev/)
 - [ONNX Runtime](https://onnxruntime.ai/)
-- [YOLOv8](https://github.com/ultralytics/ultralytics)
+- [YOLO11](https://github.com/ultralytics/ultralytics)
 - [TCP Backpressure](https://ferd.ca/queues-don-t-fix-overload.html)
 
 ---

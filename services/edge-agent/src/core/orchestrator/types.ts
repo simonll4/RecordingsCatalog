@@ -328,7 +328,7 @@ export type State = "IDLE" | "DWELL" | "ACTIVE" | "CLOSING";
  */
 export type Command =
   | { type: "StartStream" }
-  | { type: "StopStream"; reason?: string }
+  | { type: "StopStream"; reason?: string; sessionId?: string }
   | { type: "OpenSession"; at?: string }
   | { type: "CloseSession"; sessionId: string; at?: string }
   | { type: "SetAIFpsMode"; mode: "idle" | "active" };

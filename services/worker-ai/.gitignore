@@ -9,3 +9,13 @@ __pycache__/
 *.onnx
 *.pt
 *.pth
+
+# Directorio de datos generados (tracks/sesiones)
+data/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

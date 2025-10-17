@@ -377,6 +377,8 @@ async function main() {
    * The orchestrator expects an AIEngine interface, but we use AIFeeder directly.
    * This adapter bridges the gap and propagates session IDs to the feeder.
    */
+  let activeSessionId: string | null = null;
+
   const aiAdapter = {
     /**
      * Set model configuration
@@ -406,8 +408,38 @@ async function main() {
      */
     setSessionId(sessionId: string) {
       // Propagate to feeder (single source of truth for sessionId)
-      aiFeeder.setSessionId(sessionId);
-      logger.debug("AI adapter session ID set", { module: "main", sessionId });
+      const normalized = sessionId.trim();
+      aiFeeder.setSessionId(normalized);
+      activeSessionId = normalized;
+      logger.debug("AI adapter session ID set", {
+        module: "main",
+        sessionId: normalized,
+      });
+    },
+
+    async closeSession(sessionId: string) {
+      const normalized = sessionId.trim();
+
+      if (!activeSessionId) {
+        logger.info("Closing AI session without activeSessionId", {
+          module: "main",
+          sessionId: normalized,
+        });
+      } else if (activeSessionId !== normalized) {
+        logger.warn("Session ID mismatch on close", {
+          module: "main",
+          expected: activeSessionId,
+          received: normalized,
+        });
+      }
+
+      aiFeeder.setSessionId(null);
+      aiClient.sendEnd();
+      logger.info("AI adapter session close signal sent", {
+        module: "main",
+        sessionId: normalized,
+      });
+      activeSessionId = null;
     },
   };
 
