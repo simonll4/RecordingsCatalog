@@ -1,0 +1,6 @@
+{"t_rel_s": 0.0, "frame": 0, "objs": [{"track_id": 1, "cls": 0, "cls_name": "person", "conf": 0.4765, "bbox_xyxy": [0.0, 0.0, 0.3201, 0.6364]}]}
+{"t_rel_s": 0.2, "frame": 2, "objs": [{"track_id": 1, "cls": 0, "cls_name": "person", "conf": 0.4605, "bbox_xyxy": [0.0, 0.0, 0.3149, 0.633]}]}
+{"t_rel_s": 0.3, "frame": 3, "objs": [{"track_id": 1, "cls": 0, "cls_name": "person", "conf": 0.8839, "bbox_xyxy": [0.0, 0.0, 0.3188, 0.6207]}]}
+{"t_rel_s": 0.6, "frame": 6, "objs": [{"track_id": 1, "cls": 0, "cls_name": "person", "conf": 0.5238, "bbox_xyxy": [0.0, 0.0, 0.1943, 0.5012]}]}
+{"t_rel_s": 0.7, "frame": 7, "objs": [{"track_id": 1, "cls": 0, "cls_name": "person", "conf": 0.3506, "bbox_xyxy": [0.0, 0.0, 0.3209, 0.6332]}]}
+{"t_rel_s": 0.9, "frame": 9, "objs": [{"track_id": 2, "cls": 0, "cls_name": "person", "conf": 0.4278, "bbox_xyxy": [0.0, 0.1656, 0.5963, 1.0]}]}

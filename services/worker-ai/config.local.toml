@@ -12,7 +12,11 @@ bind_port = 7001
 # Timeout de inactividad en segundos (cierra conexión si no hay actividad)
 idle_timeout_sec = 60
 
-## Se eliminan secciones de modelo/bootstrap (no usadas en worker_new)
+# Configuración del modelo y la inferencia
+[model]
+conf_threshold = 0.5
+nms_iou = 0.6
+classes = ["person", "bottle"]
 
 # Configuración de visualización (debugging)
 [visualization]
@@ -32,8 +36,9 @@ config_path = "botsort.yaml"
 
 # Configuración de persistencia de sesiones
 [sessions]
-# Directorio base para almacenar archivos de tracking por sesión
-# LOCAL: usa directorio relativo
-output_dir = "data/tracks"
+# Directorio base para almacenar archivos de tracking por sesión (relativo a este archivo)
+output_dir = "../../data/tracks"
 # FPS objetivo para calcular timestamps (se puede sobrescribir por sesión)
 default_fps = 10.0
+# Duración objetivo de cada segmento NDJSON en segundos
+segment_duration_s = 10.0

@@ -33,4 +33,5 @@ export const CONFIG = {
   PLAYBACK_EXTRA_SECONDS: tomlConfig.playback.extra_seconds,
   PLAYBACK_START_OFFSET_MS: tomlConfig.playback.start_offset_ms,
   FRAMES_STORAGE_PATH: tomlConfig.frames.storage_path,
+  TRACKS_STORAGE_PATH: tomlConfig.tracks?.storage_path ?? '/data/tracks',
 };

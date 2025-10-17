@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Worker AI - Servicio de inferencia y tracking
+"""Worker AI - Servicio de inferencia y tracking
 
 Servidor TCP que recibe frames del edge-agent, ejecuta YOLO11 para detectar objetos,
 aplica tracking BoT-SORT, y persiste los resultados en JSON por sesión.
@@ -14,9 +13,10 @@ Estructura modular:
 - src/protocol: Protocolo Protobuf v1
 """
 import asyncio
+from contextlib import suppress
 import cv2
 import numpy as np
-from typing import Optional
+from typing import Optional, List, Dict
 
 # Importar protobuf
 import ai_pb2 as pb
@@ -24,7 +24,7 @@ import ai_pb2 as pb
 # Módulos propios
 from src.core.config import Config
 from src.core.logger import setup_logger
-from src.inference.yolo11 import YOLO11Model
+from src.inference.yolo11 import YOLO11Model, COCO_CLASSES
 from src.tracking.botsort import BoTSORTTracker
 from src.session.manager import SessionManager, SessionWriter
 from src.visualization.viewer import Visualizer
@@ -56,8 +56,24 @@ class ConnectionHandler:
         # Modelo (se carga cuando llega Init)
         self.model: Optional[YOLO11Model] = None
         self.model_path: Optional[str] = None
-        self.model_conf: float = 0.35
-        
+
+        # Parámetros de inferencia desde config
+        self.model_conf_thres = config.model.conf_threshold
+        self.model_nms_iou = config.model.nms_iou
+        self.model_loading_task: Optional[asyncio.Task] = None
+        self.model_keepalive_task: Optional[asyncio.Task] = None
+       
+        # Mapeo de clases para filtro
+        self.class_name_to_id: Dict[str, int] = {name: i for i, name in enumerate(COCO_CLASSES)}
+        self.class_filter_ids: Optional[List[int]] = None
+        if config.model.classes:
+            self.class_filter_ids = [
+                self.class_name_to_id[name] 
+                for name in config.model.classes 
+                if name in self.class_name_to_id
+            ]
+            logger.info(f"Filtro de clases activo para: {config.model.classes}")
+
         # Tracker (uno por conexión)
         if config.tracker.enabled:
             self.tracker = BoTSORTTracker(config.tracker.config_path)
@@ -128,6 +144,20 @@ class ConnectionHandler:
             logger.error(f"Error en conexión {self.peer}: {e}", exc_info=True)
         
         finally:
+            if self.model_loading_task:
+                task = self.model_loading_task
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+                if self.model_loading_task is task:
+                    self.model_loading_task = None
+            if self.model_keepalive_task:
+                task = self.model_keepalive_task
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+                if self.model_keepalive_task is task:
+                    self.model_keepalive_task = None
             self._finalize_session("conexión cerrada")
             self.protocol.close()
             await self.writer.wait_closed()
@@ -148,26 +178,87 @@ class ConnectionHandler:
     async def handle_init(self, init: pb.Init):
         """Maneja mensaje Init (configuración del modelo)"""
         logger.info(f"Init recibido: model={init.model}")
-        
-        # Cargar modelo si cambió
-        if self.model_path != init.model:
-            try:
-                # Extraer conf_threshold si está en capabilities
-                conf = self.model_conf
-                if init.HasField("caps") and hasattr(init.caps, "conf_threshold"):
-                    conf = init.caps.conf_threshold if init.caps.conf_threshold > 0 else conf
-                
-                self.model = YOLO11Model(init.model, conf_threshold=conf)
-                self.model_path = init.model
-                self.model_conf = conf
-                logger.info(f"Modelo cargado: {init.model}")
-            except Exception as e:
-                logger.error(f"Error cargando modelo: {e}")
+        model_path = init.model.strip()
+
+        if not model_path:
+            logger.error("Init recibido sin ruta de modelo")
+            await self.protocol.send_error(pb.BAD_MESSAGE, "Model path is empty")
+            return
+
+        if self.model and self.model_path == model_path:
+            logger.info("Modelo ya cargado, reutilizando sesión de inferencia")
+            await self.protocol.send_init_ok()
+            return
+
+        if self.model_loading_task:
+            logger.info("Cancelando carga anterior de modelo")
+            task = self.model_loading_task
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+            if self.model_loading_task is task:
+                self.model_loading_task = None
+        if self.model_keepalive_task:
+            task = self.model_keepalive_task
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+            if self.model_keepalive_task is task:
+                self.model_keepalive_task = None
+
+        # Resetear estado del modelo mientras se carga el nuevo
+        self.model = None
+        self.model_path = None
+
+        logger.info(f"Iniciando carga asíncrona del modelo: {model_path}")
+        self.model_loading_task = asyncio.create_task(self._load_model_and_send_init_ok(model_path))
+        keepalive_task = asyncio.create_task(self._send_keepalive_until_model_ready())
+        keepalive_task.add_done_callback(self._on_keepalive_done)
+        self.model_keepalive_task = keepalive_task
+
+    async def _load_model_and_send_init_ok(self, model_path: str):
+        """Carga el modelo en background y envía InitOk al completar."""
+        try:
+            model = await asyncio.to_thread(YOLO11Model, model_path)
+        except asyncio.CancelledError:
+            logger.info(f"Carga de modelo cancelada: {model_path}")
+            raise
+        except Exception as e:
+            logger.error(f"Error cargando modelo {model_path}: {e}")
+            if not self.writer.is_closing():
                 await self.protocol.send_error(pb.INTERNAL, f"Failed to load model: {e}")
-                raise
-        
-        # Enviar InitOk para que el edge-agent empiece a enviar frames
+            return
+        finally:
+            self.model_loading_task = None
+
+        self.model = model
+        self.model_path = model_path
+        logger.info(f"Modelo listo: {model_path}")
+
+        if self.writer.is_closing():
+            logger.warning("Conexión cerrada antes de enviar InitOk")
+            return
+
         await self.protocol.send_init_ok()
+    
+    async def _send_keepalive_until_model_ready(self):
+        """Envía heartbeats periódicos mientras el modelo se termina de cargar."""
+        try:
+            # Primer heartbeat inmediato para confirmar actividad
+            while self.model is None and not self.writer.is_closing():
+                await self.protocol.send_heartbeat()
+                # Intervalo seguro por debajo del timeout del cliente (10s)
+                await asyncio.sleep(2)
+        except asyncio.CancelledError:
+            # Cancelado cuando el modelo está listo o la conexión se cierra
+            raise
+        except Exception as exc:
+            logger.warning(f"Fallo keepalive durante carga de modelo: {exc}")
+
+    def _on_keepalive_done(self, task: asyncio.Task):
+        """Limpia referencia al keepalive cuando finaliza."""
+        if self.model_keepalive_task is task:
+            self.model_keepalive_task = None
     
     async def handle_frame(self, frame_msg: pb.Frame):
         """Maneja mensaje Frame (inferencia + tracking)"""
@@ -280,7 +371,12 @@ class ConnectionHandler:
             return
         
         # Inferencia
-        detections = self.model.infer(img)
+        detections = self.model.infer(
+            img,
+            conf_thres=self.model_conf_thres,
+            nms_iou=self.model_nms_iou,
+            classes_filter=self.class_filter_ids
+        )
 
         tracking_active = self.tracker is not None and self.current_session_id is not None
 
@@ -292,9 +388,16 @@ class ConnectionHandler:
         else:
             tracks = []
 
+        img_h, img_w = img.shape[:2]
+
         # Persistir a sesión (solo si hay tracks)
         if tracking_active and self.session_writer and len(tracks) > 0:
-            self.session_writer.write_frame(tracks, self.frame_idx)
+            self.session_writer.write_frame(
+                tracks,
+                self.frame_idx,
+                frame_width=img_w,
+                frame_height=img_h,
+            )
 
         # Visualizar
         visualizer = self.worker.get_visualizer()
@@ -303,7 +406,6 @@ class ConnectionHandler:
 
         # Enviar respuesta al edge-agent
         response_dets = []
-        img_h, img_w = img.shape[:2]
         if tracking_active:
             for track in tracks:
                 x1, y1, x2, y2 = track.bbox
@@ -350,7 +452,8 @@ class WorkerAI:
         self.config = config
         self.session_manager = SessionManager(
             config.sessions.output_dir,
-            config.sessions.default_fps
+            config.sessions.default_fps,
+            config.sessions.segment_duration_s,
         )
         
         # Visualizador (lazy init cuando llega primer frame)

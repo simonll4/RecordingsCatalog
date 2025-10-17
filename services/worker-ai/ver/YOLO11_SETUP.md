@@ -13,7 +13,7 @@
 ```toml
 [ai]
 # DESARROLLO LOCAL: path absoluto en el host donde corre el worker
-model_name = "/home/simonll4/Desktop/New Folder/tpfinal-v3/data/models/yolo11n.onnx"
+model_name = "/home/simonll4/Desktop/tpfinal-v3/data/models/yolo11n.onnx"
 ```
 
 ### 3. Firewall Configurado

@@ -85,6 +85,102 @@ app.get('/api/sessions', async (req, res) => {
   }
 });
 
+const proxySessionStoreJson = async (res, targetUrl) => {
+  const response = await fetch(targetUrl, {
+    headers: { Accept: 'application/json' }
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    return {
+      ok: false,
+      status: response.status,
+      body: {
+        error: 'Session store request failed',
+        details: text
+      }
+    };
+  }
+
+  const cacheControl = response.headers.get('cache-control');
+  if (cacheControl) {
+    res.set('Cache-Control', cacheControl);
+  }
+
+  const payload = await response.json();
+  return { ok: true, payload };
+};
+
+app.get('/api/sessions/:sessionId/meta', async (req, res) => {
+  try {
+    const target = new URL(`/sessions/${encodeURIComponent(req.params.sessionId)}/meta`, SESSION_STORE_URL);
+    const result = await proxySessionStoreJson(res, target);
+
+    if (!result.ok) {
+      return res.status(result.status).json(result.body);
+    }
+
+    res.json(result.payload);
+  } catch (error) {
+    console.error('Failed to proxy session meta', error);
+    res.status(500).json({ error: 'Failed to reach session store' });
+  }
+});
+
+app.get('/api/sessions/:sessionId/index', async (req, res) => {
+  try {
+    const target = new URL(`/sessions/${encodeURIComponent(req.params.sessionId)}/index`, SESSION_STORE_URL);
+    const result = await proxySessionStoreJson(res, target);
+
+    if (!result.ok) {
+      return res.status(result.status).json(result.body);
+    }
+
+    res.json(result.payload);
+  } catch (error) {
+    console.error('Failed to proxy session index', error);
+    res.status(500).json({ error: 'Failed to reach session store' });
+  }
+});
+
+app.get('/api/sessions/:sessionId/segment/:segmentId', async (req, res) => {
+  try {
+    const target = new URL(
+      `/sessions/${encodeURIComponent(req.params.sessionId)}/segment/${encodeURIComponent(req.params.segmentId)}`,
+      SESSION_STORE_URL
+    );
+    const response = await fetch(target);
+
+    if (!response.ok) {
+      const text = await response.text();
+      return res.status(response.status).json({
+        error: 'Session store request failed',
+        details: text
+      });
+    }
+
+    const headersToForward = ['content-type', 'content-length', 'cache-control', 'content-encoding'];
+    for (const header of headersToForward) {
+      const value = response.headers.get(header);
+      if (value) {
+        res.set(header, value);
+      }
+    }
+
+    if (!response.body) {
+      return res.status(502).json({ error: 'Session store returned empty body' });
+    }
+
+    for await (const chunk of response.body) {
+      res.write(chunk);
+    }
+    res.end();
+  } catch (error) {
+    console.error('Failed to proxy track segment', error);
+    res.status(500).json({ error: 'Failed to reach session store' });
+  }
+});
+
 app.get('/api/sessions/:sessionId/clip', async (req, res) => {
   try {
     const target = new URL(`/sessions/${encodeURIComponent(req.params.sessionId)}/clip`, SESSION_STORE_URL);

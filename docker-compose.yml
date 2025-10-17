@@ -50,6 +50,7 @@ services:
       - "8080:8080"
     volumes:
       - ./data/frames:/data/frames
+      - ./data/tracks:/data/tracks
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     depends_on:
@@ -103,10 +104,10 @@ services:
     privileged: true
     profiles: [edge]
 
-  web-ui:
+  vue-ui:
     build:
-      context: ./services/web-ui
-    container_name: tpfinalv3-web-ui
+      context: ./services/vue-ui
+    container_name: tpfinalv3-vue-ui
     restart: unless-stopped
     depends_on:
       session-store:

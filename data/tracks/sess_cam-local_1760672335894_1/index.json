@@ -1,0 +1,15 @@
+{
+  "segment_duration_s": 10.0,
+  "segments": [
+    {
+      "i": 0,
+      "t0": 0.0,
+      "t1": 10.0,
+      "url": "tracks/seg-0000.jsonl",
+      "count": 35,
+      "closed": true
+    }
+  ],
+  "fps": 10.0,
+  "duration_s": 3.5
+}

@@ -26,6 +26,8 @@ class ProtocolHandler:
         self.reader = reader
         self.writer = writer
         self.peer = writer.get_extra_info('peername')
+        self.stream_id: Optional[str] = None
+        self._stream_id_logged = False
     
     async def read_envelope(self) -> Optional[pb.Envelope]:
         """
@@ -50,6 +52,11 @@ class ProtocolHandler:
             # Parsear Envelope
             envelope = pb.Envelope()
             envelope.ParseFromString(msg_bytes)
+            if envelope.stream_id:
+                self.stream_id = envelope.stream_id
+                if not self._stream_id_logged:
+                    logger.debug(f"Stream ID asociado: {self.stream_id} -> {self.peer}")
+                    self._stream_id_logged = True
             
             # Validar versión del protocolo
             if envelope.protocol_version != 1:
@@ -105,6 +112,8 @@ class ProtocolHandler:
             envelope = pb.Envelope()
             envelope.protocol_version = 1
             envelope.msg_type = pb.MT_RESULT
+            if self.stream_id:
+                envelope.stream_id = self.stream_id
             envelope.res.CopyFrom(response)
             
             # Serializar y enviar
@@ -140,6 +149,8 @@ class ProtocolHandler:
             envelope = pb.Envelope()
             envelope.protocol_version = 1
             envelope.msg_type = pb.MT_ERROR
+            if self.stream_id:
+                envelope.stream_id = self.stream_id
             envelope.res.CopyFrom(response)
             
             # Serializar y enviar
@@ -160,6 +171,8 @@ class ProtocolHandler:
             envelope = pb.Envelope()
             envelope.protocol_version = 1
             envelope.msg_type = pb.MT_HEARTBEAT
+            if self.stream_id:
+                envelope.stream_id = self.stream_id
             envelope.hb.CopyFrom(pb.Heartbeat())
             
             # Serializar y enviar
@@ -205,6 +218,8 @@ class ProtocolHandler:
             envelope = pb.Envelope()
             envelope.protocol_version = 1
             envelope.msg_type = pb.MT_INIT_OK
+            if self.stream_id:
+                envelope.stream_id = self.stream_id
             envelope.res.CopyFrom(response)
             
             # Serializar y enviar

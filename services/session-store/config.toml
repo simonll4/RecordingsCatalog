@@ -31,3 +31,8 @@ start_offset_ms = 1500
 [frames]
 # Directorio donde se guardan los frames con detecciones
 storage_path = "/data/frames"
+
+# Configuración de tracks persistidos por el worker
+[tracks]
+# Directorio base que contiene meta/index y segmentos NDJSON por sesión
+storage_path = "/data/tracks"

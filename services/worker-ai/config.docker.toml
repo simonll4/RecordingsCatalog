@@ -38,3 +38,5 @@ config_path = "botsort.yaml"
 output_dir = "/data/tracks"
 # FPS objetivo para calcular timestamps (se puede sobrescribir por sesión)
 default_fps = 10.0
+# Duración objetivo de cada segmento NDJSON en segundos
+segment_duration_s = 10.0

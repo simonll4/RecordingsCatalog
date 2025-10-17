@@ -1,5 +1,5 @@
 {
-  "name": "vue-iu",
+  "name": "vue-ui",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -15,8 +15,13 @@
     "format": "prettier --write src/"
   },
   "dependencies": {
+    "comlink": "^4.4.1",
+    "dexie": "^4.0.8",
+    "fflate": "^0.8.2",
     "pinia": "^3.0.3",
-    "vue": "^3.5.22"
+    "vue": "^3.5.22",
+    "vue-router": "^4.4.5",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@tsconfig/node22": "^22.0.2",

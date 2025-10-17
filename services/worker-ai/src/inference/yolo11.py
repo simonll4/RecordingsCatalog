@@ -2,7 +2,7 @@
 import numpy as np
 import onnxruntime as ort
 import cv2
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from dataclasses import dataclass
 
 from ..core.logger import setup_logger
@@ -49,14 +49,12 @@ class Detection:
 class YOLO11Model:
     """Modelo YOLO11 con ONNX Runtime"""
     
-    def __init__(self, model_path: str, conf_threshold: float = 0.35):
+    def __init__(self, model_path: str):
         """
         Args:
             model_path: Ruta al modelo ONNX
-            conf_threshold: Umbral de confianza (0-1)
         """
         self.model_path = model_path
-        self.conf_threshold = conf_threshold
         
         # Crear sesión ONNX
         providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
@@ -76,7 +74,6 @@ class YOLO11Model:
         
         logger.info(f"Modelo cargado: {model_path}")
         logger.info(f"Input shape: {self.input_shape}")
-        logger.info(f"Umbral confianza: {conf_threshold}")
     
     def preprocess(self, image: np.ndarray) -> Tuple[np.ndarray, float, Tuple[int, int]]:
         """
@@ -113,7 +110,10 @@ class YOLO11Model:
         output: np.ndarray,
         scale: float,
         pad: Tuple[int, int],
-        orig_shape: Tuple[int, int]
+        orig_shape: Tuple[int, int],
+        conf_thres: float = 0.5,
+        nms_iou: float = 0.6,
+        classes_filter: Optional[List[int]] = None,
     ) -> List[Detection]:
         """
         Procesa salida del modelo YOLO11 (replicando lógica de CV/worker)
@@ -123,7 +123,10 @@ class YOLO11Model:
             scale: Factor de escala usado en preproceso
             pad: (pad_w, pad_h) usado en preproceso
             orig_shape: (height, width) de la imagen original
-        
+            conf_thres: Umbral de confianza para filtrar detecciones
+            nms_iou: Umbral de IoU para Non-Maximum Suppression
+            classes_filter: Lista de class_id a incluir (si es None, todas)
+
         Returns:
             Lista de detecciones filtradas por NMS
         """
@@ -150,21 +153,24 @@ class YOLO11Model:
         class_ids = np.argmax(class_scores, axis=1)
         confidences = class_scores[np.arange(len(class_scores)), class_ids]
         
-        # Filtrar por clase "person" (class_id = 0 en COCO)
-        person_mask = class_ids == 0
-        xywh = xywh[person_mask]
-        confidences = confidences[person_mask]
-        class_ids = class_ids[person_mask]
-        
-        # Filtrar por umbral de confianza
-        conf_mask = confidences >= self.conf_threshold
+        # --- FILTROS ---
+        # 1. Filtrar por umbral de confianza
+        conf_mask = confidences >= conf_thres
         xywh = xywh[conf_mask]
         confidences = confidences[conf_mask]
         class_ids = class_ids[conf_mask]
-        
+
+        # 2. Filtrar por clase (si se especifica)
+        if classes_filter is not None and len(classes_filter) > 0:
+            cls_mask = np.isin(class_ids, classes_filter)
+            xywh = xywh[cls_mask]
+            confidences = confidences[cls_mask]
+            class_ids = class_ids[cls_mask]
+
         if len(xywh) == 0:
             return []
         
+        # --- TRANSFORMACIÓN DE COORDENADAS ---
         # Convertir de xywh a xyxy en espacio letterbox
         x_center, y_center, width, height = xywh[:, 0], xywh[:, 1], xywh[:, 2], xywh[:, 3]
         x1 = x_center - width / 2
@@ -192,24 +198,30 @@ class YOLO11Model:
         if len(xyxy) == 0:
             return []
         
-        # NMS
-        keep_indices = YOLO11Model.nms(xyxy, confidences, 0.45)
+        # --- NMS ---
+        keep_indices = YOLO11Model.nms(xyxy, confidences, nms_iou)
         
+        # Mantener solo los elementos que NMS conservó
+        xyxy_kept = xyxy[keep_indices]
+        confidences_kept = confidences[keep_indices]
+        class_ids_kept = class_ids[keep_indices]
+
+        # --- CREACIÓN DE OBJETOS DETECTION ---
         # Normalizar a 0-1 para las coordenadas
-        xyxy_norm = xyxy.copy()
+        xyxy_norm = xyxy_kept.copy()
         xyxy_norm[:, [0, 2]] /= orig_w
         xyxy_norm[:, [1, 3]] /= orig_h
         xyxy_norm = np.clip(xyxy_norm, 0, 1)
         
         # Crear detecciones
         detections = []
-        for idx in keep_indices:
+        for i in range(len(xyxy_norm)):
             det = Detection(
-                class_id=int(class_ids[idx]),
-                class_name=COCO_CLASSES[class_ids[idx]],
-                confidence=float(confidences[idx]),
-                bbox=(float(xyxy_norm[idx, 0]), float(xyxy_norm[idx, 1]), 
-                      float(xyxy_norm[idx, 2]), float(xyxy_norm[idx, 3]))
+                class_id=int(class_ids_kept[i]),
+                class_name=COCO_CLASSES[class_ids_kept[i]],
+                confidence=float(confidences_kept[i]),
+                bbox=(float(xyxy_norm[i, 0]), float(xyxy_norm[i, 1]), 
+                      float(xyxy_norm[i, 2]), float(xyxy_norm[i, 3]))
             )
             detections.append(det)
         
@@ -247,12 +259,21 @@ class YOLO11Model:
         
         return keep
     
-    def infer(self, image: np.ndarray) -> List[Detection]:
+    def infer(
+        self, 
+        image: np.ndarray, 
+        conf_thres: float = 0.5,
+        nms_iou: float = 0.6,
+        classes_filter: Optional[List[int]] = None
+    ) -> List[Detection]:
         """
         Ejecuta inferencia en una imagen
         
         Args:
             image: Imagen BGR (HxWx3)
+            conf_thres: Umbral de confianza
+            nms_iou: Umbral IoU para NMS
+            classes_filter: Lista de IDs de clases a detectar
         
         Returns:
             Lista de detecciones
@@ -266,6 +287,11 @@ class YOLO11Model:
         output = self.session.run(None, {self.input_name: input_tensor})[0]
         
         # Postprocesar
-        detections = self.postprocess(output, scale, pad, (orig_h, orig_w))
+        detections = self.postprocess(
+            output, scale, pad, (orig_h, orig_w), 
+            conf_thres=conf_thres, 
+            nms_iou=nms_iou, 
+            classes_filter=classes_filter
+        )
         
         return detections
