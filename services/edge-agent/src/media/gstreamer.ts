@@ -21,8 +21,8 @@
  * ==========
  *
  * 1. **Ingest Pipeline** (buildIngest)
- *    - Always-on camera capture
- *    - Source (RTSP/V4L2) → I420 @ configured resolution → Shared Memory
+ *    - Always-on RTSP camera capture
+ *    - Source (RTSP) → I420 @ configured resolution → Shared Memory
  *    - Used by: CameraHub
  *
  * 2. **NV12 Capture Pipeline** (buildNV12Capture)
@@ -40,9 +40,8 @@
  *
  * Elements:
  *   - rtspsrc: RTSP camera source
- *   - v4l2src: USB/built-in camera source (Video4Linux2)
  *   - shmsink/shmsrc: Shared memory communication (zero-copy IPC)
- *   - videoconvert: Format conversion (YUV, RGB, etc.)
+ *   - videoconvert: Format conversion (YUV, etc.)
  *   - videoscale: Resolution scaling
  *   - videorate: Framerate adjustment
  *   - h264parse: H.264 stream parsing
@@ -86,29 +85,23 @@
  *   - Scales to multiple consumers without penalty
  */
 
-import { SourceConfig, AIConfig, MediaMTXConfig } from "../config/schema.js";
+import { SourceConfig, MediaMTXConfig } from "../config/schema.js";
 import { EncoderConfig } from "./encoder.js";
 
 /**
  * Build Ingest Pipeline - Always-On Camera Capture
  *
- * Constructs a GStreamer pipeline that captures video from camera
- * and writes I420 frames to shared memory.
+ * Ingest Pipeline - RTSP Camera Capture to Shared Memory
  *
- * Pipeline Architecture:
- * ======================
+ * Captures video from RTSP camera and writes I420 frames to shared memory.
+ * Multiple consumers can read from the same SHM socket (NV12Capture, Publisher).
+ *
+ * Pipeline Flow:
+ * ==============
  *
  * RTSP Path:
- *   rtspsrc → queue → rtph264depay → h264parse → avdec_h264
+ *   rtspsrc → rtph264depay → h264parse → avdec_h264
  *   → videoconvert → videoscale → I420 @ WxH → queue → shmsink
- *
- * V4L2 Path (MJPEG):
- *   v4l2src → image/jpeg → jpegdec → videoconvert → videoscale
- *   → I420 @ WxH → videorate → queue → shmsink
- *
- * V4L2 Path (RAW fallback):
- *   v4l2src → video/x-raw @ 640x480 → videoconvert → videoscale
- *   → I420 @ WxH → videorate → queue → shmsink
  *
  * Output Format:
  *   - Format: I420 (YUV 4:2:0 planar, 3 planes)
@@ -132,39 +125,23 @@ import { EncoderConfig } from "./encoder.js";
  *   - Prevents clock drift
  *   - Important for multi-consumer scenarios
  *
- * @param source - Source configuration (camera type, URI, resolution, FPS)
- * @param tryRawFallback - Use raw YUYV format (640×480 max) if MJPEG fails
- * @returns Array of gst-launch-1.0 arguments
+ * @param source - Source configuration (uri, resolution, etc.)
+ * @returns Array of GStreamer command-line arguments
  *
  * @example
  * ```typescript
- * // RTSP camera
  * const args = buildIngest({
  *   kind: "rtsp",
  *   uri: "rtsp://192.168.1.100:554/stream",
  *   width: 1280,
  *   height: 720,
- *   fpsHub: 30,
+ *   fpsHub: 15,
  *   socketPath: "/tmp/camera_shm",
- *   shmSizeMB: 50
- * });
- *
- * // USB camera (MJPEG)
- * const args = buildIngest({
- *   kind: "v4l2",
- *   uri: "/dev/video0",
- *   width: 1280,
- *   height: 720,
- *   fpsHub: 30,
- *   socketPath: "/tmp/camera_shm",
- *   shmSizeMB: 50
+ *   shmSizeMB: 50,
  * });
  * ```
  */
-export function buildIngest(
-  source: SourceConfig,
-  tryRawFallback: boolean = false
-): string[] {
+export function buildIngest(source: SourceConfig): string[] {
   const { kind, uri, width, height, fpsHub, socketPath, shmSizeMB } = source;
   const shmSizeBytes = shmSizeMB * 1024 * 1024;
 
@@ -174,85 +151,49 @@ export function buildIngest(
     "-e", // Send EOS (End-Of-Stream) on SIGINT for graceful shutdown
   ];
 
-  if (kind === "rtsp") {
-    return [
-      ...base,
-      "rtspsrc",
-      `location=${uri}`,
-      "latency=50", // 50ms buffering (low latency mode)
-      "!",
-      "queue",
-      "max-size-buffers=1",
-      "leaky=downstream",
-      "!",
-      "rtph264depay", // Extract H.264 from RTP packets
-      "!",
-      "h264parse", // Parse H.264 stream for decoder
-      "!",
-      "avdec_h264", // FFmpeg H.264 decoder
-      "max-threads=2", // Limit decoder threads (reduce CPU)
-      "!",
-      "videoconvert", // Convert to I420 if needed
-      "!",
-      "videoscale", // Scale to target resolution
-      "!",
-      `video/x-raw,format=I420,width=${width},height=${height},framerate=${fpsHub}/1`,
-      "!",
-      "queue",
-      "max-size-buffers=1",
-      "leaky=downstream",
-      "!",
-      "shmsink",
-      `socket-path=${socketPath}`,
-      `shm-size=${shmSizeBytes}`,
-      "wait-for-connection=false", // Don't block if no readers
-      "sync=true", // Maintain real timestamps, prevent drift
-    ];
-  }
-
-  // V4L2 (USB/integrated cameras)
-  if (kind === "v4l2") {
-    // Raw fallback: use lower resolution (640×480) since YUYV doesn't support high res
-    const fallbackWidth = 640;
-    const fallbackHeight = 480;
-
-    const formatCaps = tryRawFallback
-      ? `video/x-raw,width=${fallbackWidth},height=${fallbackHeight}`
-      : `image/jpeg,width=${width},height=${height}`;
-
-    const decoder = tryRawFallback ? [] : ["jpegdec", "!"];
-
-    return [
-      ...base,
-      "v4l2src",
-      `device=${uri}`,
-      "!",
-      formatCaps,
-      "!",
-      ...decoder,
-      "videoconvert",
-      "!",
-      "videoscale",
-      "!",
-      `video/x-raw,format=I420,width=${width},height=${height}`,
-      "!",
-      "videorate", // Adjust framerate if camera doesn't support fpsHub exactly
-      "!",
-      `video/x-raw,framerate=${fpsHub}/1`,
-      "!",
-      "queue",
-      "max-size-buffers=1",
-      "leaky=downstream",
-      "!",
-      "shmsink",
-      `socket-path=${socketPath}`,
-      `shm-size=${shmSizeBytes}`,
-      "wait-for-connection=false",
-      "sync=true", // Maintain real timestamps, prevent drift
-    ];
-  }
-
-  throw new Error(`Unknown source kind: ${kind}`);
+  // RTSP camera (H.264)
+  return [
+    ...base,
+    "rtspsrc",
+    `location=${uri}`,
+    "protocols=tcp",
+    "latency=200",
+    "!",
+    "rtph264depay",
+    "!",
+    "h264parse",
+    "!",
+    "avdec_h264",
+    "!",
+    "queue", // Buffer decoded frames to ensure completeness
+    "max-size-buffers=2",
+    "max-size-time=0",
+    "max-size-bytes=0",
+    "!",
+    "videoconvert",
+    "!",
+    "videoscale",
+    "!",
+    `video/x-raw,format=I420,width=${width},height=${height}`,
+    "!",
+    "videorate",
+    "!",
+    `video/x-raw,framerate=${fpsHub}/1`,
+    "!",
+    "identity",
+    "sync=true",
+    "single-segment=true",
+    "!",
+    "queue",
+    "max-size-buffers=1",
+    "leaky=downstream",
+    "!",
+    "shmsink",
+    `socket-path=${socketPath}`,
+    `shm-size=${shmSizeBytes}`,
+    "wait-for-connection=false",
+    "sync=true",
+  ];
 }
 
 /**
@@ -300,10 +241,10 @@ export function buildIngest(
  *   - Drops frames if AI FPS < hub FPS
  *   - Duplicates frames if AI FPS > hub FPS (rare)
  *
- * Dynamic FPS (deprecated in protocol v1):
+ * Dynamic FPS (legacy feature for backward compatibility):
  *   - Idle: CONFIG.ai.fps.idle (e.g., 5 FPS)
  *   - Active: CONFIG.ai.fps.active (e.g., 12 FPS)
- *   - v1 protocol uses window-based backpressure instead
+ *   - Protocol v1 uses window-based backpressure instead
  *
  * Binary Output:
  * ==============
@@ -351,8 +292,8 @@ export function buildNV12Capture(
     "--gst-debug=shmsrc:3,fdsink:3",
     "shmsrc",
     `socket-path=${sourceSock}`,
-    "is-live=true", // Treat as live source (don't buffer excessively)
-    "do-timestamp=true", // Generate timestamps if not present
+    "is-live=true",
+    "do-timestamp=true",
     "!",
     `video/x-raw,format=I420,width=${sourceWidth},height=${sourceHeight},framerate=${sourceFpsHub}/1`,
     "!",
@@ -370,7 +311,7 @@ export function buildNV12Capture(
     "!",
     "videoconvert", // Convert I420 → NV12
     "!",
-    `video/x-raw,format=NV12`,
+    `video/x-raw,format=NV12,width=${aiWidth},height=${aiHeight}`,
     "!",
     "queue",
     "max-size-buffers=2", // Small buffer to smooth jitter

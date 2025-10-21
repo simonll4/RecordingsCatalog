@@ -40,7 +40,7 @@
  * 3. Edge validates:
  *    - Policy is LATEST_WINS (only supported policy)
  *    - Resolution matches configuration
- *    - If mismatch: log error and continue (TODO: reconfigure capture)
+ *    - If mismatch: log warning and continue (worker adapts or triggers degradation)
  *
  * Capabilities Explained:
  * =======================
@@ -117,6 +117,7 @@ export interface HandshakeResult {
   isInitialized: boolean; // true if handshake succeeded
   maxFrameBytes: number; // Maximum frame size in bytes
   windowSize: number; // Initial window size (credits)
+  chosenCodec: pb.ai.Codec; // Codec chosen by worker (CODEC_NONE for RAW, CODEC_JPEG for JPEG)
 }
 
 /**
@@ -127,6 +128,7 @@ export interface HandshakeResult {
  *
  * @param config - Handshake configuration (model, resolution, etc.)
  * @param streamId - Unique stream identifier (e.g., UUID)
+ * @param preferJpeg - If true, prioritize JPEG codec (for degradation scenarios)
  * @returns Init message envelope
  *
  * @example
@@ -146,7 +148,8 @@ export interface HandshakeResult {
  */
 export function buildInitMessage(
   config: HandshakeConfig,
-  streamId: string
+  streamId: string,
+  preferJpeg = false
 ): pb.ai.IEnvelope {
   return {
     protocolVersion: 1,
@@ -160,10 +163,16 @@ export function buildInitMessage(
             pb.ai.PixelFormat.PF_NV12,
             pb.ai.PixelFormat.PF_I420,
           ],
-          acceptedCodecs: [
-            pb.ai.Codec.CODEC_NONE, // RAW
-            pb.ai.Codec.CODEC_JPEG,
-          ],
+          // Prefer JPEG during degradation (smaller frames)
+          acceptedCodecs: preferJpeg
+            ? [
+                pb.ai.Codec.CODEC_JPEG, // Prefer JPEG
+                pb.ai.Codec.CODEC_NONE, // RAW fallback
+              ]
+            : [
+                pb.ai.Codec.CODEC_NONE, // Prefer RAW
+                pb.ai.Codec.CODEC_JPEG, // JPEG fallback
+              ],
           maxWidth: config.width,
           maxHeight: config.height,
           maxInflight: config.maxInflight,
@@ -230,25 +239,35 @@ export function handleInitOk(
   const chosenHeight = initOk.chosen.height || 0;
 
   if (chosenWidth !== config.width || chosenHeight !== config.height) {
-    logger.error("Resolution mismatch between requested and chosen", {
+    logger.warn("Resolution mismatch - worker chose different resolution", {
       module: "handshake",
       requested: { width: config.width, height: config.height },
       chosen: { width: chosenWidth, height: chosenHeight },
-      warning: "Worker may not process frames correctly. See docs/FUTURE_FEATURES.md for reconfiguration plan.",
+      impact: "Frames will be sent at configured resolution, worker will adapt",
     });
 
-    // Future enhancement: Reconfigure capture pipeline to match chosen resolution
-    // See docs/FUTURE_FEATURES.md for implementation plan
+    // NOTA: Reconfiguración dinámica completa requeriría:
+    // 1. Pasar referencia de nv12Capture a handleInitOk()
+    // 2. Detener capture, actualizar config, reiniciar con nueva resolución
+    // 3. Actualizar expectedFrameBytes en AIFeeder
+    //
+    // Por ahora, continuamos con resolución configurada.
+    // Si worker no puede procesar, disparará Error y activará degradación.
+    // Ver docs/FUTURE_FEATURES.md para plan de implementación completo.
   }
 
   const maxFrameBytes = initOk.maxFrameBytes || 0;
   const windowSize = initOk.chosen.initialCredits || 4;
+
+  // Extract chosen codec
+  const chosenCodec = initOk.chosen.codec || pb.ai.Codec.CODEC_NONE;
 
   logger.info("Handshake completed", {
     module: "handshake",
     chosen: initOk.chosen,
     maxFrameBytes,
     windowSize,
+    codec: chosenCodec,
   });
 
   metrics.gauge("ai_window_size", windowSize);
@@ -257,5 +276,6 @@ export function handleInitOk(
     isInitialized: true,
     maxFrameBytes,
     windowSize,
+    chosenCodec,
   };
 }

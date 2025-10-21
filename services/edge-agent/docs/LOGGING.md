@@ -4,12 +4,12 @@
 
 El edge-agent usa 4 niveles de logging jerárquicos:
 
-| Nivel | Qué muestra | Cuándo usar |
-|-------|-------------|-------------|
-| `error` | Solo errores críticos | Producción (mínimo ruido) |
-| `warn` | Warnings + errores | Producción (alertas importantes) |
-| `info` | Info + warn + error | Desarrollo/Staging (default) |
-| `debug` | Todo (incluye eventos FSM) | Debugging detallado |
+| Nivel   | Qué muestra                | Cuándo usar                      |
+| ------- | -------------------------- | -------------------------------- |
+| `error` | Solo errores críticos      | Producción (mínimo ruido)        |
+| `warn`  | Warnings + errores         | Producción (alertas importantes) |
+| `info`  | Info + warn + error        | Desarrollo/Staging (default)     |
+| `debug` | Todo (incluye eventos FSM) | Debugging detallado              |
 
 ## ⚙️ Configuración
 
@@ -20,25 +20,23 @@ El edge-agent usa 4 niveles de logging jerárquicos:
 level = "info"  # Opciones: debug | info | warn | error
 ```
 
-### Script helper para desarrollo local
+### Cambiar nivel de logging
 
 ```bash
-# Debug completo (muestra TODO)
-./scripts/run-edge-debug.sh
+# Editar config.toml y cambiar el nivel:
+vim config.toml
 
-# Info (default) - solo eventos importantes
-./scripts/run-edge-local.sh
+# [logging]
+# level = "debug"  # debug | info | warn | error
 
-# Warn - solo warnings y errores
-# Editar config.toml: level = "warn"
-
-# Error - solo errores críticos
-LOG_LEVEL=error npm run dev
+# Luego reiniciar:
+npm run dev
 ```
 
 ## 📊 Qué Loguea Cada Nivel
 
 ### `error` (Mínimo)
+
 ```
 ✅ Errores de conexión (camera, store, RTSP)
 ✅ Timeouts críticos
@@ -47,6 +45,7 @@ LOG_LEVEL=error npm run dev
 ```
 
 ### `warn` (Producción recomendado)
+
 ```
 ✅ Todo de error +
 ✅ Backpressure en bus (drops)
@@ -56,6 +55,7 @@ LOG_LEVEL=error npm run dev
 ```
 
 ### `info` (Development - DEFAULT)
+
 ```
 ✅ Todo de warn +
 ✅ Startup/shutdown del agente
@@ -66,6 +66,7 @@ LOG_LEVEL=error npm run dev
 ```
 
 ### `debug` (Debugging detallado)
+
 ```
 ✅ Todo de info +
 ✅ Cada evento FSM recibido
@@ -77,7 +78,8 @@ LOG_LEVEL=error npm run dev
 
 ## 📝 Ejemplos de Salida
 
-### Con `LOG_LEVEL=info` (Limpio)
+### Con `level = "info"` en config.toml (Limpio)
+
 ```
 2025-10-05T06:30:00.000Z [INFO ] === Edge Agent Starting === | module="main"
 2025-10-05T06:30:00.100Z [INFO ] Camera hub ready | module="camera-hub"
@@ -93,7 +95,8 @@ LOG_LEVEL=error npm run dev
 2025-10-05T06:30:30.101Z [INFO ] Closing session | module="session-store" sessionId="sess_1728112205502_1"
 ```
 
-### Con `LOG_LEVEL=debug` (Completo pero ruidoso)
+### Con `level = "debug"` en config.toml (Completo pero ruidoso)
+
 ```
 2025-10-05T06:30:00.000Z [INFO ] === Edge Agent Starting === | module="main"
 2025-10-05T06:30:00.001Z [DEBUG] Validating config | module="camera-hub"
@@ -118,25 +121,37 @@ LOG_LEVEL=error npm run dev
 ## 🎯 Recomendaciones
 
 ### Durante Desarrollo
-```env
-LOG_LEVEL=info
+
+```toml
+# config.toml
+[logging]
+level = "info"
 ```
+
 - Ves cambios de estado importantes
 - No te ahoga en eventos
 - Puedes seguir el flujo de sesiones
 
 ### Para Debugging
-```env
-LOG_LEVEL=debug
+
+```toml
+# config.toml
+[logging]
+level = "debug"
 ```
+
 - Ves CADA evento y comando
 - Útil para entender por qué algo no funciona
 - Verifica que FSM recibe eventos correctos
 
 ### En Producción (Docker)
-```env
-LOG_LEVEL=warn
+
+```toml
+# config.toml
+[logging]
+level = "warn"
 ```
+
 - Solo alertas importantes
 - Reduce I/O de logs
 - Fácil spot de problemas
@@ -144,18 +159,24 @@ LOG_LEVEL=warn
 ### Troubleshooting Específico
 
 #### "No se está grabando"
+
 ```bash
-LOG_LEVEL=debug npm run dev | grep -E "(FSM|detection|session)"
+# Configurar level = "debug" en config.toml primero
+npm run dev | grep -E "(FSM|detection|session)"
 ```
 
 #### "Publisher no arranca"
+
 ```bash
-LOG_LEVEL=debug npm run dev | grep -E "(publisher|encoder)"
+# Configurar level = "debug" en config.toml primero
+npm run dev | grep -E "(publisher|encoder)"
 ```
 
 #### "Camera no conecta"
+
 ```bash
-LOG_LEVEL=debug npm run dev | grep -E "(camera|ready|socket)"
+# Configurar level = "debug" en config.toml primero
+npm run dev | grep -E "(camera|ready|socket)"
 ```
 
 ## 🔧 Cambiar Nivel en Runtime
@@ -164,7 +185,7 @@ Actualmente NO soportado (requiere reinicio). Para implementar:
 
 ```typescript
 // En futuro: endpoint HTTP para cambiar nivel
-app.post('/admin/log-level', (req, res) => {
+app.post("/admin/log-level", (req, res) => {
   const level = req.body.level;
   logger.setLevel(level);
   res.json({ ok: true, level });
@@ -178,20 +199,20 @@ En `docker-compose.yml`:
 ```yaml
 services:
   edge-agent:
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-warn}  # Default a warn en producción
+    volumes:
+      - ./config.toml:/app/config.toml:ro  # Montar config custom
 ```
 
-Ejecutar:
+Opciones:
+
 ```bash
-# Producción (warn)
-docker-compose up
+# 1. Editar config.toml directamente (recomendado)
+vim services/edge-agent/config.toml
+# [logging]
+# level = "debug"  # o "info", "warn", "error"
 
-# Debug
-LOG_LEVEL=debug docker-compose up
-
-# Solo errores
-LOG_LEVEL=error docker-compose up
+# 2. Rebuild container si cambias config.toml
+docker compose --profile edge up --build
 ```
 
 ## 🎨 Formato de Logs
@@ -203,11 +224,13 @@ Todos los logs siguen el formato estructurado:
 ```
 
 Ejemplo:
+
 ```
 2025-10-05T06:30:05.500Z [INFO ] FSM state change | module="orchestrator" from="IDLE" to="ACTIVE" commands=2
 ```
 
 Campos comunes:
+
 - `module` - Módulo que genera el log (camera-hub, orchestrator, etc.)
 - `state` - Estado FSM actual
 - `sessionId` - ID de sesión activa

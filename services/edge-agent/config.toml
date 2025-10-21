@@ -9,14 +9,14 @@ id = "cam-local"
 
 # Nivel de logging (debug, info, warn, error)
 [logging]
-level = "info"
+level = "debug"
 
-# Configuración de la fuente de video
+# Configuración de la fuente de video (RTSP)
 [source]
-# Tipo de fuente: "v4l2" para cámaras USB/integradas o "rtsp" para cámaras IP
-kind = "v4l2"
-# URI: /dev/videoN para v4l2 o rtsp://host:port/path para RTSP
-uri = "/dev/video0"
+# Tipo de fuente (solo RTSP soportado)
+kind = "rtsp"
+# URI de la cámara IP RTSP
+uri = "rtsp://admin:KBXBIN@192.168.1.82:554/Streaming/Channels/1"
 # Resolución de captura
 width = 640
 height = 480
@@ -55,10 +55,10 @@ umbral = 0.5
 # Resolución de entrada del modelo
 width = 640
 height = 640
-# Clases disponibles (separadas por comas)
-class_names = "person"
+# Clases disponibles (no usado actualmente - worker-ai define las clases)
+# class_names = "bottle"
 # Clases a detectar (filtro, separadas por comas)
-classes_filter = "person"
+classes_filter = "bottle,person"
 # FPS de procesamiento en estado IDLE
 fps_idle = 5
 # FPS de procesamiento en estado ACTIVE

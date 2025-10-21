@@ -79,29 +79,40 @@ services:
     build:
       context: ./services/edge-agent
     container_name: tpfinalv3-edge-agent
-    restart: on-failure
+    restart: unless-stopped
+    shm_size: "512m"  # Shared memory para SHM pipeline (necesario para HD/1080p)
     depends_on:
       mediamtx:
         condition: service_started
       session-store:
         condition: service_started
       #worker-ai:
-        #condition: service_healthy
+      #condition: service_healthy
     environment:
       TZ: UTC
     extra_hosts:
-      - "host.docker.internal:host-gateway"  # Permite conectar al worker-ai local
+      - "host.docker.internal:host-gateway" # Permite conectar al worker-ai local
     volumes:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
-    # Acceso a cámara - Descomentar para producción con cámara física
+
+    # ===== CONFIGURACIÓN DE CÁMARA =====
+    # Para cámaras IP (RTSP): No requiere configuración adicional.
+    #   - La red bridge por defecto permite acceso a la LAN del host (ej: 192.168.1.82)
+    #   - Si hay problemas de red, descomentar network_mode: host (línea abajo)
+
+    # Para mejor acceso a cámaras IP en red LAN (opcional pero recomendado):
+    # network_mode: host  # Usa la red del host directamente
+
+    # Para cámaras USB/locales (v4l2): Descomentar las siguientes líneas
     # NOTA: Requiere Docker Engine nativo (no Docker Desktop)
-    devices:
-      - "/dev/video0:/dev/video0"
-      - "/dev/video1:/dev/video1"
-    group_add:
-      - "44"  # GID del grupo video del host (verificar con: getent group video)
-    privileged: true
+    # devices:
+    #   - "/dev/video0:/dev/video0"
+    #   - "/dev/video1:/dev/video1"
+    # group_add:
+    #   - "44"  # GID del grupo video del host (verificar con: getent group video)
+    # privileged: true
+
     profiles: [edge]
 
   vue-ui:

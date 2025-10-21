@@ -45,11 +45,13 @@ class Visualizer:
         
         for track in tracks:
             # Convertir bbox normalizada a píxeles
-            x1, y1, x2, y2 = track.bbox
-            x1 = int(x1 * w)
-            y1 = int(y1 * h)
-            x2 = int(x2 * w)
-            y2 = int(y2 * h)
+            x1n, y1n, x2n, y2n = track.bbox
+            
+            # Clamp a [0,1] y convertir a píxeles
+            x1 = int(max(0.0, min(1.0, x1n)) * w)
+            y1 = int(max(0.0, min(1.0, y1n)) * h)
+            x2 = int(max(0.0, min(1.0, x2n)) * w)
+            y2 = int(max(0.0, min(1.0, y2n)) * h)
             
             # Color por clase
             color = CLASS_COLORS.get(track.class_name, DEFAULT_COLOR)
@@ -71,7 +73,7 @@ class Visualizer:
             )
         
         # Info general
-        info = f"Frame: {len(tracks)} tracks"
+        info = f"Tracks: {len(tracks)}"
         cv2.putText(
             img, info, (10, 30),
             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA
@@ -89,7 +91,7 @@ class Visualizer:
         """
         annotated = self.draw_tracks(frame, tracks)
         cv2.imshow(self.window_name, annotated)
-        cv2.waitKey(1)  # 1ms para procesar eventos de ventana
+        cv2.waitKey(1)
     
     def close(self):
         """Cierra la ventana"""

@@ -24,6 +24,7 @@ Verifica en logs el handshake Init/InitOk y el flujo de `Frame`/`Result`.
 ### Opción B: Local (dos terminales)
 
 Terminal 1 — Worker AI
+
 ```bash
 cd services/worker-ai
 export BIND_HOST=0.0.0.0
@@ -32,20 +33,27 @@ python3 worker.py
 ```
 
 Terminal 2 — Edge Agent
+
 ```bash
 cd services/edge-agent
-export AI_WORKER_HOST=localhost
-export AI_WORKER_PORT=7001
+
+# Configurar worker en config.toml:
+# [ai]
+# worker_host = "localhost"
+# worker_port = 7001
+
 npm run dev
 ```
 
-## Variables de entorno relevantes
+## Configuración relevante
 
-Edge Agent
-- `AI_WORKER_HOST` (default: `localhost`)
-- `AI_WORKER_PORT` (default: `7001`)
+Edge Agent (config.toml)
+
+- `ai.worker_host` (default: `"localhost"`)
+- `ai.worker_port` (default: `7001`)
 
 Worker AI
+
 - `BIND_HOST`, `BIND_PORT`, `BOOTSTRAP_*` (opcionales para precarga del modelo)
 
 ## Verificación rápida
@@ -62,7 +70,7 @@ Worker AI
 - “ai_pb2 module not found”
   - Genera protobuf en el worker: `python3 -m grpc_tools.protoc -I../../proto --python_out=. ../../proto/ai.proto`.
 - Depuración en edge-agent
-  - `export LOG_LEVEL=debug && npm run dev`
+  - Editar `config.toml`: `level = "debug"` en sección `[logging]`
 
 ## Flujo (resumen)
 

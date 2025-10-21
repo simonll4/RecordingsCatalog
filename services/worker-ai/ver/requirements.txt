@@ -1,6 +1,0 @@
-numpy>=2.0.0  # Required for recent ONNX Runtime wheels
-onnxruntime>=1.20.0  # Supports models exported with ONNX opset 22
-protobuf>=4.25.0
-tomli>=2.0.0;python_version<"3.11"  # TOML parser para Python < 3.11
-opencv-python>=4.8.0  # Para visualización de detecciones (opcional)
-pyyaml>=6.0.0  # Para configuración del tracker

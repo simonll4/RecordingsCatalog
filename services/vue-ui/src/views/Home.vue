@@ -1,42 +1,49 @@
 <script setup lang="ts">
-import { onMounted } from 'vue';
-import { useRouter } from 'vue-router';
-import SessionList from '../components/SessionList.vue';
-import SessionSearch from '../components/SessionSearch.vue';
-import { useSessionsStore } from '../stores/useSessions';
+import { onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import SessionList from '../components/SessionList.vue'
+import SessionSearch from '../components/SessionSearch.vue'
+import { useSessionsStore } from '../stores/useSessions'
 
-const sessionsStore = useSessionsStore();
-const router = useRouter();
+/**
+ * Vista principal (home): muestra el buscador de sesiones y la lista.
+ * - Carga por defecto sesiones del último `defaultRangeHours`.
+ * - Maneja `search` (desde `SessionSearch`) y `select` (desde `SessionList`).
+ */
+const sessionsStore = useSessionsStore()
+const router = useRouter()
 
-const defaultRangeHours = 1;
+const defaultRangeHours = 1
 
 const loadDefaultSessions = async () => {
-  const to = new Date();
-  const from = new Date(to.getTime() - defaultRangeHours * 60 * 60 * 1000);
+  const to = new Date()
+  const from = new Date(to.getTime() - defaultRangeHours * 60 * 60 * 1000)
   await sessionsStore.loadSessions({
     mode: 'range',
     from: from.toISOString(),
-    to: to.toISOString()
-  });
-};
+    to: to.toISOString(),
+  })
+}
 
+// Handler del evento `search` emitido por SessionSearch
 const handleSearch = async (range: { from: string; to: string }) => {
   await sessionsStore.loadSessions({
     mode: 'range',
     from: range.from,
-    to: range.to
-  });
-};
+    to: range.to,
+  })
+}
 
+// Handler cuando el usuario selecciona una sesión: guarda y navega
 const handleSelect = (sessionId: string) => {
-  if (!sessionId) return;
-  sessionsStore.selectSession(sessionId);
-  router.push({ name: 'session', params: { sessionId } });
-};
+  if (!sessionId) return
+  sessionsStore.selectSession(sessionId)
+  router.push({ name: 'session', params: { sessionId } })
+}
 
 onMounted(() => {
-  void loadDefaultSessions();
-});
+  void loadDefaultSessions()
+})
 </script>
 
 <template>
@@ -44,7 +51,9 @@ onMounted(() => {
     <header class="home__header">
       <div>
         <h1>Sesiones con detecciones relevantes</h1>
-        <p class="subtitle">Elegí una sesión para reproducir el clip y superponer las anotaciones.</p>
+        <p class="subtitle">
+          Elegí una sesión para reproducir el clip y superponer las anotaciones.
+        </p>
       </div>
       <SessionSearch @search="handleSearch" />
     </header>

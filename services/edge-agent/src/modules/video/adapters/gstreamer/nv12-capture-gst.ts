@@ -24,16 +24,16 @@
  *   - Enables AI worker to parse YUV data correctly
  *   - Protocol v1 compatibility
  *
- * Dual-Rate Support (Deprecated in v1)
+ * Dual-Rate Support (Legacy, kept for backward compatibility)
  *   - Supports idle/active FPS modes
- *   - v1 protocol handles backpressure via window size
- *   - FPS changes not needed in v1 (worker controls flow)
+ *   - Protocol v1 uses window-based backpressure instead
+ *   - FPS changes not needed in v1 but still functional if used
  *
  * Auto-Recovery
  *   - Detects pipeline crashes
  *   - Restarts with exponential backoff
- *   - Waits for Camera Hub socket availability
- *   - Gives up after max consecutive failures
+ *   - Waits for Camera Hub socket availability (INDEFINIDAMENTE)
+ *   - Never gives up (always-on design)
  *
  * Architecture:
  * =============
@@ -171,15 +171,30 @@ export class NV12CaptureGst {
   private onFrame?: OnNV12FrameFn; // Frame callback
   private acc: Buffer = Buffer.alloc(0); // Binary accumulator for stdout
   private consecutiveFailures = 0; // Crash counter for backoff
-  private maxConsecutiveFailures = 5; // Max failures before giving up
-  private currentMode: "idle" | "active" = "idle"; // FPS mode (deprecated in v1)
+  private currentMode: "idle" | "active" = "idle"; // FPS mode (legacy, v1 uses window-based backpressure)
   private stoppedManually = false; // Manual stop flag (prevents auto-restart)
   private lastLoggedSeam: number | null = null; // Tracks last seam logged to avoid spam
+  private frameCount = 0; // DEBUG: Frame counter
+  private lastDataLog = Date.now(); // DEBUG: Last data received log timestamp
+  private _isRunning = false; // Liveness flag for external checks
+
+  /**
+   * Check if Capture is Running
+   *
+   * Expone flag de liveness para chequeos externos.
+   * Permite a main.ts y feeder verificar estado antes de relanzar.
+   *
+   * @returns true si el pipeline está activo
+   */
+  isRunning(): boolean {
+    return this._isRunning && !!this.proc;
+  }
 
   /**
    * Start NV12 Capture
    *
    * Launches GStreamer pipeline and starts delivering frames to callback.
+   * Idempotente: si ya está corriendo, no falla.
    *
    * Pipeline:
    *   shmsrc → videoscale → videoconvert → NV12 → fdsink(stdout)
@@ -187,9 +202,18 @@ export class NV12CaptureGst {
    * @param onFrame - Callback for each captured frame
    */
   async start(onFrame: OnNV12FrameFn): Promise<void> {
+    // Idempotencia: si ya está corriendo, no hacer nada
+    if (this.isRunning()) {
+      logger.debug("NV12 capture already running", {
+        module: "nv12-capture-gst",
+      });
+      return;
+    }
+
     this.onFrame = onFrame;
     this.stoppedManually = false;
     this.consecutiveFailures = 0;
+    this._isRunning = true;
 
     const fps = this.getFps();
     await this.launch(fps);
@@ -219,6 +243,7 @@ export class NV12CaptureGst {
 
     logger.info("Stopping NV12 capture", { module: "nv12-capture-gst" });
     this.stoppedManually = true;
+    this._isRunning = false;
 
     this.proc.stdout?.removeAllListeners();
     this.proc.stderr?.removeAllListeners();
@@ -238,11 +263,11 @@ export class NV12CaptureGst {
   }
 
   /**
-   * Set FPS Mode (Deprecated in Protocol v1)
+   * Set FPS Mode (Legacy feature for backward compatibility)
    *
    * Changes between idle and active FPS rates.
-   * In protocol v1, this is deprecated - AI worker handles backpressure
-   * via window size, so dynamic FPS is not needed.
+   * Protocol v1 uses window-based backpressure, making FPS changes optional.
+   * Kept functional for backward compatibility with older configurations.
    *
    * @param mode - "idle" (low FPS) or "active" (high FPS)
    */
@@ -385,6 +410,20 @@ export class NV12CaptureGst {
     height: number
   ) {
     this.consecutiveFailures = 0;
+
+    // DEBUG: Log data reception (throttled to every 2 seconds)
+    const now = Date.now();
+    if (now - this.lastDataLog > 2000) {
+      logger.info("[DEBUG] Receiving data from GStreamer", {
+        module: "nv12-capture-gst",
+        chunkSize: chunk.length,
+        accSize: this.acc.length,
+        frameBytes,
+        framesReceived: this.frameCount,
+      });
+      this.lastDataLog = now;
+    }
+
     this.acc = Buffer.concat([this.acc, chunk]);
 
     // Limit accumulator to 3 frames max (prevent memory exhaustion)
@@ -447,6 +486,17 @@ export class NV12CaptureGst {
           }
         }
 
+        // DEBUG: Log frame extraction
+        this.frameCount++;
+        if (this.frameCount % 25 === 0) {
+          logger.info("[DEBUG] Frame extracted and sent to callback", {
+            module: "nv12-capture-gst",
+            frameCount: this.frameCount,
+            frameSize: normalizedData.length,
+            resolution: `${width}x${height}`,
+          });
+        }
+
         this.onFrame?.(normalizedData, meta);
       } catch (e) {
         logger.error("onFrame callback error", {
@@ -462,62 +512,57 @@ export class NV12CaptureGst {
    *
    * Handles GStreamer process exit (crash or manual stop).
    *
-   * Auto-Restart Logic:
-   * ===================
+   * Auto-Restart Logic (Reintentos Indefinidos):
+   * ============================================
    *
    * 1. If stopped manually → do nothing (expected exit)
    * 2. Increment failure counter
-   * 3. If max failures reached → log error, give up
-   * 4. Otherwise:
-   *    - Calculate exponential backoff delay (250ms, 500ms, 750ms, ...)
-   *    - Wait for Camera Hub socket to be available
-   *    - Restart pipeline if still needed
+   * 3. Calculate exponential backoff delay (max 30s)
+   * 4. Wait for Camera Hub socket to be available (INDEFINIDAMENTE)
+   * 5. Restart pipeline when socket is ready
    *
    * Socket Availability Check:
-   *   - Waits up to 10 seconds for socket to appear
-   *   - Checks every 500ms
-   *   - If Camera Hub is restarting, waits for it to be ready
+   *   - Espera INDEFINIDA con backoff exponencial
+   *   - Checks cada 1s (aumenta a 2s, 5s, 10s, hasta max 30s)
+   *   - Si Camera Hub está reiniciando, espera hasta que esté listo
+   *   - NO SE RINDE (always-on design)
    *
    * Backoff Formula:
-   *   delay = min(250 × consecutiveFailures, 2000)
+   *   delay = min(250 × consecutiveFailures, 30000)
    *   - Attempt 1: 250ms
    *   - Attempt 2: 500ms
-   *   - Attempt 3: 750ms
-   *   - Attempt 4+: 1000ms, 1250ms, ..., max 2000ms
+   *   - ...
+   *   - Attempt 120+: 30s (max)
    *
    * @param code - Exit code (null if killed by signal)
    * @param signal - Signal that killed process (null if exited normally)
    */
   private async handleExit(code: number | null, signal: string | null) {
-    if (this.stoppedManually) return;
+    if (this.stoppedManually) {
+      this._isRunning = false;
+      return;
+    }
 
     this.proc = undefined;
     this.acc = Buffer.alloc(0);
     this.consecutiveFailures++;
 
-    if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
-      logger.error("Max consecutive failures reached, stopping auto-restart", {
-        module: "nv12-capture-gst",
-        failures: this.consecutiveFailures,
-      });
-      return;
-    }
-
-    const delay = Math.min(250 * this.consecutiveFailures, 2000);
-    logger.warn("NV12 capture crashed, restarting", {
+    // Backoff exponencial con máximo de 30s
+    const delay = Math.min(250 * this.consecutiveFailures, 30000);
+    logger.warn("NV12 capture crashed, restarting with backoff", {
       module: "nv12-capture-gst",
-      delay,
+      delayMs: delay,
       attempt: this.consecutiveFailures,
     });
 
     // Wait for initial backoff delay
     await new Promise((res) => setTimeout(res, delay));
 
-    // Wait for Camera Hub socket to be available (up to 10 seconds)
+    // Wait for Camera Hub socket to be available (INDEFINIDAMENTE)
     const socketPath = CONFIG.source.socketPath;
-    const maxWaitMs = 10000;
-    const checkIntervalMs = 500;
-    const startTime = Date.now();
+    let checkIntervalMs = 1000; // Comenzar con 1s
+    const maxCheckIntervalMs = 30000; // Máximo 30s entre checks
+    let consecutiveSocketChecks = 0;
 
     while (!this.stoppedManually && !this.proc && this.onFrame) {
       if (existsSync(socketPath)) {
@@ -525,23 +570,43 @@ export class NV12CaptureGst {
         logger.info("Camera Hub socket available, restarting NV12 capture", {
           module: "nv12-capture-gst",
           socketPath,
+          afterAttempts: consecutiveSocketChecks,
         });
         void this.launch(this.getFps());
         return;
       }
 
-      const elapsed = Date.now() - startTime;
-      if (elapsed >= maxWaitMs) {
-        logger.error("Camera Hub socket not available after timeout, giving up", {
+      consecutiveSocketChecks++;
+
+      // Log cada 10 intentos para no spam
+      if (consecutiveSocketChecks % 10 === 0) {
+        logger.warn("Still waiting for Camera Hub socket", {
           module: "nv12-capture-gst",
           socketPath,
-          timeoutMs: maxWaitMs,
+          checks: consecutiveSocketChecks,
+          nextCheckIn: checkIntervalMs,
         });
-        return;
       }
 
       // Wait before next check
       await new Promise((res) => setTimeout(res, checkIntervalMs));
+
+      // Aumentar intervalo de chequeo gradualmente (backoff)
+      // 1s → 2s → 5s → 10s → ... → 30s (max)
+      if (consecutiveSocketChecks < 5) {
+        checkIntervalMs = 1000;
+      } else if (consecutiveSocketChecks < 10) {
+        checkIntervalMs = 2000;
+      } else if (consecutiveSocketChecks < 20) {
+        checkIntervalMs = 5000;
+      } else if (consecutiveSocketChecks < 40) {
+        checkIntervalMs = 10000;
+      } else {
+        checkIntervalMs = maxCheckIntervalMs;
+      }
     }
+
+    // Si salimos del loop, es porque se detuvo manualmente o se perdió onFrame
+    this._isRunning = false;
   }
 }

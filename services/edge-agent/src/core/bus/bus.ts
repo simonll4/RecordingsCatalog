@@ -80,6 +80,7 @@
 import { EventEmitter } from "events";
 import { KnownTopic, EventOf } from "./events.js";
 import { metrics } from "../../shared/metrics.js";
+import { logger } from "../../shared/logging.js";
 import { CONFIG } from "../../config/index.js";
 
 type Unsubscribe = () => void;
@@ -141,9 +142,11 @@ export class Bus extends EventEmitter {
 
       // Log warning every 100 drops (reduce log spam)
       if (dropped % 100 === 0) {
-        console.warn(
-          `[Bus] Backpressure on topic ${topic}: ${dropped} events dropped`
-        );
+        logger.warn("Bus backpressure detected", {
+          module: "bus",
+          topic,
+          dropped,
+        });
       }
 
       return false; // Signal caller that event was dropped

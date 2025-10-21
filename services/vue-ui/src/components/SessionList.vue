@@ -1,30 +1,39 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import type { SessionSummary } from '../api/sessions';
+import { computed } from 'vue'
+import type { SessionSummary } from '../api/sessions'
 
+/**
+ * Lista de sesiones en forma de tarjetas.
+ * Props:
+ * - `sessions`: arreglo de `SessionSummary` (desde la API)
+ * - `selectedId`: id de la sesión actualmente seleccionada
+ * Emite `select` con `sessionId` cuando el usuario hace click en una tarjeta.
+ */
 const props = defineProps<{
-  sessions: SessionSummary[];
-  selectedId: string | null;
-  loading?: boolean;
-  error?: string | null;
-}>();
+  sessions: SessionSummary[]
+  selectedId: string | null
+  loading?: boolean
+  error?: string | null
+}>()
 
 const emit = defineEmits<{
-  (e: 'select', sessionId: string): void;
-}>();
+  (e: 'select', sessionId: string): void
+}>()
 
+// Formateador local de fechas para mostrar inicio/fin
 const formatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'short',
-  timeStyle: 'medium'
-});
+  timeStyle: 'medium',
+})
 
+// Computed que agrega etiquetas legibles a cada sesión
 const formattedSessions = computed(() =>
   props.sessions.map((session) => ({
     ...session,
     startLabel: formatter.format(new Date(session.start_ts)),
-    endLabel: session.end_ts ? formatter.format(new Date(session.end_ts)) : 'En curso'
-  }))
-);
+    endLabel: session.end_ts ? formatter.format(new Date(session.end_ts)) : 'En curso',
+  })),
+)
 </script>
 
 <template>
@@ -98,7 +107,9 @@ const formattedSessions = computed(() =>
   gap: 0.75rem;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: border-color 0.2s ease, transform 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease;
 }
 
 .card:hover {

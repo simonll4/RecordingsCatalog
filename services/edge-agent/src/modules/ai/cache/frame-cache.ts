@@ -118,6 +118,7 @@ export type CachedFrame = {
 export class FrameCache {
   private cache = new Map<string, CachedFrame>();
   private ttlMs: number;
+  private cleanupInterval?: NodeJS.Timeout;
 
   /**
    * Creates FrameCache with TTL
@@ -135,7 +136,7 @@ export class FrameCache {
     this.ttlMs = ttlMs;
 
     // Periodic cleanup every 1 second
-    setInterval(() => this.cleanup(), 1000);
+    this.cleanupInterval = setInterval(() => this.cleanup(), 1000);
   }
 
   /**
@@ -259,5 +260,28 @@ export class FrameCache {
    */
   clear(): void {
     this.cache.clear();
+  }
+
+  /**
+   * Destroy Cache and Release Resources
+   *
+   * Stops cleanup interval and clears cache.
+   * Call this during shutdown to prevent memory leaks.
+   *
+   * After calling destroy(), the cache should not be used again.
+   *
+   * @example
+   * ```typescript
+   * // During shutdown
+   * frameCache.destroy();
+   * ```
+   */
+  destroy(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = undefined;
+    }
+    this.cache.clear();
+    logger.debug("Frame cache destroyed", { module: "frame-cache" });
   }
 }

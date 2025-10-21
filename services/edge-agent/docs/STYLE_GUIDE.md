@@ -32,7 +32,7 @@ import { Orchestrator } from "../core/orchestrator/orchestrator.js";
 // === Modules ===
 import { CameraHubGst } from "../modules/video/adapters/gstreamer/camera-hub-gst.js";
 import { AIFeeder } from "../modules/ai/feeder/ai-feeder.js";
-import { PublisherGst } from "../modules/streaming/adapters/gstreamer/publisher-gst.js";
+import { MediaMTXOnDemandPublisherGst } from "../modules/streaming/adapters/gstreamer/media-mtx-on-demand-publisher-gst.js";
 
 // === Shared ===
 import { logger } from "../shared/logging.js";

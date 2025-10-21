@@ -48,7 +48,7 @@ Diagrama simplificado y alineado con la implementación actual.
 ```
 
 Notas
+
 - El Orchestrator no ingesta detecciones; solo maneja sesiones y streaming.
 - `ai.keepalive` no resetea el timer de silencio en ACTIVE.
 - El hub SHM permite que Publisher y Captura AI lean en paralelo el mismo stream.
-

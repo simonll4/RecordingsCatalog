@@ -113,8 +113,18 @@ export class WindowManager {
    * ```
    */
   initialize(windowSize: number): void {
-    this.windowSize = windowSize;
+    // Asegurar mínimo de 1 crédito (defensivo si worker envía 0)
+    this.windowSize = Math.max(1, windowSize);
     this.inflight = 0;
+    
+    if (windowSize < 1) {
+      logger.warn("Worker sent window size < 1, using 1", {
+        module: "window-manager",
+        received: windowSize,
+        using: this.windowSize,
+      });
+    }
+    
     metrics.gauge("ai_window_size", this.windowSize);
     metrics.gauge("ai_inflight", this.inflight);
   }

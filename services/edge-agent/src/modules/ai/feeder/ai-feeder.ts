@@ -93,6 +93,7 @@ import { FrameCache } from "../cache/frame-cache.js";
 import { DegradationManager } from "./degradation.js";
 import { buildInitMessage, handleInitOk } from "./handshake.js";
 import { WindowManager } from "./window.js";
+import { convertNV12ToJpeg } from "../../../media/convert.js";
 
 /**
  * AI Feeder Configuration
@@ -173,6 +174,10 @@ export class AIFeeder {
   // Received in InitOk message, enforced on every frame
   private maxFrameBytes = 0;
 
+  // Worker chosen codec (CODEC_NONE for RAW, CODEC_JPEG for JPEG transport)
+  // Received in InitOk, determines if we need to encode frames before sending
+  private chosenCodec: pb.ai.Codec = pb.ai.Codec.CODEC_NONE;
+
   // Monotonic frame ID counter (unique per connection)
   private frameIdCounter = 0n;
 
@@ -205,19 +210,22 @@ export class AIFeeder {
   // Set by TCP client via setSendFunction()
   private sendFrameFn?: (envelope: pb.ai.IEnvelope) => void;
 
-  // === Frame Cache ===
+  // === Frame Cache & Tracking ===
 
-  // In-memory cache for NV12 frames
-  // TTL-based eviction (default 2000ms)
-  // Shared with SessionManager for frame ingestion
+  // Frame cache (for ingestion)
   private frameCache: FrameCache;
 
-  // === Performance Tracking ===
-
-  // RTT (Round-Trip Time) tracking per frame
-  // Map: frameId → send timestamp
-  // Used to calculate processing latency
+  // In-flight frames (for RTT tracking)
   private sentFrames = new Map<string, number>();
+
+  // DEBUG: Frame counters
+  private framesReceivedCount = 0;
+  private framesSentCount = 0;
+  private lastFrameLog = Date.now();
+  private resultsReceivedCount = 0;
+
+  // Liveness flag
+  private _isStarted = false;
 
   constructor(capture: NV12CaptureGst, frameCacheTtlMs?: number) {
     this.capture = capture;
@@ -315,10 +323,11 @@ export class AIFeeder {
    * Constructs protocol Init message with capabilities.
    * Sent as first message during handshake.
    *
+   * @param preferJpeg - If true, prioritize JPEG codec (for degradation)
    * @returns Protobuf Envelope containing Init message
    * @throws Error if config or streamId not set
    */
-  buildInitMessage(): pb.ai.IEnvelope {
+  buildInitMessage(preferJpeg = false): pb.ai.IEnvelope {
     if (!this.config) {
       throw new Error("Config not set");
     }
@@ -327,13 +336,18 @@ export class AIFeeder {
       throw new Error("Stream ID not set - call setStreamId first");
     }
 
-    return buildInitMessage(this.config, this.streamId);
+    return buildInitMessage(this.config, this.streamId, preferJpeg);
   }
 
   /**
    * Handle InitOk response from worker
    */
   handleInitOk(initOk: pb.ai.IInitOk): void {
+    logger.info("[DEBUG] handleInitOk called", {
+      module: "ai-feeder",
+      hasConfig: !!this.config,
+    });
+
     if (!this.config) {
       logger.error("Config not set", { module: "ai-feeder" });
       return;
@@ -341,9 +355,23 @@ export class AIFeeder {
 
     const result = handleInitOk(initOk, this.config);
 
+    logger.info("[DEBUG] handleInitOk result", {
+      module: "ai-feeder",
+      isInitialized: result.isInitialized,
+      maxFrameBytes: result.maxFrameBytes,
+      windowSize: result.windowSize,
+    });
+
     this.isInitialized = result.isInitialized;
     this.maxFrameBytes = result.maxFrameBytes;
+    this.chosenCodec = result.chosenCodec;
     this.windowManager.initialize(result.windowSize);
+
+    logger.info("[DEBUG] Feeder initialized", {
+      module: "ai-feeder",
+      isInitialized: this.isInitialized,
+      maxFrameBytes: this.maxFrameBytes,
+    });
 
     this.callbacks.onReady?.();
   }
@@ -362,6 +390,20 @@ export class AIFeeder {
    * Handle Result from worker
    */
   handleResult(result: pb.ai.IResult): void {
+    this.resultsReceivedCount++;
+
+    // DEBUG: Log cada 25 resultados
+    const detCount = result.detections?.items?.length || 0;
+    if (this.resultsReceivedCount % 25 === 0 || detCount > 0) {
+      logger.info("[DEBUG] Result recibido del worker", {
+        module: "ai-feeder",
+        resultsReceived: this.resultsReceivedCount,
+        frameId: result.frameId?.toString(),
+        detections: detCount,
+        hasDetections: detCount > 0,
+      });
+    }
+
     // Calculate RTT if we tracked this frame
     const frameIdStr = result.frameId?.toString();
     if (frameIdStr) {
@@ -454,11 +496,13 @@ export class AIFeeder {
         currentFormat: this.config.preferredFormat,
       });
 
-      // Stop current capture
-      await this.capture.stop();
+      // NOTE: We do NOT stop capture here (always-on design)
+      // Capture continues running while we renegotiate protocol
+      // This prevents frame loss during degradation
+      // Worker will handle any interim frames with Error responses
 
-      // Rebuild Init with JPEG as preferred codec (acceptedCodecs includes JPEG in buildInitMessage)
-      const degradedInit = this.buildInitMessage();
+      // Rebuild Init with JPEG as preferred codec (worker will choose JPEG)
+      const degradedInit = this.buildInitMessage(true); // preferJpeg=true
 
       // Send degraded Init via TCP client
       if (this.sendFrameFn) {
@@ -468,7 +512,7 @@ export class AIFeeder {
         });
 
         // InitOk will be handled by handleInitOk (updates maxFrameBytes/windowSize)
-        // Then restart capture via onReady callback
+        // Capture continues running, no need to restart
 
         metrics.inc("ai_degrade_jpeg_switch_total");
       } else {
@@ -491,14 +535,24 @@ export class AIFeeder {
   }
 
   /**
-   * Start capturing frames
+   * Start capturing frames (idempotent)
+   *
+   * Safe to call multiple times - subsequent calls are no-ops.
+   * Prevents duplicate frame subscriptions.
    */
   async start(): Promise<void> {
+    // Idempotencia: si ya está iniciado, no hacer nada
+    if (this._isStarted) {
+      logger.debug("AI Feeder already started", { module: "ai-feeder" });
+      return;
+    }
+
     const onFrame: OnNV12FrameFn = (data, meta) => {
       this.handleFrame(data, meta);
     };
 
     await this.capture.start(onFrame);
+    this._isStarted = true;
 
     logger.info("AI Feeder started", { module: "ai-feeder" });
   }
@@ -508,8 +562,26 @@ export class AIFeeder {
    */
   async stop(): Promise<void> {
     await this.capture.stop();
+    this._isStarted = false;
     this.pendingFrame = undefined;
     logger.info("AI Feeder stopped", { module: "ai-feeder" });
+  }
+
+  /**
+   * Destroy and Release Resources
+   *
+   * Cleans up frame cache and releases memory.
+   * Call during application shutdown after stop().
+   *
+   * @example
+   * ```typescript
+   * await aiFeeder.stop();
+   * aiFeeder.destroy();
+   * ```
+   */
+  destroy(): void {
+    this.frameCache.destroy();
+    logger.info("AI Feeder destroyed", { module: "ai-feeder" });
   }
 
   /**
@@ -522,33 +594,62 @@ export class AIFeeder {
   // ==================== PRIVATE ====================
 
   private handleFrame(data: Buffer, meta: NV12FrameMeta): void {
+    this.framesReceivedCount++;
+
+    // DEBUG: Log EVERY frame reception for debugging
+    logger.info("[FRAME_IN] Frame received from capture", {
+      module: "ai-feeder",
+      frameNum: this.framesReceivedCount,
+      frameSize: data.length,
+      initialized: this.isInitialized,
+      hasConfig: !!this.config,
+      hasSendFn: !!this.sendFrameFn,
+      streamId: this.streamId,
+      maxFrameBytes: this.maxFrameBytes,
+    });
+
     if (!this.isInitialized || !this.config) {
-      logger.debug("Not initialized, dropping frame", { module: "ai-feeder" });
+      logger.error("[FRAME_DROP] Not initialized, dropping frame", {
+        module: "ai-feeder",
+        frameNum: this.framesReceivedCount,
+        initialized: this.isInitialized,
+        hasConfig: !!this.config,
+      });
       return;
     }
 
     // Validate frame size
     if (data.length > this.maxFrameBytes) {
-      logger.error("Frame exceeds max size", {
+      logger.error("[FRAME_DROP] Frame exceeds max size, attempting degradation", {
         module: "ai-feeder",
+        frameNum: this.framesReceivedCount,
         size: data.length,
         max: this.maxFrameBytes,
       });
       metrics.inc("frame_bytes_max_hit_total");
+      
+      // Attempt degradation to reduce frame size (switch to JPEG)
+      void this.attemptDegradation(pb.ai.ErrorCode.FRAME_TOO_LARGE);
       return;
     }
 
     // Check if we can send immediately
     if (this.canSend()) {
-      this.sendFrame(data, meta);
+      logger.info("[FRAME_SEND] Sending frame to worker", {
+        module: "ai-feeder",
+        frameNum: this.framesReceivedCount,
+        windowState: this.windowManager.getState(),
+      });
+      void this.sendFrame(data, meta); // async, fire-and-forget
     } else {
       // Apply LATEST_WINS backpressure policy
       // Replace pending frame (drop old one, keep newest)
       this.pendingFrame = { data, meta };
       metrics.inc("ai_drops_latestwins_total");
 
-      logger.debug("Frame queued (latest-wins)", {
+      logger.warn("[FRAME_PENDING] Frame queued (latest-wins)", {
         module: "ai-feeder",
+        frameNum: this.framesReceivedCount,
         windowState: this.windowManager.getState(),
       });
     }
@@ -558,7 +659,7 @@ export class AIFeeder {
     return this.windowManager.hasCredits();
   }
 
-  private sendFrame(data: Buffer, meta: NV12FrameMeta): void {
+  private async sendFrame(data: Buffer, meta: NV12FrameMeta): Promise<void> {
     if (!this.config || !this.sendFrameFn) {
       return;
     }
@@ -580,11 +681,12 @@ export class AIFeeder {
         ? pb.ai.PixelFormat.PF_NV12
         : pb.ai.PixelFormat.PF_I420;
 
-    const expectedFrameBytes =
-      Math.trunc(this.config.width * this.config.height * 1.5);
+    const expectedFrameBytes = Math.trunc(
+      this.config.width * this.config.height * 1.5
+    );
 
     if (data.length !== expectedFrameBytes) {
-      logger.error("Frame size mismatch detected before send", {
+      logger.error("Frame size mismatch detected, attempting degradation", {
         module: "ai-feeder",
         expected: expectedFrameBytes,
         actual: data.length,
@@ -593,30 +695,75 @@ export class AIFeeder {
         format: meta.format,
       });
       metrics.inc("ai_frame_size_mismatch_total");
+      
+      // Attempt degradation (may indicate stride/width mismatch or format issue)
+      void this.attemptDegradation(pb.ai.ErrorCode.FRAME_TOO_LARGE);
       return;
     }
 
-    // Build planes
-    const planes = meta.planes.map((p) =>
-      pb.ai.Plane.create({
-        stride: p.stride,
-        offset: p.offset,
-        size: p.size,
-      })
-    );
+    // Determine if we need to encode to JPEG based on worker's choice
+    let finalData: Buffer;
+    let finalCodec: pb.ai.Codec;
+    let finalPlanes: pb.ai.IPlane[];
 
-    // Validate: sum(planes.size) == data.length
-    const totalPlaneSize = planes.reduce((sum, p) => sum + p.size, 0);
-    if (totalPlaneSize !== data.length) {
-      logger.error("Plane size mismatch", {
-        module: "ai-feeder",
-        totalPlaneSize,
-        dataLength: data.length,
-      });
-      return;
+    if (this.chosenCodec === pb.ai.Codec.CODEC_JPEG) {
+      // Worker wants JPEG transport - encode NV12→JPEG
+      try {
+        finalData = await convertNV12ToJpeg(data, meta, { jpegQuality: 85 });
+        finalCodec = pb.ai.Codec.CODEC_JPEG;
+        finalPlanes = []; // No planes for JPEG (compressed format)
+
+        logger.debug("Frame encoded to JPEG for transport", {
+          module: "ai-feeder",
+          originalSize: data.length,
+          jpegSize: finalData.length,
+          compression: ((1 - finalData.length / data.length) * 100).toFixed(1) + "%",
+        });
+      } catch (error) {
+        logger.error("Failed to encode frame to JPEG", {
+          module: "ai-feeder",
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // Fall back to RAW if JPEG encoding fails
+        finalData = data;
+        finalCodec = pb.ai.Codec.CODEC_NONE;
+        finalPlanes = meta.planes.map((p) =>
+          pb.ai.Plane.create({
+            stride: p.stride,
+            offset: p.offset,
+            size: p.size,
+          })
+        );
+      }
+    } else {
+      // Worker wants RAW (CODEC_NONE) - send NV12 directly with plane metadata
+      finalData = data;
+      finalCodec = pb.ai.Codec.CODEC_NONE;
+      finalPlanes = meta.planes.map((p) =>
+        pb.ai.Plane.create({
+          stride: p.stride,
+          offset: p.offset,
+          size: p.size,
+        })
+      );
+
+      // Validate: sum(planes.size) == data.length (only for RAW)
+      const totalPlaneSize = finalPlanes.reduce((sum, p) => sum + (p.size || 0), 0);
+      if (totalPlaneSize !== data.length) {
+        logger.error("Plane size mismatch, attempting degradation", {
+          module: "ai-feeder",
+          totalPlaneSize,
+          dataLength: data.length,
+        });
+        
+        // Attempt degradation (plane metadata incorrect)
+        void this.attemptDegradation(pb.ai.ErrorCode.FRAME_TOO_LARGE);
+        return;
+      }
     }
 
     // Cache frame BEFORE sending to worker (for later retrieval)
+    // Always cache original NV12, not JPEG
     this.frameCache.set({
       seqNo: frameId.toString(),
       data,
@@ -639,9 +786,9 @@ export class AIFeeder {
           width: meta.width,
           height: meta.height,
           pixelFormat,
-          codec: pb.ai.Codec.CODEC_NONE, // RAW
-          planes,
-          data,
+          codec: finalCodec,  // CODEC_NONE or CODEC_JPEG
+          planes: finalPlanes,
+          data: finalData,
           colorSpace: "BT.709",
           colorRange: "full",
           sessionId,
@@ -651,6 +798,18 @@ export class AIFeeder {
 
     this.sendFrameFn(envelope);
     this.windowManager.onFrameSent();
+
+    // DEBUG: Log frame sent
+    this.framesSentCount++;
+    if (this.framesSentCount % 25 === 0) {
+      logger.info("[DEBUG] Frames sent to worker", {
+        module: "ai-feeder",
+        framesSent: this.framesSentCount,
+        frameId: frameId.toString(),
+        sessionId: sessionId || "none",
+        frameSize: data.length,
+      });
+    }
 
     // Track send time for RTT calculation
     this.sentFrames.set(frameId.toString(), Date.now());
@@ -669,7 +828,7 @@ export class AIFeeder {
     if (this.pendingFrame && this.canSend()) {
       const { data, meta } = this.pendingFrame;
       this.pendingFrame = undefined;
-      this.sendFrame(data, meta);
+      void this.sendFrame(data, meta); // async, fire-and-forget
     }
   }
 }

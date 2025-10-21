@@ -106,14 +106,22 @@ class SessionWriter:
     def write_frame(
         self,
         tracks: List[Track],
-        frame_idx: int,
+        frame_idx: int,  # IMPORTANTE: Debe ser el frame_id real del video, no un contador interno
         frame_width: Optional[int] = None,
         frame_height: Optional[int] = None,
     ) -> None:
-        """Persiste tracks de un frame dentro del segmento correspondiente."""
+        """Persiste tracks de un frame dentro del segmento correspondiente.
+        
+        Args:
+            tracks: Lista de tracks detectados
+            frame_idx: ID del frame en el video (debe venir de payload.frame_id)
+            frame_width: Ancho del frame (opcional)
+            frame_height: Alto del frame (opcional)
+        """
         if not tracks:
             return
 
+        # Calcular timestamp relativo basado en el frame_id real del video
         t_rel_s = frame_idx / self.fps if self.fps > 0 else 0.0
         segment_index = int(t_rel_s // self.segment_duration_s)
         segment = self._ensure_segment(segment_index)

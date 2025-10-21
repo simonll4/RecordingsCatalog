@@ -11,7 +11,7 @@
  * AppConfig (Root)
  *   ├── deviceId: Unique edge device identifier
  *   ├── logLevel: Log verbosity level (debug/info/warn/error)
- *   ├── source: Video source configuration (V4L2/RTSP)
+ *   ├── source: Video source configuration (RTSP)
  *   ├── ai: AI model configuration (YOLO)
  *   ├── mediamtx: RTSP server configuration (MediaMTX)
  *   ├── fsm: State machine timers
@@ -40,15 +40,10 @@
  * Configuration Sources:
  * ======================
  *
- * Environment Variables (primary)
- *   - Read from .env file
- *   - Overridable via shell exports
+ * config.toml (single source of truth)
+ *   - TOML format for clarity and structure
  *   - Validated and parsed in config/index.ts
- *
- * Default Values (fallback)
- *   - Sensible defaults for optional fields
- *   - Documented in config/index.ts
- *   - Production-ready out of the box
+ *   - No environment variables used (config.toml only)
  */
 
 /**
@@ -58,13 +53,8 @@
  *   - URL format: rtsp://host:port/path
  *   - Example: rtsp://192.168.1.100:554/stream
  *   - Supports H.264, MJPEG, etc.
- *
- * v4l2: USB/built-in camera (Video4Linux2)
- *   - Device path format: /dev/videoN
- *   - Example: /dev/video0
- *   - Supports MJPEG, YUYV, NV12, etc.
  */
-export type SourceKind = "rtsp" | "v4l2";
+export type SourceKind = "rtsp";
 
 /**
  * Source Configuration - Video Capture Settings
@@ -74,13 +64,12 @@ export type SourceKind = "rtsp" | "v4l2";
  * Fields:
  * =======
  *
- * kind: Source type (rtsp/v4l2)
+ * kind: Source type (rtsp only)
  *   - Determines which GStreamer elements to use
- *   - Affects pipeline construction logic
  *
- * uri: Device path or stream URL
- *   - V4L2: /dev/video0, /dev/video1, etc.
- *   - RTSP: rtsp://host:port/path
+ * uri: RTSP stream URL
+ *   - Format: rtsp://host:port/path
+ *   - Example: rtsp://192.168.1.82:554/Streaming/Channels/1
  *
  * width/height: Capture resolution
  *   - Must be supported by source
@@ -103,24 +92,13 @@ export type SourceKind = "rtsp" | "v4l2";
  *   - Typical: 50-100 MB
  *   - Formula: (width × height × 1.5) × num_buffers
  *
- * GStreamer Pipelines:
- * ====================
+ * GStreamer Pipeline:
+ * ===================
  *
- * V4L2:
- *   v4l2src device=/dev/video0
- *   ! image/jpeg (or video/x-raw)
- *   ! jpegdec (if MJPEG)
- *   ! videoconvert
- *   ! videoscale
- *   ! video/x-raw,format=I420,width=640,height=480,framerate=12/1
- *   ! shmsink socket-path=/tmp/camera_shm
- *
- * RTSP:
- *   rtspsrc location=rtsp://...
- *   ! rtph264depay
- *   ! h264parse
- *   ! avdec_h264
- *   ! videoconvert
+ * RTSP (H.264):
+ *   rtspsrc location=rtsp://... protocols=tcp
+ *   ! rtph264depay ! h264parse ! avdec_h264
+ *   ! videoconvert ! videoscale
  *   ! video/x-raw,format=I420,width=640,height=480,framerate=12/1
  *   ! shmsink socket-path=/tmp/camera_shm
  */
@@ -331,8 +309,8 @@ export type FSMConfig = {
  *   - Format: "Bearer {apiKey}"
  *   - Leave empty if API is unauthenticated
  *
-* Note: La ingesta de detecciones/frames se realiza con FrameIngester (/ingest)
-* y no requiere parámetros de batching aquí.
+ * Note: La ingesta de detecciones/frames se realiza con FrameIngester (/ingest)
+ * y no requiere parámetros de batching aquí.
  *
  * API Endpoints:
  * ==============
@@ -344,10 +322,10 @@ export type FSMConfig = {
  * POST /sessions/:sessionId/close
  *   - Mark session as complete
  *
-* POST /ingest
-*   - Upload frame image
-*   - Multipart form data
-*   - Returns frameId
+ * POST /ingest
+ *   - Upload frame image
+ *   - Multipart form data
+ *   - Returns frameId
  */
 export type StoreConfig = {
   baseUrl: string;

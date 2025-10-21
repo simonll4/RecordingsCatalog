@@ -110,7 +110,7 @@ type LogFields = {
   event?: string;
   attempt?: number;
   latMs?: number;
-  [key: string]: unknown;  // Allow any additional fields
+  [key: string]: unknown; // Allow any additional fields
 };
 
 /**

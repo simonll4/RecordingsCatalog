@@ -57,15 +57,18 @@ src/
 ## Máquina de Estados (FSM)
 
 Estados:
+
 - IDLE → DWELL → ACTIVE → CLOSING → IDLE
 
 Eventos relevantes:
+
 - `ai.detection` (relevant=true)
 - `ai.keepalive` (sin detecciones relevantes)
 - Timers internos: `fsm.t.dwell.ok`, `fsm.t.silence.ok`, `fsm.t.postroll.ok`
 - `session.open` y `session.close`
 
 Transiciones clave:
+
 - IDLE → DWELL con `ai.detection` relevante
 - DWELL → ACTIVE con `fsm.t.dwell.ok` (ventana fija, no se resetea)
 - ACTIVE → CLOSING con `fsm.t.silence.ok` (inactividad)
@@ -73,22 +76,26 @@ Transiciones clave:
 - Re-activación: CLOSING → ACTIVE ante `ai.detection` relevante (misma sesión)
 
 Commands por transición:
+
 - DWELL → ACTIVE: `StartStream`, `OpenSession`, `SetAIFpsMode('active')`
 - ACTIVE → CLOSING: `SetAIFpsMode('idle')`
 - CLOSING → IDLE: `StopStream`, `CloseSession`
 
 Notas de timers:
+
 - DWELL: periodo fijo; no se resetea con nuevas detecciones.
 - ACTIVE: el timer de silencio se resetea solo con `ai.detection` relevante (no con `ai.keepalive`).
 
 ## Flujo de Datos
 
 Video:
+
 - CameraHubGst publica I420 en SHM (`/dev/shm/...`).
 - NV12CaptureGst lee de SHM y entrega frames NV12/I420 al `AIFeeder`.
 - PublisherGst lee de SHM y publica RTSP a MediaMTX bajo demanda (ACTIVE/CLOSING).
 
 IA y Ingesta:
+
 - `AIFeeder` aplica backpressure (ventana + latest-wins) y envía frames al worker vía `AIClientTcp`.
 - `main.ts` recibe resultados, filtra por clases configuradas y publica al Bus:
   - `ai.detection` si hay clases relevantes
@@ -98,6 +105,7 @@ IA y Ingesta:
 ## Configuración Principal
 
 Ver `config.toml` en el root del servicio. Secciones principales:
+
 - **video**: `source_kind`, `source_uri`, `width/height`, `fps_hub`, `socket_path`, `shm_size_mb`
 - **ai**: `worker_host/port`, `model_name`, `width/height`, `classes_filter`, `fps_idle/active`, `frame_cache_ttl_ms`
 - **fsm**: `dwell_ms`, `silence_ms`, `postroll_ms`
@@ -110,7 +118,8 @@ Ver `config.toml` en el root del servicio. Secciones principales:
 ```bash
 cd services/edge-agent
 npm install
-npm run dev   # LOG_LEVEL=info recomendado
+# Configurar level = "info" en config.toml (recomendado para desarrollo)
+npm run dev
 ```
 
 ## Protocolo v1

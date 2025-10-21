@@ -25,7 +25,7 @@ playback_base_url = "http://mediamtx:9996"
 # Segundos extra agregados al final de la grabación
 extra_seconds = 1
 # Offset de inicio en milisegundos (para compensar latencia)
-start_offset_ms = 1500
+start_offset_ms = 1000
 
 # Configuración de frames (imágenes de detecciones)
 [frames]

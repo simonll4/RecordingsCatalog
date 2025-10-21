@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router';
+// Layout principal de la app: header con marca y slot para las rutas
+import { RouterLink, RouterView } from 'vue-router'
 </script>
 
 <template>

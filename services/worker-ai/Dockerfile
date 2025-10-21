@@ -20,8 +20,7 @@ RUN curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj bi
 
 # Copiar código (modular)
 COPY ai_pb2.py .
-COPY worker_new.py .
-COPY healthcheck.py .
+COPY worker.py .
 COPY botsort.yaml .
 COPY src ./src
 
@@ -31,9 +30,9 @@ COPY config.docker.toml ./config.toml
 # Crear directorios necesarios
 RUN mkdir -p /models /data/tracks
 
-# Health check
+# Health check (TCP port check)
 HEALTHCHECK --interval=10s --timeout=2s --retries=3 \
-    CMD ./bin/micromamba run -n worker-ai python healthcheck.py
+    CMD curl -f http://localhost:7001 || exit 1
 
 # Usuario no-root
 RUN useradd -m -u 1000 worker && \
@@ -41,4 +40,4 @@ RUN useradd -m -u 1000 worker && \
 USER worker
 
 # Ejecutar worker modular
-CMD ["./bin/micromamba", "run", "-n", "worker-ai", "python", "-u", "worker_new.py"]
+CMD ["./bin/micromamba", "run", "-n", "worker-ai", "python", "-u", "worker.py"]

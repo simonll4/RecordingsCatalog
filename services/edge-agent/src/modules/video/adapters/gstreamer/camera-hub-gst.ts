@@ -8,8 +8,7 @@
  * Architecture:
  * =============
  *
- * Input Sources:
- *   - V4L2: USB/built-in cameras (e.g., /dev/video0)
+ * Input Source:
  *   - RTSP: Network cameras (e.g., rtsp://192.168.1.100:8554/cam)
  *
  * Output:
@@ -20,11 +19,8 @@
  * GStreamer Pipeline:
  * ===================
  *
- * V4L2 Source:
- *   v4l2src → videoconvert → videoscale → shmsink
- *
- * RTSP Source:
- *   rtspsrc → rtph264depay → h264parse → avdec_h264 → videoconvert → shmsink
+ * RTSP Source (H.264):
+ *   rtspsrc (TCP) → rtph264depay → h264parse → avdec_h264 → videoconvert → shmsink
  *
  * Features:
  * =========
@@ -41,7 +37,6 @@
  *
  * Reliability
  *   - Auto-restart on crash with exponential backoff
- *   - V4L2 format fallback (MJPEG → RAW if MJPEG fails)
  *   - Ready detection via dual criteria (PLAYING state + socket exists)
  *
  * State Tracking
@@ -66,28 +61,10 @@
  * but socket isn't created yet (or vice versa).
  *
  * Auto-Restart Behavior:
- * ======================
+ * =======================
  *
- * On unexpected exit (crash, source disconnected):
- * - Delay = Math.min(2^attempts * 1000, 30000) ms
- * - Max delay: 30 seconds
  * - Infinite retries (always-on design)
  * - Resets attempt counter on successful start
- *
- * V4L2 Format Fallback:
- * =====================
- *
- * If MJPEG fails on first attempt:
- * - Set tryRawFallback = true
- * - Retry with RAW format (YUYV/YUY2)
- * - More CPU usage but better compatibility
- *
- * Integration:
- * ============
- *
- * - NV12Capture: Reads from SHM, converts to NV12
- * - Publisher: Reads from SHM, encodes to H264, streams via RTSP
- * - Orchestrator: Waits for ready() before starting other modules
  */
 
 import fs from "node:fs";
@@ -115,8 +92,7 @@ export class CameraHubGst implements CameraHub {
   private readyTimeout?: NodeJS.Timeout; // 3s timeout for ready detection
   private socketPoll?: NodeJS.Timeout; // 100ms polling for socket existence
 
-  // Restart & fallback logic
-  private tryRawFallback = false; // V4L2 format fallback flag (MJPEG → RAW)
+  // Restart logic
   private stoppedManually = false; // Prevents auto-restart during intentional shutdown
   private restartAttempts = 0; // Counter for exponential backoff calculation
 
@@ -161,9 +137,6 @@ export class CameraHubGst implements CameraHub {
    *
    * Auto-Restart:
    * If process exits unexpectedly, auto-restart with exponential backoff.
-   *
-   * V4L2 Fallback:
-   * If first attempt fails with MJPEG, retry with RAW format.
    */
   async start(): Promise<void> {
     if (this.proc) {
@@ -181,12 +154,11 @@ export class CameraHubGst implements CameraHub {
     } catch {}
 
     // Build GStreamer pipeline arguments via media layer
-    const args = buildIngest(CONFIG.source, this.tryRawFallback);
+    const args = buildIngest(CONFIG.source);
 
     logger.info("Starting camera hub", {
       module: "camera-hub-gst",
       source: CONFIG.source.kind,
-      tryRawFallback: this.tryRawFallback,
     });
 
     // Spawn GStreamer process with structured logging
@@ -195,7 +167,7 @@ export class CameraHubGst implements CameraHub {
       command: "gst-launch-1.0",
       args,
       env: {
-        GST_DEBUG: process.env.GST_DEBUG ?? "2",
+        GST_DEBUG: process.env.GST_DEBUG ?? "3,shmsink:4,videorate:4", // INFO + important elements
         GST_DEBUG_NO_COLOR: "1",
       },
       onStdout: (line) => this.handleLog(line),
@@ -261,6 +233,53 @@ export class CameraHubGst implements CameraHub {
     const l = line.trim();
     if (!l) return;
 
+    // DEBUG: Detectar problemas críticos
+    if (
+      l.includes("not-linked") ||
+      l.includes("not linked") ||
+      l.includes("not-negotiated")
+    ) {
+      logger.error("[DEBUG] GStreamer pipeline problem", {
+        module: "camera-hub-gst",
+        error: l,
+      });
+    }
+
+    // DEBUG: Problemas de caps/formatos
+    if (l.includes("WARN") && (l.includes("caps") || l.includes("negotiat"))) {
+      logger.warn("[DEBUG] Caps negotiation issue", {
+        module: "camera-hub-gst",
+        message: l,
+      });
+    }
+
+    // DEBUG: Problemas de buffering/sync
+    if (
+      l.includes("WARN") &&
+      (l.includes("buffer") ||
+        l.includes("sync") ||
+        l.includes("late") ||
+        l.includes("drop"))
+    ) {
+      logger.warn("[DEBUG] Buffer/sync issue", {
+        module: "camera-hub-gst",
+        message: l,
+      });
+    }
+
+    // DEBUG: Errores REALES de RTSP
+    if (
+      l.includes("ERROR") &&
+      (l.includes("Could not connect") ||
+        l.includes("Unauthorized") ||
+        l.includes("404"))
+    ) {
+      logger.error("[DEBUG] RTSP connection error", {
+        module: "camera-hub-gst",
+        error: l,
+      });
+    }
+
     // Detectar PLAYING
     if (
       !this.sawPlaying &&
@@ -269,21 +288,10 @@ export class CameraHubGst implements CameraHub {
         l.includes("Pipeline is PREROLLING"))
     ) {
       this.sawPlaying = true;
+      logger.info("[DEBUG] Camera Hub pipeline is PLAYING", {
+        module: "camera-hub-gst",
+      });
       this.tryMarkReady();
-    }
-
-    // Auto-fallback MJPEG → RAW
-    if (CONFIG.source.kind === "v4l2" && !this.tryRawFallback) {
-      if (
-        /not negotiated|not-negotiated|could not link|No supported formats/i.test(
-          l
-        )
-      ) {
-        logger.warn("Caps negotiation failed, retrying RAW fallback", {
-          module: "camera-hub-gst",
-        });
-        this.restartWithRawFallback();
-      }
     }
   }
 
@@ -377,23 +385,5 @@ export class CameraHubGst implements CameraHub {
       fs.unlinkSync(CONFIG.source.socketPath);
       logger.debug("Cleaned up SHM socket", { module: "camera-hub-gst" });
     } catch {}
-  }
-
-  private restartWithRawFallback() {
-    this.tryRawFallback = true;
-    this.restartAttempts = 0;
-    this.cleanupReadyWait();
-    this.isReady = false;
-    this.sawPlaying = false;
-    this.sawSocket = false;
-
-    const proc = this.proc;
-    this.proc = undefined;
-
-    try {
-      proc?.kill("SIGINT");
-    } catch {}
-
-    setTimeout(() => void this.start(), 500);
   }
 }

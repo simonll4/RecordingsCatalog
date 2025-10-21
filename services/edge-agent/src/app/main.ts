@@ -135,12 +135,12 @@ async function main() {
   // These events are published by the Orchestrator FSM when state transitions occur
 
   // Handle session.open event (FSM enters ACTIVE state)
-  bus.subscribe("session.open", (event: any) => {
+  bus.subscribe("session.open", (event) => {
     sessionManager.openSession(event.sessionId);
   });
 
   // Handle session.close event (FSM exits CLOSING state back to IDLE)
-  bus.subscribe("session.close", (event: any) => {
+  bus.subscribe("session.close", (event) => {
     sessionManager.closeSession(event.sessionId);
   });
 
@@ -161,15 +161,56 @@ async function main() {
      * - This prevents publishing events before FSM is subscribed to bus
      */
     onReady: () => {
-      // Guard: Don't restart feeder on reconnection
+      logger.info("AI connection ready (InitOk received)", {
+        module: "main",
+        feederStarted,
+        orchestratorReady,
+      });
+
+      // On reconnection, verify capture is actually running
+      // After degradation or crash, capture may have stopped
       if (feederStarted) {
-        logger.info("AI reconnected, feeder already running", {
+        const captureRunning = nv12Capture.isRunning();
+        logger.info("AI reconnected - checking capture state", {
           module: "main",
+          captureRunning,
         });
+
+        // Si la captura se detuvo (ej: tras degradación), relanzar
+        if (!captureRunning && orchestratorReady) {
+          logger.warn("Capture not running, restarting after reconnection", {
+            module: "main",
+          });
+          void aiFeeder.start();
+        } else if (!captureRunning) {
+          // Captura caída pero orchestrator no listo - esperar a que esté listo
+          logger.warn("Capture not running, waiting for orchestrator before restart", {
+            module: "main",
+          });
+          
+          const restartWhenReady = () => {
+            if (orchestratorReady) {
+              logger.info("Orchestrator now ready, restarting capture", {
+                module: "main",
+              });
+              void aiFeeder.start();
+            } else {
+              logger.debug("Still waiting for orchestrator...", {
+                module: "main",
+              });
+              setTimeout(restartWhenReady, 100);
+            }
+          };
+          restartWhenReady();
+        } else {
+          logger.info("Capture already running, continuing", {
+            module: "main",
+          });
+        }
         return;
       }
 
-      logger.info("AI connection ready, waiting for orchestrator", {
+      logger.info("First connection - waiting for orchestrator", {
         module: "main",
       });
 
@@ -382,7 +423,7 @@ async function main() {
   const aiAdapter = {
     /**
      * Set model configuration
-     * 
+     *
      * Note: AIFeeder is configured once via init() during startup.
      * This method is kept for interface compatibility with Orchestrator.
      */
@@ -392,7 +433,7 @@ async function main() {
 
     /**
      * Run inference on frame
-     * 
+     *
      * Note: AIFeeder handles frame submission directly via NV12Capture subscription.
      * This method is kept for interface compatibility with Orchestrator.
      */
@@ -402,7 +443,7 @@ async function main() {
 
     /**
      * Set session ID for frame correlation
-     * 
+     *
      * Propagates sessionId from orchestrator to feeder so frames can be
      * tagged with the correct session before sending to AI worker.
      */
@@ -521,6 +562,7 @@ async function main() {
 
       logger.debug("Stopping AI feeder", { module: "main" });
       await aiFeeder.stop();
+      aiFeeder.destroy(); // Clean up frame cache
 
       logger.debug("Disconnecting AI client", { module: "main" });
       await aiClient.shutdown();

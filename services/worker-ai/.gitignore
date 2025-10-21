@@ -1,21 +1,40 @@
-# Python generados
-ai_pb2.py
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.so
+.Python
 
-# Modelos
+# Entornos virtuales
+venv/
+env/
+ENV/
+.venv
+
+# Modelos ONNX
 *.onnx
 *.pt
 *.pth
+models/
 
-# Directorio de datos generados (tracks/sesiones)
+# Datos generados (tracks/sesiones)
 data/
 
 # Logs
 *.log
 
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
 # OS
 .DS_Store
 Thumbs.db
+
+# Temporal
+*.tmp
+*.bak

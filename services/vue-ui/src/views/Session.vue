@@ -1,91 +1,102 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
-import { storeToRefs } from 'pinia';
-import Player from '../components/Player.vue';
-import TrackLegend from '../components/TrackLegend.vue';
-import { fetchSessionClip } from '../api/sessions';
-import { usePlayerStore } from '../stores/usePlayer';
-import { useSessionsStore } from '../stores/useSessions';
-import { useTracksStore } from '../stores/useTracks';
+/**
+ * Vista de sesión:
+ * - Al recibir `sessionId` carga meta/index y el clip.
+ * - Inicializa el `usePlayer` con la URL de playback.
+ * - Asegura el primer segmento y prefetch si hay overlays disponibles.
+ * - Observa cambios en `playerStore.currentTime` (vía Player) para cargar
+ *   segmentos bajo demanda (esto se hace desde Player/Tracks store).
+ */
+import { computed, onMounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
+import Player from '../components/Player.vue'
+import TrackLegend from '../components/TrackLegend.vue'
+import { fetchSessionClip } from '../api/sessions'
+import { usePlayerStore } from '../stores/usePlayer'
+import { useSessionsStore } from '../stores/useSessions'
+import { useTracksStore } from '../stores/useTracks'
 
 const props = defineProps<{
-  sessionId: string;
-}>();
+  sessionId: string
+}>()
 
-const sessionsStore = useSessionsStore();
-const tracksStore = useTracksStore();
-const playerStore = usePlayerStore();
+const sessionsStore = useSessionsStore()
+const tracksStore = useTracksStore()
+const playerStore = usePlayerStore()
 
-const clipLoading = ref(false);
-const clipError = ref<string | null>(null);
-const playbackUrl = ref<string | null>(null);
+const clipLoading = ref(false)
+const clipError = ref<string | null>(null)
+const playbackUrl = ref<string | null>(null)
 
-const { meta, index, metaMissing, indexMissing, hasSegments } = storeToRefs(tracksStore);
+const { meta, index, metaMissing, indexMissing, hasSegments } = storeToRefs(tracksStore)
 
-const metaReady = computed(() => meta.value !== null || metaMissing.value);
-const indexReady = computed(() => hasSegments.value || indexMissing.value);
-const layoutReady = computed(() => metaReady.value && indexReady.value);
-const overlaysAvailable = computed(() => hasSegments.value && meta.value !== null);
+const metaReady = computed(() => meta.value !== null || metaMissing.value)
+const indexReady = computed(() => hasSegments.value || indexMissing.value)
+const layoutReady = computed(() => metaReady.value && indexReady.value)
+const overlaysAvailable = computed(() => hasSegments.value && meta.value !== null)
 const warnings = computed(() => {
-  const items: string[] = [];
+  const items: string[] = []
   if (metaMissing.value) {
-    items.push('No se encontró meta.json; se usará la información básica del clip.');
+    items.push('No se encontró meta.json; se usará la información básica del clip.')
   }
   if (indexMissing.value) {
-    items.push('No se encontró index.json; las anotaciones no estarán disponibles.');
+    items.push('No se encontró index.json; las anotaciones no estarán disponibles.')
   }
-  return items;
-});
+  return items
+})
 
 const loadSessionData = async (sessionId: string) => {
-  clipError.value = null;
-  clipLoading.value = true;
+  clipError.value = null
+  clipLoading.value = true
   try {
-    await tracksStore.resetForSession(sessionId);
-    await Promise.all([tracksStore.loadMeta(sessionId), tracksStore.loadIndex(sessionId)]);
+    // Limpiar estado y cache de la sesión anterior
+    await tracksStore.resetForSession(sessionId)
+    // Cargar meta e index en paralelo
+    await Promise.all([tracksStore.loadMeta(sessionId), tracksStore.loadIndex(sessionId)])
 
-    const clip = await fetchSessionClip(sessionId);
-    playbackUrl.value = clip.playbackUrl;
-    playerStore.setSession(sessionId);
-    playerStore.setPlaybackSource(clip.playbackUrl);
+    // Obtener URL del clip y configurar el player
+    const clip = await fetchSessionClip(sessionId)
+    playbackUrl.value = clip.playbackUrl
+    playerStore.setSession(sessionId)
+    playerStore.setPlaybackSource(clip.playbackUrl)
 
+    // Si hay segmentos e información de meta, asegurar el segmento inicial
     if (hasSegments.value && meta.value) {
-      const initialSegment = tracksStore.segmentIndexForTime(0) ?? 0;
-      await tracksStore.ensureSegment(sessionId, initialSegment);
-      tracksStore.prefetchAround(initialSegment);
+      const initialSegment = tracksStore.segmentIndexForTime(0) ?? 0
+      await tracksStore.ensureSegment(sessionId, initialSegment)
+      tracksStore.prefetchAround(initialSegment)
     }
   } catch (error) {
-    console.error('Failed to initialize session view', error);
+    console.error('Failed to initialize session view', error)
     clipError.value =
-      error instanceof Error ? error.message : 'No se pudo cargar la sesión seleccionada.';
+      error instanceof Error ? error.message : 'No se pudo cargar la sesión seleccionada.'
   } finally {
-    clipLoading.value = false;
+    clipLoading.value = false
   }
-};
+}
 
+// Reaccionar a cambios en la prop sessionId: seleccionar y cargar datos
 watch(
   () => props.sessionId,
   (id) => {
-    if (!id) return;
-    sessionsStore.selectSession(id);
-    void loadSessionData(id);
+    if (!id) return
+    sessionsStore.selectSession(id)
+    void loadSessionData(id)
   },
-  { immediate: true }
-);
+  { immediate: true },
+)
 
-watch(
-  overlaysAvailable,
-  (active) => {
-    if (!active || !meta.value || !props.sessionId) return;
-    const currentSegment = tracksStore.segmentIndexForTime(playerStore.currentTime) ?? 0;
-    void tracksStore.ensureSegment(props.sessionId, currentSegment).catch((err) =>
-      console.debug('Segment ensure on overlay activation failed', err)
-    );
-    tracksStore.prefetchAround(currentSegment);
-  }
-);
+// Cuando overlays se activan, asegurar el segmento relacionado con el tiempo actual
+watch(overlaysAvailable, (active) => {
+  if (!active || !meta.value || !props.sessionId) return
+  const currentSegment = tracksStore.segmentIndexForTime(playerStore.currentTime) ?? 0
+  void tracksStore
+    .ensureSegment(props.sessionId, currentSegment)
+    .catch((err) => console.debug('Segment ensure on overlay activation failed', err))
+  tracksStore.prefetchAround(currentSegment)
+})
 
-const showLoading = computed(() => clipLoading.value || !layoutReady.value);
+const showLoading = computed(() => clipLoading.value || !layoutReady.value)
 </script>
 
 <template>
@@ -122,9 +133,7 @@ const showLoading = computed(() => clipLoading.value || !layoutReady.value);
               <template v-if="meta">
                 {{ meta.end_time ? new Date(meta.end_time).toLocaleString() : 'En curso' }}
               </template>
-              <template v-else>
-                —
-              </template>
+              <template v-else> — </template>
             </dd>
           </div>
           <div>
@@ -133,7 +142,12 @@ const showLoading = computed(() => clipLoading.value || !layoutReady.value);
           </div>
         </dl>
       </div>
-      <TrackLegend :meta="meta" :meta-missing="metaMissing" :index-missing="indexMissing" :disabled="!overlaysAvailable" />
+      <TrackLegend
+        :meta="meta"
+        :meta-missing="metaMissing"
+        :index-missing="indexMissing"
+        :disabled="!overlaysAvailable"
+      />
     </aside>
   </section>
   <section v-else class="session-view loading-state">

@@ -1,30 +1,36 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import type { TrackMeta } from '../types/tracks';
-import { useTracksStore } from '../stores/useTracks';
+import { computed } from 'vue'
+import type { TrackMeta } from '../types/tracks'
+import { useTracksStore } from '../stores/useTracks'
 
+/**
+ * Panel de control para las anotaciones:
+ * - Toggle para mostrar/ocultar cajas, etiquetas y trayectorias.
+ * - Slider para confianza mínima.
+ * - Lista de clases detectadas para filtrar por clase.
+ */
 const props = defineProps<{
-  meta: TrackMeta | null;
-  metaMissing?: boolean;
-  indexMissing?: boolean;
-  disabled?: boolean;
-}>();
+  meta: TrackMeta | null
+  metaMissing?: boolean
+  indexMissing?: boolean
+  disabled?: boolean
+}>()
 
-const tracksStore = useTracksStore();
+const tracksStore = useTracksStore()
 
-const classFilters = computed(() => props.meta?.classes ?? []);
-const isDisabled = computed(() => props.disabled ?? false);
+const classFilters = computed(() => props.meta?.classes ?? [])
+const isDisabled = computed(() => props.disabled ?? false)
 
 const disabledMessage = computed(() => {
-  if (!isDisabled.value) return '';
+  if (!isDisabled.value) return ''
   if (props.indexMissing) {
-    return 'No se encontró index.json; no hay segmentos de tracking disponibles.';
+    return 'No se encontró index.json; no hay segmentos de tracking disponibles.'
   }
   if (props.metaMissing) {
-    return 'No se encontró meta.json; no es posible mostrar anotaciones.';
+    return 'No se encontró meta.json; no es posible mostrar anotaciones.'
   }
-  return 'Las anotaciones no están disponibles para esta sesión.';
-});
+  return 'Las anotaciones no están disponibles para esta sesión.'
+})
 </script>
 
 <template>
@@ -66,7 +72,9 @@ const disabledMessage = computed(() => {
     </div>
 
     <div class="slider">
-      <label for="conf-slider">Confianza mínima: {{ Math.round(tracksStore.confMin * 100) }}%</label>
+      <label for="conf-slider"
+        >Confianza mínima: {{ Math.round(tracksStore.confMin * 100) }}%</label
+      >
       <input
         id="conf-slider"
         type="range"
@@ -82,7 +90,11 @@ const disabledMessage = computed(() => {
     <div class="classes">
       <h3>Clases detectadas</h3>
       <p v-if="classFilters.length === 0" class="hint">
-        {{ isDisabled ? 'No hay anotaciones disponibles.' : 'Aún no hay clases registradas para esta sesión.' }}
+        {{
+          isDisabled
+            ? 'No hay anotaciones disponibles.'
+            : 'Aún no hay clases registradas para esta sesión.'
+        }}
       </p>
       <ul v-else>
         <li v-for="cls in classFilters" :key="cls.id">

@@ -56,4 +56,4 @@ echo "   Presiona Ctrl+C para detener"
 echo ""
 
 # Ejecutar worker con mamba run
-mamba run -n worker-ai python worker_new.py
+mamba run -n worker-ai python worker.py

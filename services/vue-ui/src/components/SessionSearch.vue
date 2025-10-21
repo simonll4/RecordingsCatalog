@@ -1,41 +1,59 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref } from 'vue'
 
+/**
+ * Componente de búsqueda de sesiones por rango temporal.
+ * Emite `search` con payload { from: ISOString, to: ISOString }.
+ * - Tiene botones de rango rápido (15m, 1h, 3h, 6h)
+ * - Permite seleccionar manualmente Desde/Hasta con `datetime-local`
+ */
 const emit = defineEmits<{
-  (e: 'search', payload: { from: string; to: string }): void;
-}>();
+  (e: 'search', payload: { from: string; to: string }): void
+}>()
 
+// Formatea una Date para `input[type=datetime-local]` (no incluye segundos)
 const formatInputValue = (date: Date) => {
-  const pad = (value: number) => value.toString().padStart(2, '0');
+  const pad = (value: number) => value.toString().padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(
-    date.getMinutes()
-  )}`;
-};
+    date.getMinutes(),
+  )}`
+}
 
-const now = new Date();
-const fromInput = ref(formatInputValue(new Date(now.getTime() - 60 * 60 * 1000)));
-const toInput = ref(formatInputValue(now));
+// Valores iniciales: rango por defecto 1 hora atrás hasta ahora
+const now = new Date()
+const fromInput = ref(formatInputValue(new Date(now.getTime() - 60 * 60 * 1000)))
+const toInput = ref(formatInputValue(now))
 
+/**
+ * Emite el rango solicitado en formato ISO y actualiza los inputs locales.
+ */
 const emitRange = (from: Date, to: Date) => {
-  emit('search', { from: from.toISOString(), to: to.toISOString() });
-  fromInput.value = formatInputValue(from);
-  toInput.value = formatInputValue(to);
-};
+  emit('search', { from: from.toISOString(), to: to.toISOString() })
+  fromInput.value = formatInputValue(from)
+  toInput.value = formatInputValue(to)
+}
 
+/**
+ * Aplica un rango rápido (en minutos). No bloqueante.
+ */
 const applyQuickRange = (minutes: number) => {
-  const to = new Date();
-  const from = new Date(to.getTime() - minutes * 60 * 1000);
-  emitRange(from, to);
-};
+  const to = new Date()
+  const from = new Date(to.getTime() - minutes * 60 * 1000)
+  emitRange(from, to)
+}
 
+/**
+ * Handler de submit del formulario.
+ * Valida que las fechas sean válidas y `from < to` antes de emitir.
+ */
 const submit = () => {
-  const from = new Date(fromInput.value);
-  const to = new Date(toInput.value);
+  const from = new Date(fromInput.value)
+  const to = new Date(toInput.value)
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from >= to) {
-    return;
+    return
   }
-  emitRange(from, to);
-};
+  emitRange(from, to)
+}
 </script>
 
 <template>

@@ -32,6 +32,28 @@ Complete implementation of binary protocol v1 for efficient, robust communicatio
 - Frame validation (plane size checks)
 - Error propagation with retry hints
 
+### 5. **Degradation & JPEG Transport**
+- **Automatic degradation** when frames exceed `maxFrameBytes` or validation fails
+- **JPEG transport negotiation**: Edge renegotiates protocol with `preferJpeg=true`
+- **Runtime codec switching**: 
+  - Worker chooses codec in `InitOk` (CODEC_NONE for RAW, CODEC_JPEG for JPEG)
+  - Edge detects `chosenCodec` and automatically encodes NV12→JPEG if needed
+  - ~70% compression with quality=85, no worker changes required
+- **Always-on design**: Capture continues during degradation (no frame loss)
+- **Metrics**: `ai_degrade_jpeg_switch_total`, compression ratio logged
+
+### 6. **Known Limitations**
+
+#### Resolution Mismatch Handling
+When worker chooses different resolution in `InitOk` (e.g., edge requests 640×480, worker chooses 1920×1080):
+- **Current behavior**: Edge logs warning and continues with configured resolution
+- **Impact**: Worker adapts (scales/letterbox) or may send errors if incompatible
+- **Workaround**: JPEG degradation handles most cases (compressed format adapts better)
+- **Future enhancement**: Dynamic reconfiguration of NV12Capture pipeline
+  - Would require: stopping capture, updating resolution, restarting with new config
+  - See `src/modules/ai/feeder/handshake.ts:240-247` for TODO notes
+  - See `docs/FUTURE_FEATURES.md` for implementation plan
+
 ## Files Created/Modified
 
 ### Protocol Definition
@@ -64,11 +86,11 @@ Complete implementation of binary protocol v1 for efficient, robust communicatio
   - Reconnection logic
 - **`src/app/main.ts`**: Bootstrap principal (wire de módulos y FSM)
 
-#### Variables de entorno
+#### Configuración (config.toml)
 - No se requiere sección específica de v1. Configuración relevante:
-  - `AI_WORKER_HOST`, `AI_WORKER_PORT`
-  - `AI_WIDTH`, `AI_HEIGHT`
-  - `FRAME_CACHE_TTL_MS` (TTL de caché de frames NV12)
+  - `[ai]` → `worker_host`, `worker_port`
+  - `[ai]` → `width`, `height`
+  - `[ai]` → `frameCacheTtlMs` (TTL de caché de frames NV12, hardcoded a 2000ms)
 
 ### Worker AI (Python)
 

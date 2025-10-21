@@ -71,7 +71,7 @@ export const CONFIG: AppConfig = {
   logLevel: tomlConfig.logging.level as "debug" | "info" | "warn" | "error",
 
   source: {
-    kind: tomlConfig.source.kind as "v4l2" | "rtsp",
+    kind: tomlConfig.source.kind as "rtsp",
     uri: tomlConfig.source.uri,
     width: tomlConfig.source.width,
     height: tomlConfig.source.height,
@@ -85,7 +85,9 @@ export const CONFIG: AppConfig = {
     umbral: tomlConfig.ai.umbral,
     width: tomlConfig.ai.width,
     height: tomlConfig.ai.height,
-    classesFilter: tomlConfig.ai.classes_filter.split(",").map((s: string) => s.trim()),
+    classesFilter: tomlConfig.ai.classes_filter
+      .split(",")
+      .map((s: string) => s.trim()),
     fps: {
       idle: tomlConfig.ai.fps_idle,
       active: tomlConfig.ai.fps_active,

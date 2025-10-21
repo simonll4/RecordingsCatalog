@@ -177,7 +177,15 @@ export class AIClientTcp {
         if (this.feeder) {
           this.feeder.setStreamId(this.streamId);
           const initMsg = this.feeder.buildInitMessage();
+          logger.info("[DEBUG] Sending Init message to worker", {
+            module: "ai-client-tcp",
+            streamId: this.streamId,
+            model: (initMsg.req?.init as any)?.model,
+          });
           this.sendMessage(initMsg);
+          logger.info("[DEBUG] Init message sent", {
+            module: "ai-client-tcp",
+          });
         }
 
         resolve();
@@ -387,14 +395,19 @@ export class AIClientTcp {
   }
 
   private handleInitOk(initOk: pb.ai.IInitOk): void {
-    logger.info("Received InitOk", {
+    logger.info("[DEBUG] Received InitOk from worker", {
       module: "ai-client-tcp",
       chosen: initOk.chosen,
       maxFrameBytes: initOk.maxFrameBytes,
     });
     this.state = "READY";
     metrics.inc("ai_init_ok_total");
-    if (this.feeder) this.feeder.handleInitOk(initOk);
+    if (this.feeder) {
+      logger.info("[DEBUG] Calling feeder.handleInitOk", {
+        module: "ai-client-tcp",
+      });
+      this.feeder.handleInitOk(initOk);
+    }
   }
 
   private handleWindowUpdate(update: pb.ai.IWindowUpdate): void {
@@ -445,9 +458,30 @@ export class AIClientTcp {
 
   private handleDisconnect(): void {
     const wasShutdown = this.state === "SHUTDOWN";
+    
+    logger.warn("Disconnecting from AI worker", {
+      module: "ai-client-tcp",
+      state: this.state,
+      wasShutdown,
+    });
+    
     this.state = "DISCONNECTED";
     this.stopHeartbeat();
     this.streamId = undefined;
+    
+    // Reset feeder state on disconnect
+    // This ensures feeder will reinitialize on reconnection
+    if (this.feeder) {
+      logger.info("Resetting feeder state due to disconnect", {
+        module: "ai-client-tcp",
+      });
+      // Note: We don't call feeder.stop() because capture should keep running
+      // We just need to reset the initialization flag
+      (this.feeder as any).isInitialized = false;
+      (this.feeder as any).maxFrameBytes = 0;
+      (this.feeder as any).streamId = undefined;
+    }
+    
     if (this.socket) {
       this.socket.destroy();
       this.socket = undefined;
