@@ -28,9 +28,12 @@ paths:
   all:
     record: yes
     recordFormat: fmp4
-    # Estructura de carpetas con timestamps en el nombre del archivo
-    recordPath: /recordings/%path/%Y/%m/%d/%H/%M/%S-%f
+    # Formato plano compatible con playback API
+    recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
     # Segmentos de 5 minutos (ajusta según tu caso de uso)
     recordSegmentDuration: 5m
     # Opcional: retención automática (borrar después de 7 días)
     recordDeleteAfter: 168h
+    # Hooks para sincronización de tiempos
+    runOnReady: /hooks/publish.sh
+    runOnRecordSegmentComplete: /hooks/segment_complete.sh

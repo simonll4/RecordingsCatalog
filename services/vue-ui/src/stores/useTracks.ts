@@ -53,6 +53,9 @@ export const useTracksStore = defineStore('tracks', () => {
   const metaMissing = ref(false)
   const indexMissing = ref(false)
 
+  // Compensación temporal: diferencia en segundos entre video start y meta.start_time
+  const overlayShiftSeconds = ref(0)
+
   // UI state / filtros
   const confMin = ref(0.4)
   const showBoxes = ref(true)
@@ -80,6 +83,7 @@ export const useTracksStore = defineStore('tracks', () => {
     error.value = null
     metaMissing.value = false
     indexMissing.value = false
+    overlayShiftSeconds.value = 0
     selectedClasses.value = new Set()
     await segmentCache.clearSession(id)
   }
@@ -262,11 +266,13 @@ export const useTracksStore = defineStore('tracks', () => {
     if (!index.value) {
       return { current: [], trails: new Map() }
     }
+    // Aplicar compensación temporal: el video puede comenzar en un punto distinto a meta.start_time
+    const adjustedTime = time + overlayShiftSeconds.value
     const windowStart = Math.max(
       0,
-      time - (showTrails.value ? TRAIL_WINDOW_SECONDS : EVENT_WINDOW_SECONDS),
+      adjustedTime - (showTrails.value ? TRAIL_WINDOW_SECONDS : EVENT_WINDOW_SECONDS),
     )
-    const windowEnd = time + EVENT_WINDOW_SECONDS
+    const windowEnd = adjustedTime + EVENT_WINDOW_SECONDS
     const tolerance = EVENT_WINDOW_SECONDS
     const trailWindow = showTrails.value ? TRAIL_WINDOW_SECONDS : 0
 
@@ -352,11 +358,11 @@ export const useTracksStore = defineStore('tracks', () => {
             time: eventTime,
           }
 
-          if (Math.abs(eventTime - time) <= tolerance) {
+          if (Math.abs(eventTime - adjustedTime) <= tolerance) {
             results.push(renderItem)
           }
 
-          if (trailWindow > 0 && eventTime <= time && eventTime >= time - trailWindow) {
+          if (trailWindow > 0 && eventTime <= adjustedTime && eventTime >= adjustedTime - trailWindow) {
             const list = trails.get(renderItem.trackId) ?? []
             list.push(renderItem)
             trails.set(renderItem.trackId, list)
@@ -383,6 +389,10 @@ export const useTracksStore = defineStore('tracks', () => {
     selectedClasses.value = next
   }
 
+  const setOverlayShift = (shiftSeconds: number) => {
+    overlayShiftSeconds.value = shiftSeconds
+  }
+
   return {
     meta,
     index,
@@ -392,6 +402,7 @@ export const useTracksStore = defineStore('tracks', () => {
     error,
     metaMissing,
     indexMissing,
+    overlayShiftSeconds,
     confMin,
     showBoxes,
     showLabels,
@@ -407,5 +418,6 @@ export const useTracksStore = defineStore('tracks', () => {
     eventsAtTime,
     segmentIndexForTime,
     toggleClass,
+    setOverlayShift,
   }
 })

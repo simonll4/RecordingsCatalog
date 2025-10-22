@@ -1,5 +1,5 @@
-import { Pool, PoolClient } from 'pg';
-import { CONFIG } from './config.js';
+import { Pool, PoolClient } from "pg";
+import { CONFIG } from "./config.js";
 
 export interface SessionRecord {
   session_id: string;
@@ -9,6 +9,10 @@ export interface SessionRecord {
   start_ts: string;
   end_ts: string | null;
   postroll_sec: number | null;
+  media_connect_ts: string | null;
+  media_start_ts: string | null;
+  media_end_ts: string | null;
+  recommended_start_offset_ms: number | null;
   reason: string | null;
   created_at: string;
   updated_at: string;
@@ -55,7 +59,10 @@ export interface DetectionInsertInput {
 
 const pool = new Pool({ connectionString: CONFIG.DATABASE_URL });
 
-const tableExists = async (client: PoolClient, tableName: string): Promise<boolean> => {
+const tableExists = async (
+  client: PoolClient,
+  tableName: string
+): Promise<boolean> => {
   const res = await client.query<{ exists: boolean }>(
     `SELECT EXISTS (
        SELECT 1 FROM information_schema.tables
@@ -66,7 +73,10 @@ const tableExists = async (client: PoolClient, tableName: string): Promise<boole
   return res.rows[0]?.exists ?? false;
 };
 
-const columnExists = async (client: PoolClient, columnName: string): Promise<boolean> => {
+const columnExists = async (
+  client: PoolClient,
+  columnName: string
+): Promise<boolean> => {
   const res = await client.query<{ exists: boolean }>(
     `SELECT EXISTS (
        SELECT 1 FROM information_schema.columns
@@ -80,7 +90,7 @@ const columnExists = async (client: PoolClient, columnName: string): Promise<boo
 const ensureSchema = async (): Promise<void> => {
   const client = await pool.connect();
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     // Crear extensión UUID
     await client.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
@@ -113,7 +123,9 @@ const ensureSchema = async (): Promise<void> => {
     `);
 
     // Trigger para sessions
-    await client.query('DROP TRIGGER IF EXISTS trg_sessions_updated_at ON sessions');
+    await client.query(
+      "DROP TRIGGER IF EXISTS trg_sessions_updated_at ON sessions"
+    );
     await client.query(`
       CREATE TRIGGER trg_sessions_updated_at
       BEFORE UPDATE ON sessions
@@ -141,12 +153,20 @@ const ensureSchema = async (): Promise<void> => {
     `);
 
     // Índices para detections
-    await client.query('CREATE INDEX IF NOT EXISTS idx_detections_session ON detections(session_id)');
-    await client.query('CREATE INDEX IF NOT EXISTS idx_detections_last_ts ON detections(last_ts)');
-    await client.query('CREATE INDEX IF NOT EXISTS idx_detections_cls ON detections(cls)');
+    await client.query(
+      "CREATE INDEX IF NOT EXISTS idx_detections_session ON detections(session_id)"
+    );
+    await client.query(
+      "CREATE INDEX IF NOT EXISTS idx_detections_last_ts ON detections(last_ts)"
+    );
+    await client.query(
+      "CREATE INDEX IF NOT EXISTS idx_detections_cls ON detections(cls)"
+    );
 
     // Trigger para detections
-    await client.query('DROP TRIGGER IF EXISTS trg_detections_updated_at ON detections');
+    await client.query(
+      "DROP TRIGGER IF EXISTS trg_detections_updated_at ON detections"
+    );
     await client.query(`
       CREATE TRIGGER trg_detections_updated_at
       BEFORE UPDATE ON detections
@@ -155,13 +175,18 @@ const ensureSchema = async (): Promise<void> => {
     `);
 
     // Migraciones incrementales de sessions (si existen columnas viejas)
-    const hasTable = await tableExists(client, 'sessions');
+    const hasTable = await tableExists(client, "sessions");
     if (hasTable) {
-      if (!(await columnExists(client, 'path')) && (await columnExists(client, 'stream_path'))) {
-        await client.query('ALTER TABLE sessions RENAME COLUMN stream_path TO path');
+      if (
+        !(await columnExists(client, "path")) &&
+        (await columnExists(client, "stream_path"))
+      ) {
+        await client.query(
+          "ALTER TABLE sessions RENAME COLUMN stream_path TO path"
+        );
       }
 
-      if (await columnExists(client, 'edge_start_ts')) {
+      if (await columnExists(client, "edge_start_ts")) {
         await client.query(
           `UPDATE sessions
            SET start_ts = TO_TIMESTAMP(edge_start_ts / 1000.0)
@@ -169,7 +194,7 @@ const ensureSchema = async (): Promise<void> => {
         );
       }
 
-      if (await columnExists(client, 'edge_end_ts')) {
+      if (await columnExists(client, "edge_end_ts")) {
         await client.query(
           `UPDATE sessions
            SET end_ts = TO_TIMESTAMP(edge_end_ts / 1000.0)
@@ -178,15 +203,43 @@ const ensureSchema = async (): Promise<void> => {
       }
 
       // Limpiar columnas obsoletas
-      await client.query('ALTER TABLE sessions DROP COLUMN IF EXISTS edge_start_ts');
-      await client.query('ALTER TABLE sessions DROP COLUMN IF EXISTS edge_end_ts');
-      await client.query('ALTER TABLE sessions DROP COLUMN IF EXISTS playlist_url');
-      await client.query('ALTER TABLE sessions DROP COLUMN IF EXISTS notes');
+      await client.query(
+        "ALTER TABLE sessions DROP COLUMN IF EXISTS edge_start_ts"
+      );
+      await client.query(
+        "ALTER TABLE sessions DROP COLUMN IF EXISTS edge_end_ts"
+      );
+      await client.query(
+        "ALTER TABLE sessions DROP COLUMN IF EXISTS playlist_url"
+      );
+      await client.query("ALTER TABLE sessions DROP COLUMN IF EXISTS notes");
+
+      // Agregar columnas de sincronización temporal si no existen
+      await client.query(
+        "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS media_connect_ts TIMESTAMPTZ"
+      );
+      await client.query(
+        "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS media_start_ts TIMESTAMPTZ"
+      );
+      await client.query(
+        "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS media_end_ts TIMESTAMPTZ"
+      );
+      await client.query(
+        "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS recommended_start_offset_ms INTEGER"
+      );
+
+      // Índices para búsquedas de hooks
+      await client.query(
+        "CREATE INDEX IF NOT EXISTS idx_sessions_path_open ON sessions(path) WHERE end_ts IS NULL"
+      );
+      await client.query(
+        "CREATE INDEX IF NOT EXISTS idx_sessions_path_timestamps ON sessions(path, start_ts, end_ts)"
+      );
     }
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
   } catch (error) {
-    await client.query('ROLLBACK');
+    await client.query("ROLLBACK");
     throw error;
   } finally {
     client.release();
@@ -197,10 +250,10 @@ export const db = {
   ensureSchema,
   async healthCheck(): Promise<boolean> {
     try {
-      const res = await pool.query('SELECT 1');
+      const res = await pool.query("SELECT 1");
       return res.rowCount === 1;
     } catch (error) {
-      console.error('Database health check failed', error);
+      console.error("Database health check failed", error);
       return false;
     }
   },
@@ -209,7 +262,9 @@ export const db = {
     await pool.end();
   },
 
-  async createSession(input: CreateSessionInput): Promise<{ record: SessionRecord; created: boolean }> {
+  async createSession(
+    input: CreateSessionInput
+  ): Promise<{ record: SessionRecord; created: boolean }> {
     const { sessionId, deviceId, path, startTs, reason } = input;
     const result = await pool.query<SessionRecord>(
       `INSERT INTO sessions (session_id, device_id, path, start_ts, reason, status)
@@ -225,7 +280,9 @@ export const db = {
 
     const existing = await db.getSession(sessionId);
     if (!existing) {
-      throw new Error(`Session ${sessionId} was not inserted and could not be fetched`);
+      throw new Error(
+        `Session ${sessionId} was not inserted and could not be fetched`
+      );
     }
     return { record: existing, created: false };
   },
@@ -256,7 +313,11 @@ export const db = {
     return result.rows;
   },
 
-  async listSessionsByTimeRange(from: Date, to: Date, limit = 200): Promise<SessionRecord[]> {
+  async listSessionsByTimeRange(
+    from: Date,
+    to: Date,
+    limit = 200
+  ): Promise<SessionRecord[]> {
     const result = await pool.query<SessionRecord>(
       `SELECT * FROM sessions
        WHERE start_ts < $2
@@ -276,7 +337,9 @@ export const db = {
     return result.rows[0] ?? null;
   },
 
-  async insertDetection(input: DetectionInsertInput): Promise<DetectionRecord | null> {
+  async insertDetection(
+    input: DetectionInsertInput
+  ): Promise<DetectionRecord | null> {
     const { sessionId, trackId, cls, conf, bbox, captureTs, urlFrame } = input;
     const result = await pool.query<DetectionRecord>(
       `INSERT INTO detections (session_id, track_id, cls, conf, bbox, capture_ts, url_frame, first_ts, last_ts)
@@ -300,7 +363,15 @@ export const db = {
          END,
          last_ts = EXCLUDED.last_ts
        RETURNING *`,
-      [sessionId, trackId, cls, conf, JSON.stringify(bbox), captureTs, urlFrame ?? null]
+      [
+        sessionId,
+        trackId,
+        cls,
+        conf,
+        JSON.stringify(bbox),
+        captureTs,
+        urlFrame ?? null,
+      ]
     );
     return result.rows[0] ?? null;
   },
@@ -315,7 +386,11 @@ export const db = {
     return result.rows;
   },
 
-  async getDetectionsByTimeRange(from: Date, to: Date, limit = 1000): Promise<DetectionRecord[]> {
+  async getDetectionsByTimeRange(
+    from: Date,
+    to: Date,
+    limit = 1000
+  ): Promise<DetectionRecord[]> {
     const result = await pool.query<DetectionRecord>(
       `SELECT * FROM detections
        WHERE last_ts >= $1 AND last_ts < $2
@@ -324,5 +399,59 @@ export const db = {
       [from.toISOString(), to.toISOString(), limit]
     );
     return result.rows;
-  }
+  },
+
+  // Funciones para hooks de MediaMTX
+  async findOpenSessionByPath(path: string): Promise<SessionRecord | null> {
+    const result = await pool.query<SessionRecord>(
+      `SELECT * FROM sessions
+       WHERE path = $1 AND end_ts IS NULL
+       ORDER BY start_ts DESC
+       LIMIT 1`,
+      [path]
+    );
+    return result.rows[0] ?? null;
+  },
+
+  async updateMediaConnectTs(
+    sessionId: string,
+    connectTs: string
+  ): Promise<void> {
+    await pool.query(
+      `UPDATE sessions
+       SET media_connect_ts = $2::timestamptz
+       WHERE session_id = $1 AND media_connect_ts IS NULL`,
+      [sessionId, connectTs]
+    );
+  },
+
+  async updateMediaStartTs(sessionId: string, startTs: string): Promise<void> {
+    await pool.query(
+      `UPDATE sessions
+       SET media_start_ts = $2::timestamptz
+       WHERE session_id = $1 AND media_start_ts IS NULL`,
+      [sessionId, startTs]
+    );
+  },
+
+  async updateMediaEndTs(sessionId: string, endTs: string): Promise<void> {
+    await pool.query(
+      `UPDATE sessions
+       SET media_end_ts = GREATEST(COALESCE(media_end_ts, $2::timestamptz), $2::timestamptz)
+       WHERE session_id = $1`,
+      [sessionId, endTs]
+    );
+  },
+
+  async setRecommendedStartOffsetIfNull(
+    sessionId: string,
+    offsetMs: number
+  ): Promise<void> {
+    await pool.query(
+      `UPDATE sessions
+       SET recommended_start_offset_ms = $2
+       WHERE session_id = $1 AND recommended_start_offset_ms IS NULL`,
+      [sessionId, offsetMs]
+    );
+  },
 };

@@ -6,6 +6,7 @@ import { db } from './db.js';
 import { sessionsRouter } from './routes/sessions.js';
 import { detectionsRouter } from './routes/detections.js';
 import { ingestRouter } from './routes/ingest.js';
+import { hooksRouter } from './routes/hooks.js';
 
 const app = express();
 
@@ -42,6 +43,7 @@ app.get('/health', async (_req, res) => {
 app.use('/sessions', sessionsRouter);
 app.use('/detections', detectionsRouter);
 app.use('/ingest', ingestRouter);
+app.use('/hooks', hooksRouter);
 
 type ErrorWithStatus = Error & { status?: number };
 

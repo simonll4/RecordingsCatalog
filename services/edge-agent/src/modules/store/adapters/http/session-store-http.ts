@@ -16,20 +16,20 @@
  *   - Emits session.open/session.close events to bus
  *   - Coordinates with FrameIngester for frame storage
  *
-* Features:
-* =========
-*
-* Clean Interface:
-*   - open(startTs): Create new session, returns sessionId
-*   - close(sessionId, endTs): Close existing session
+ * Features:
+ * =========
+ *
+ * Clean Interface:
+ *   - open(startTs): Create new session, returns sessionId
+ *   - close(sessionId, endTs): Close existing session
  *
  * Retry Logic:
  *   - Exponential backoff (up to 3 attempts)
  *   - Timeout on requests (5 seconds)
  *   - Graceful degradation (logs errors, continues)
  *
-* NOTE: Detections/frames se envían con FrameIngester (/ingest). Este adaptador
-* solo gestiona el ciclo de vida de la sesión (open/close).
+ * NOTE: Detections/frames se envían con FrameIngester (/ingest). Este adaptador
+ * solo gestiona el ciclo de vida de la sesión (open/close).
  *
  * Architecture:
  * =============
@@ -106,11 +106,11 @@
  *   - Created: 2025-10-11T12:00:53.955Z
  *   - Counter: 1 (first session since restart)
  *
-* Ingest recomendado:
-*   1. AI detections arrive
-*   2. FrameIngester.ingestNV12() called
-*   3. POST /ingest with multipart (frame JPEG + metadata)
-*   4. Store saves frame + detections atomically
+ * Ingest recomendado:
+ *   1. AI detections arrive
+ *   2. FrameIngester.ingestNV12() called
+ *   3. POST /ingest with multipart (frame JPEG + metadata)
+ *   4. Store saves frame + detections atomically
  *
  * Error Handling:
  * ===============
@@ -246,5 +246,4 @@ export class SessionStoreHttp implements SessionStore {
       });
     }
   }
-
 }

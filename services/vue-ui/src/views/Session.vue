@@ -11,7 +11,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import Player from '../components/Player.vue'
 import TrackLegend from '../components/TrackLegend.vue'
-import { fetchSessionClip } from '../api/sessions'
+import { fetchSession, buildPlaybackUrl, fetchSessionClip, probePlaybackUrl } from '../api/sessions'
 import { usePlayerStore } from '../stores/usePlayer'
 import { useSessionsStore } from '../stores/useSessions'
 import { useTracksStore } from '../stores/useTracks'
@@ -51,11 +51,74 @@ const loadSessionData = async (sessionId: string) => {
   try {
     // Limpiar estado y cache de la sesión anterior
     await tracksStore.resetForSession(sessionId)
-    // Cargar meta e index en paralelo
-    await Promise.all([tracksStore.loadMeta(sessionId), tracksStore.loadIndex(sessionId)])
+    // Cargar meta, index y datos de sesión en paralelo
+    const [session] = await Promise.all([
+      fetchSession(sessionId),
+      tracksStore.loadMeta(sessionId),
+      tracksStore.loadIndex(sessionId),
+    ])
 
-    // Obtener URL del clip y configurar el player
-    const clip = await fetchSessionClip(sessionId)
+    // Intentar construir URL localmente usando media_start_ts
+    let clip = buildPlaybackUrl(session)
+
+    // Si no se pudo construir (sesión abierta o datos incompletos), usar endpoint /clip como fallback
+    if (!clip) {
+      console.warn('[loadSessionData] Session open or incomplete, using /clip endpoint')
+      clip = await fetchSessionClip(sessionId)
+    } else if (clip.anchorSource === 'fallback_offset') {
+      // Si usamos fallback (sin media_start_ts), validar que la URL existe
+      console.warn('[loadSessionData] No media_start_ts found, probing playback URL...')
+      const probeResult = await probePlaybackUrl(
+        import.meta.env.VITE_MEDIAMTX_BASE_URL || 'http://localhost:9996',
+        session.path ?? session.device_id,
+        new Date(clip.start),
+        clip.duration,
+        5, // max 5 reintentos = 1s de ajuste
+      )
+
+      if (probeResult) {
+        console.log('[loadSessionData] Probe successful, using adjusted URL')
+        clip.playbackUrl = probeResult.url
+        clip.start = probeResult.adjustedStart
+      } else {
+        console.error('[loadSessionData] Probe failed, falling back to /clip endpoint')
+        clip = await fetchSessionClip(sessionId)
+      }
+    }
+
+    // Calcular overlay shift: diferencia entre el inicio del video (clip.start) y meta.start_time
+    if (meta.value && clip.start) {
+      const videoStartMs = new Date(clip.start).getTime()
+      const metaStartMs = new Date(meta.value.start_time).getTime()
+      const shiftSeconds = (videoStartMs - metaStartMs) / 1000
+      const shiftMs = Math.round(shiftSeconds * 1000)
+
+      tracksStore.setOverlayShift(shiftSeconds)
+
+      // Log estructurado para observabilidad
+      console.log(
+        JSON.stringify({
+          event: 'overlay_alignment',
+          sessionId,
+          videoStart: clip.start,
+          metaStart: meta.value.start_time,
+          shiftSeconds: parseFloat(shiftSeconds.toFixed(3)),
+          shiftMs,
+          anchorSource: clip.anchorSource || 'unknown',
+        }),
+      )
+
+      // Validación: shift excesivo indica problema de sincronización
+      if (Math.abs(shiftSeconds) > 2) {
+        console.warn(
+          `[overlay_alignment] Large shift detected: ${shiftSeconds.toFixed(3)}s - possible timing issue`,
+        )
+        console.warn(
+          `This may indicate desync between MediaMTX recordings and AI worker timestamps`,
+        )
+      }
+    }
+
     playbackUrl.value = clip.playbackUrl
     playerStore.setSession(sessionId)
     playerStore.setPlaybackSource(clip.playbackUrl)

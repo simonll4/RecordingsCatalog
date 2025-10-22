@@ -22,7 +22,8 @@ services:
       retries: 5
 
   mediamtx:
-    image: bluenviron/mediamtx:latest-ffmpeg
+    build:
+      context: ./services/mediamtx
     container_name: tpfinalv3-mediamtx
     restart: unless-stopped
     depends_on:
@@ -30,11 +31,14 @@ services:
         condition: service_started
     environment:
       TZ: UTC
+      SESSION_STORE_URL: http://session-store:8080
+      # MEDIAMTX_HOOK_TOKEN: your-secret-token  # Opcional: token para seguridad de hooks
     ports:
       - "8554:8554" # RTSP ingest
       - "9996:9996" # Playback API (recordings)
     volumes:
       - ./services/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+      - ./services/mediamtx/hooks:/hooks:ro
       - ./data/recordings:/recordings
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
@@ -80,7 +84,7 @@ services:
       context: ./services/edge-agent
     container_name: tpfinalv3-edge-agent
     restart: unless-stopped
-    shm_size: "512m"  # Shared memory para SHM pipeline (necesario para HD/1080p)
+    shm_size: "512m" # Shared memory para SHM pipeline (necesario para HD/1080p)
     depends_on:
       mediamtx:
         condition: service_started

@@ -26,6 +26,10 @@ const sessionSummarySchema = z.object({
   start_ts: z.string(),
   end_ts: z.string().nullable(),
   postroll_sec: z.number().nullable().optional(),
+  media_connect_ts: z.string().nullable().optional(),
+  media_start_ts: z.string().nullable().optional(),
+  media_end_ts: z.string().nullable().optional(),
+  recommended_start_offset_ms: z.number().nullable().optional(),
   reason: z.string().nullable().optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
@@ -44,8 +48,9 @@ const listSessionsSchema = z.object({
 const clipResponseSchema = z.object({
   playbackUrl: z.string(),
   start: z.string(),
-  durationSeconds: z.number(),
+  duration: z.number(),
   format: z.string().optional(),
+  anchorSource: z.string().optional(),
 })
 
 const metaSchema = z.object({
@@ -251,5 +256,150 @@ export const fetchSessionSegment = async (
   return {
     buffer,
     encoding,
+  }
+}
+
+/**
+ * Obtiene la sesión completa y construye la URL de playback localmente.
+ * Si media_start_ts está disponible, lo usa como ancla; de lo contrario intenta /clip como fallback.
+ */
+export const fetchSession = async (sessionId: string): Promise<SessionSummary> => {
+  const url = sessionStoreUrl(`/sessions/${encodeURIComponent(sessionId)}`)
+  return await fetchJson(url, sessionSummarySchema)
+}
+
+/**
+ * Valida si una URL de playback existe haciendo una petición HEAD.
+ * Si devuelve 404, intenta ajustar el start hacia adelante en incrementos de 200ms.
+ * Útil para sesiones sin hooks donde el offset puede no ser preciso.
+ */
+export async function probePlaybackUrl(
+  baseUrl: string,
+  path: string,
+  startDate: Date,
+  duration: number,
+  maxRetries = 5,
+): Promise<{ url: string; adjustedStart: string } | null> {
+  const retryDelayMs = 200 // Incremento de ajuste por reintento
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const adjustedStart = new Date(startDate.getTime() + attempt * retryDelayMs)
+    const url = new URL('/get', baseUrl)
+    url.searchParams.set('path', path)
+    url.searchParams.set('start', adjustedStart.toISOString())
+    url.searchParams.set('duration', `${duration}s`)
+    url.searchParams.set('format', 'mp4')
+
+    try {
+      const response = await fetch(url.toString(), { method: 'HEAD' })
+
+      if (response.ok) {
+        if (attempt > 0) {
+          console.log(
+            `[probePlaybackUrl] Found valid start after ${attempt} retries: ${adjustedStart.toISOString()}`,
+          )
+        }
+        return { url: url.toString(), adjustedStart: adjustedStart.toISOString() }
+      }
+
+      if (response.status === 404 && attempt < maxRetries - 1) {
+        console.warn(
+          `[probePlaybackUrl] 404 on attempt ${attempt + 1}, retrying with +${retryDelayMs}ms...`,
+        )
+        continue
+      }
+
+      // Otros errores (403, 500, etc.) no son recuperables con reintentos
+      if (response.status !== 404) {
+        console.error(`[probePlaybackUrl] Non-404 error: ${response.status}`)
+        return null
+      }
+    } catch (error) {
+      console.error(`[probePlaybackUrl] Network error on attempt ${attempt + 1}:`, error)
+      if (attempt === maxRetries - 1) {
+        return null
+      }
+    }
+  }
+
+  console.error(`[probePlaybackUrl] Max retries (${maxRetries}) exceeded`)
+  return null
+}
+
+/**
+ * Construye la URL de playback para una sesión basándose en sus timestamps.
+ * Usa media_start_ts como ancla si existe, de lo contrario usa start_ts + offset.
+ */
+export const buildPlaybackUrl = (session: SessionSummary): ClipInfo | null => {
+  if (!session.end_ts) {
+    return null // Sesión abierta, no se puede reproducir
+  }
+
+  const startDate = new Date(session.start_ts)
+  const endDate = new Date(session.end_ts)
+
+  // Determinar ancla de inicio
+  let anchorDate: Date
+  let anchorSource: string
+
+  if (session.media_start_ts) {
+    // Usar timestamp del primer segmento de MediaMTX (fuente de verdad)
+    anchorDate = new Date(session.media_start_ts)
+    // Aplicar offset recomendado si existe (normalmente 0)
+    if (session.recommended_start_offset_ms) {
+      anchorDate = new Date(anchorDate.getTime() + session.recommended_start_offset_ms)
+    }
+    anchorSource = 'media_start_ts'
+  } else {
+    // Fallback: usar start_ts con offset por defecto
+    const defaultOffset = parseInt(import.meta.env.VITE_START_OFFSET_MS || '200', 10)
+    anchorDate = new Date(startDate.getTime() + defaultOffset)
+    anchorSource = 'fallback_offset'
+  }
+
+  // Determinar ancla de fin: usar media_end_ts si existe
+  let endAnchorDate: Date
+  if (session.media_end_ts) {
+    endAnchorDate = new Date(session.media_end_ts)
+  } else {
+    endAnchorDate = endDate
+  }
+
+  // Calcular duración desde ancla de inicio hasta ancla de fin
+  const durationMs = Math.max(0, endAnchorDate.getTime() - anchorDate.getTime())
+  const baseSeconds = Math.ceil(durationMs / 1000)
+  const extraSeconds = Math.max(
+    parseInt(import.meta.env.VITE_EXTRA_SECONDS || '5', 10),
+    session.postroll_sec ?? 0,
+  )
+  const totalSeconds = Math.max(1, baseSeconds + extraSeconds)
+
+  // Construir URL
+  const url = new URL('/get', MEDIAMTX_BASE_URL)
+  url.searchParams.set('path', session.path ?? session.device_id)
+  url.searchParams.set('start', anchorDate.toISOString())
+  url.searchParams.set('duration', `${totalSeconds}s`)
+  url.searchParams.set('format', 'mp4')
+
+  // Log para debugging
+  console.log(
+    JSON.stringify({
+      event: 'buildPlaybackUrl',
+      sessionId: session.session_id,
+      anchorSource,
+      start: anchorDate.toISOString(),
+      end: endAnchorDate.toISOString(),
+      duration: totalSeconds,
+      has_media_start_ts: !!session.media_start_ts,
+      has_media_end_ts: !!session.media_end_ts,
+    }),
+  )
+
+  return {
+    playbackUrl: url.toString(),
+    start: anchorDate.toISOString(),
+    duration: totalSeconds,
+    format: 'mp4',
+    anchorSource,
   }
 }
