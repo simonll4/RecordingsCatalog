@@ -1,7 +1,6 @@
+# ===========================
 # Session Store Configuration
 # ===========================
-# Este archivo es la fuente única de verdad para la configuración del session-store.
-# Todas las configuraciones deben definirse aquí, no mediante variables de entorno.
 
 # Configuración del servidor HTTP
 [server]

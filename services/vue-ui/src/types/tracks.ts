@@ -74,3 +74,12 @@ export interface RenderFrame {
   objects: RenderObject[]
   trails: Map<number, RenderObject[]>
 }
+
+/** Playback information for a session */
+export interface PlaybackInfo {
+  playbackUrl: string
+  start: string
+  duration: number
+  format: string
+  anchorSource?: string
+}

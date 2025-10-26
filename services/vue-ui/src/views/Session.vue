@@ -11,7 +11,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import Player from '../components/Player.vue'
 import TrackLegend from '../components/TrackLegend.vue'
-import { fetchSession, buildPlaybackUrl, fetchSessionClip, probePlaybackUrl } from '../api/sessions'
+import { fetchSession, buildPlaybackUrl, probePlaybackUrl } from '../api/sessions'
 import { usePlayerStore } from '../stores/usePlayer'
 import { useSessionsStore } from '../stores/useSessions'
 import { useTracksStore } from '../stores/useTracks'
@@ -60,11 +60,11 @@ const loadSessionData = async (sessionId: string) => {
 
     // Intentar construir URL localmente usando media_start_ts
     let clip = buildPlaybackUrl(session)
+    let finalClip: typeof clip
 
-    // Si no se pudo construir (sesión abierta o datos incompletos), usar endpoint /clip como fallback
+    // Si no se pudo construir (sesión abierta o datos incompletos), error
     if (!clip) {
-      console.warn('[loadSessionData] Session open or incomplete, using /clip endpoint')
-      clip = await fetchSessionClip(sessionId)
+      throw new Error('Session is still open or incomplete, cannot generate playback URL')
     } else if (clip.anchorSource === 'fallback_offset') {
       // Si usamos fallback (sin media_start_ts), validar que la URL existe
       console.warn('[loadSessionData] No media_start_ts found, probing playback URL...')
@@ -78,17 +78,22 @@ const loadSessionData = async (sessionId: string) => {
 
       if (probeResult) {
         console.log('[loadSessionData] Probe successful, using adjusted URL')
-        clip.playbackUrl = probeResult.url
-        clip.start = probeResult.adjustedStart
+        finalClip = {
+          ...clip,
+          playbackUrl: probeResult.url,
+          start: probeResult.adjustedStart,
+        }
       } else {
-        console.error('[loadSessionData] Probe failed, falling back to /clip endpoint')
-        clip = await fetchSessionClip(sessionId)
+        throw new Error('Failed to probe playback URL, video may not be available')
       }
+    } else {
+      // clip exists and doesn't need probing
+      finalClip = clip
     }
 
-    // Calcular overlay shift: diferencia entre el inicio del video (clip.start) y meta.start_time
-    if (meta.value && clip.start) {
-      const videoStartMs = new Date(clip.start).getTime()
+    // Calcular overlay shift: diferencia entre el inicio del video (finalClip.start) y meta.start_time
+    if (meta.value && finalClip.start) {
+      const videoStartMs = new Date(finalClip.start).getTime()
       const metaStartMs = new Date(meta.value.start_time).getTime()
       const shiftSeconds = (videoStartMs - metaStartMs) / 1000
       const shiftMs = Math.round(shiftSeconds * 1000)
@@ -100,11 +105,11 @@ const loadSessionData = async (sessionId: string) => {
         JSON.stringify({
           event: 'overlay_alignment',
           sessionId,
-          videoStart: clip.start,
+          videoStart: finalClip.start,
           metaStart: meta.value.start_time,
           shiftSeconds: parseFloat(shiftSeconds.toFixed(3)),
           shiftMs,
-          anchorSource: clip.anchorSource || 'unknown',
+          anchorSource: finalClip.anchorSource || 'unknown',
         }),
       )
 
@@ -119,9 +124,9 @@ const loadSessionData = async (sessionId: string) => {
       }
     }
 
-    playbackUrl.value = clip.playbackUrl
+    playbackUrl.value = finalClip.playbackUrl
     playerStore.setSession(sessionId)
-    playerStore.setPlaybackSource(clip.playbackUrl)
+    playerStore.setPlaybackSource(finalClip.playbackUrl)
 
     // Si hay segmentos e información de meta, asegurar el segmento inicial
     if (hasSegments.value && meta.value) {

@@ -16,8 +16,8 @@ TRACKS_BASE = "/home/simonll4/Desktop/final-scripting/tpfinal-v3/data/tracks"
 
 # Pon aquí el nombre exacto del archivo de video y el ID de sesión
 # Ejemplos de nombres encontrados: "43-852812.mp4", "34-931913.mp4"
-VIDEO_FILENAME = "40-573548.mp4"
-SESSION_ID = "sess_cam-local_1760839179181_1"
+VIDEO_FILENAME = "2025-10-26_02-13-19-598804.mp4"
+SESSION_ID = "sess_cam-local_1761444798208_1"
 
 
 def find_video_in_recordings(video_id: str, recordings_base: str = "/home/simonll4/Desktop/final-scripting/tpfinal-v3/data/recordings") -> str | None:

@@ -1,11 +1,14 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { listSessions, type SessionSummary } from '../api/sessions'
+import { sessionService, type SessionSummary, type ListSessionsParams } from '@/api'
+import { getErrorMessage, logError } from '@/utils'
 
 /**
- * Store responsable de la lista de sesiones.
- * - Mantiene el array de sesiones y el id seleccionado.
- * - Provee `loadSessions` para cargar desde el backend y `selectSession`.
+ * Sessions Store
+ * Manages the list of sessions and selected session
+ * - Maintains sessions array and selected session ID
+ * - Provides methods to load sessions from backend
+ * - Handles loading and error states
  */
 export const useSessionsStore = defineStore('sessions', () => {
   const sessions = ref<SessionSummary[]>([])
@@ -19,38 +22,60 @@ export const useSessionsStore = defineStore('sessions', () => {
   )
 
   /**
-   * Carga sesiones desde el session store.
-   * Acepta `params` para modo range/all y límites.
+   * Load sessions from the session store
+   * Accepts params for range/all mode and limits
    */
-  const loadSessions = async (
-    params: { mode?: 'range' | 'all'; limit?: number; from?: string; to?: string } = {},
-  ) => {
+  const loadSessions = async (params: ListSessionsParams = {}) => {
     isLoading.value = true
     error.value = null
     try {
-      const response = await listSessions(params)
+      const response = await sessionService.listSessions(params)
       sessions.value = response.sessions
     } catch (err) {
-      // Guardar mensaje legible para la UI
-      console.error('Failed to load sessions', err)
-      error.value = err instanceof Error ? err.message : 'Unexpected error'
+      logError('useSessionsStore.loadSessions', err)
+      error.value = getErrorMessage(err)
     } finally {
       isLoading.value = false
     }
   }
 
-  /** Selecciona una sesión por id (o la deselecciona con null). */
+  /**
+   * Select a session by ID (or deselect with null)
+   */
   const selectSession = (sessionId: string | null) => {
     selectedId.value = sessionId
   }
 
+  /**
+   * Refresh sessions (reload with current params)
+   */
+  const refreshSessions = async () => {
+    await loadSessions()
+  }
+
+  /**
+   * Clear all sessions
+   */
+  const clearSessions = () => {
+    sessions.value = []
+    selectedId.value = null
+    error.value = null
+  }
+
   return {
+    // State
     sessions,
     isLoading,
     error,
     selectedId,
+    
+    // Computed
     selectedSession,
+    
+    // Actions
     loadSessions,
     selectSession,
+    refreshSessions,
+    clearSessions,
   }
 })

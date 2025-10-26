@@ -1,79 +1,141 @@
+/**
+ * Tracks Store (Refactored)
+ * Manages track data, segments, and rendering
+ * - Loads and caches session metadata and index
+ * - Manages segment loading with LRU cache
+ * - Provides filtered events for rendering
+ * - Handles UI state for filters and visualization
+ */
+
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { wrap } from 'comlink'
-import type { TrackEvent, TrackIndex, TrackMeta, RenderObject } from '../types/tracks'
-import {
-  fetchSessionIndex,
-  fetchSessionMeta,
-  fetchSessionSegment,
-  HttpError,
-} from '../api/sessions'
+import { sessionService, HttpError } from '@/api'
 import { segmentCache } from './segmentCache'
-
-interface NdjsonParser {
-  parseSegment(data: ArrayBuffer, encoding: string | null): Promise<TrackEvent[]>
-}
-
-const MAX_SEGMENTS_IN_MEMORY = 12
-const EVENT_WINDOW_SECONDS = 0.2
-const TRAIL_WINDOW_SECONDS = 2.0
+import { processBBox } from '@/utils'
+import { SEGMENT_CONFIG, UI_CONFIG } from '@/constants'
+import type { TrackEvent, TrackIndex, TrackMeta, RenderObject } from '../types/tracks'
 
 /**
- * Interfaz del worker expuesto por `ndjsonParser.worker.ts`.
- * El worker parsea buffers NDJSON a `TrackEvent[]`.
+ * NDJSON Parser Worker Interface
  */
 interface NdjsonParser {
   parseSegment(data: ArrayBuffer, encoding: string | null): Promise<TrackEvent[]>
 }
 
-// Worker que parsea NDJSON en segundo plano para no bloquear el hilo principal
-const parserWorker = new Worker(new URL('../workers/ndjsonParser.worker.ts', import.meta.url), {
-  type: 'module',
-})
+// Initialize worker
+const parserWorker = new Worker(
+  new URL('../workers/ndjsonParser.worker.ts', import.meta.url),
+  { type: 'module' }
+)
 const parser = wrap<NdjsonParser>(parserWorker)
 
-const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
-
 /**
- * Store de tracks y segmentos:
- * - Mantiene `meta` e `index` de la sesión.
- * - Gestiona la descarga, parseo (worker) y cache (Dexie) de segmentos NDJSON.
- * - Provee utilidades para obtener eventos a un tiempo dado y manejar LRU.
+ * Tracks Store
  */
 export const useTracksStore = defineStore('tracks', () => {
+  // === State ===
   const meta = ref<TrackMeta | null>(null)
   const index = ref<TrackIndex | null>(null)
   const sessionId = ref<string | null>(null)
-
-  // Map de segmentIndex -> TrackEvent[] (en memoria)
+  
+  // Segment management
   const segmentEvents = ref<Map<number, TrackEvent[]>>(new Map())
   const loadingSegments = ref<Set<number>>(new Set())
   const lru = ref<number[]>([])
+  
+  // Error states
   const error = ref<string | null>(null)
   const metaMissing = ref(false)
   const indexMissing = ref(false)
-
-  // Compensación temporal: diferencia en segundos entre video start y meta.start_time
+  
+  // Temporal compensation (video start vs meta start_time)
   const overlayShiftSeconds = ref(0)
-
-  // UI state / filtros
-  const confMin = ref(0.4)
-  const showBoxes = ref(true)
-  const showLabels = ref(true)
-  const showTrails = ref(false)
+  
+  // === UI State / Filters ===
+  const confMin = ref<number>(UI_CONFIG.FILTERS.DEFAULT_CONFIDENCE_MIN)
+  const showBoxes = ref<boolean>(UI_CONFIG.FILTERS.DEFAULT_SHOW_BOXES)
+  const showLabels = ref<boolean>(UI_CONFIG.FILTERS.DEFAULT_SHOW_LABELS)
+  const showTrails = ref<boolean>(UI_CONFIG.FILTERS.DEFAULT_SHOW_TRAILS)
   const selectedClasses = ref<Set<number>>(new Set())
-
+  
+  // === Computed ===
   const availableClasses = computed(() => meta.value?.classes ?? [])
   const hasSegments = computed(() => index.value !== null && !indexMissing.value)
-
+  
+  // === Internal Helpers ===
+  
   /**
-   * Resetea el store para una nueva sesión:
-   * - Limpia meta/index, eventos en memoria, LRU y cache local para la sesión.
+   * Mark a segment as loading or not
+   */
+  const markSegmentLoading = (segmentIndex: number, value: boolean) => {
+    const next = new Set(loadingSegments.value)
+    if (value) {
+      next.add(segmentIndex)
+    } else {
+      next.delete(segmentIndex)
+    }
+    loadingSegments.value = next
+  }
+  
+  /**
+   * LRU: Touch segment (move to end of queue)
+   * Evict old segments if over limit
+   */
+  const touchSegment = (segmentIndex: number) => {
+    const filtered = lru.value.filter((idx) => idx !== segmentIndex)
+    filtered.push(segmentIndex)
+    lru.value = filtered
+    
+    if (filtered.length > SEGMENT_CONFIG.MAX_SEGMENTS_IN_MEMORY) {
+      const overflow = filtered.length - SEGMENT_CONFIG.MAX_SEGMENTS_IN_MEMORY
+      const currentMap = new Map(segmentEvents.value)
+      
+      for (let i = 0; i < overflow; i++) {
+        const evicted = filtered.shift()
+        if (evicted === undefined) break
+        currentMap.delete(evicted)
+      }
+      
+      lru.value = filtered
+      segmentEvents.value = currentMap
+    }
+  }
+  
+  /**
+   * Set events for a segment and update LRU
+   */
+  const setSegmentEvents = (segmentIndex: number, events: TrackEvent[]) => {
+    const nextMap = new Map(segmentEvents.value)
+    nextMap.set(segmentIndex, events)
+    segmentEvents.value = nextMap
+    touchSegment(segmentIndex)
+  }
+  
+  /**
+   * Filter an object based on confidence and selected classes
+   */
+  const filterObject = (obj: TrackEvent['objs'][number]): boolean => {
+    if (obj.conf < confMin.value) {
+      return false
+    }
+    if (selectedClasses.value.size > 0 && !selectedClasses.value.has(obj.cls)) {
+      return false
+    }
+    return true
+  }
+  
+  // === Public Actions ===
+  
+  /**
+   * Reset store for a new session
+   * Clears all data and cache for the session
    */
   const resetForSession = async (id: string) => {
     if (sessionId.value === id) {
       return
     }
+    
     sessionId.value = id
     meta.value = null
     index.value = null
@@ -85,13 +147,18 @@ export const useTracksStore = defineStore('tracks', () => {
     indexMissing.value = false
     overlayShiftSeconds.value = 0
     selectedClasses.value = new Set()
+    
     await segmentCache.clearSession(id)
   }
-
-  /** Carga meta.json; si no existe (404) marca metaMissing */
+  
+  /**
+   * Load session metadata
+   * Note: Meta is optional (generated by AI worker)
+   * If not found, session will work without it
+   */
   const loadMeta = async (id: string) => {
     try {
-      const result = await fetchSessionMeta(id)
+      const result = await sessionService.getTrackMeta(id)
       if (result) {
         meta.value = result
         metaMissing.value = false
@@ -99,22 +166,26 @@ export const useTracksStore = defineStore('tracks', () => {
         meta.value = null
         metaMissing.value = true
       }
-    } catch (err) {
+    } catch (err: unknown) {
       if (err instanceof HttpError && err.status === 404) {
+        console.log('[useTracks] Meta.json not found (AI worker feature - optional)')
         meta.value = null
         metaMissing.value = true
-        return
+      } else {
+        console.error('Failed to load session meta', err)
+        meta.value = null
+        metaMissing.value = true
       }
-      console.error('Failed to load session meta', err)
-      error.value = err instanceof Error ? err.message : 'Failed to load meta'
-      throw err
     }
   }
-
-  /** Carga index.json; si no existe (404) marca indexMissing */
+  
+  /**
+   * Load session track index
+   * Returns null if not found (404)
+   */
   const loadIndex = async (id: string) => {
     try {
-      const result = await fetchSessionIndex(id)
+      const result = await sessionService.getTrackIndex(id)
       if (result) {
         index.value = result
         indexMissing.value = false
@@ -122,7 +193,7 @@ export const useTracksStore = defineStore('tracks', () => {
         index.value = null
         indexMissing.value = true
       }
-    } catch (err) {
+    } catch (err: unknown) {
       if (err instanceof HttpError && err.status === 404) {
         index.value = null
         indexMissing.value = true
@@ -133,81 +204,53 @@ export const useTracksStore = defineStore('tracks', () => {
       throw err
     }
   }
-
-  // Marca un segmento como en carga para evitar cargas duplicadas
-  const markSegmentLoading = (segmentIndex: number, value: boolean) => {
-    const next = new Set(loadingSegments.value)
-    if (value) {
-      next.add(segmentIndex)
-    } else {
-      next.delete(segmentIndex)
-    }
-    loadingSegments.value = next
-  }
-
-  // LRU: touch -> mueve el índice al final; si excede límite, expulsa antiguos
-  const touchSegment = (segmentIndex: number) => {
-    const filtered = lru.value.filter((idx) => idx !== segmentIndex)
-    filtered.push(segmentIndex)
-    lru.value = filtered
-    if (filtered.length > MAX_SEGMENTS_IN_MEMORY) {
-      const overflow = filtered.length - MAX_SEGMENTS_IN_MEMORY
-      const currentMap = new Map(segmentEvents.value)
-      for (let i = 0; i < overflow; i += 1) {
-        const evicted = filtered.shift()
-        if (evicted === undefined) {
-          break
-        }
-        currentMap.delete(evicted)
-      }
-      lru.value = filtered
-      segmentEvents.value = currentMap
-    }
-  }
-
-  const setSegmentEvents = (segmentIndex: number, events: TrackEvent[]) => {
-    const nextMap = new Map(segmentEvents.value)
-    nextMap.set(segmentIndex, events)
-    segmentEvents.value = nextMap
-    touchSegment(segmentIndex)
-  }
-
+  
   /**
-   * Garantiza que un segmento esté cargado en memoria:
-   * - Si ya está en `segmentEvents` simplemente toca LRU.
-   * - Si está en cache (Dexie) lo usa.
-   * - Si no, lo descarga, lo parsea (worker) y lo guarda en memoria y cache.
+   * Ensure a segment is loaded in memory
+   * - Checks memory cache first
+   * - Then checks Dexie cache
+   * - Finally fetches from server
    */
   const ensureSegment = async (id: string, segmentIndex: number) => {
     if (!index.value || indexMissing.value) return
+    
+    // Already in memory
     if (segmentEvents.value.has(segmentIndex)) {
       touchSegment(segmentIndex)
       return
     }
+    
+    // Already loading
     if (loadingSegments.value.has(segmentIndex)) {
       return
     }
-
+    
     markSegmentLoading(segmentIndex, true)
+    
     try {
+      // Try cache first
       const cached = await segmentCache.get(id, segmentIndex)
       if (cached) {
         setSegmentEvents(segmentIndex, cached.events)
         return
       }
-
-      const { buffer, encoding } = await fetchSessionSegment(id, segmentIndex)
-      const events = await parser.parseSegment(buffer, encoding ?? null)
+      
+      // Fetch from server (segments are named like "seg-0000.jsonl", "seg-0001.jsonl", etc.)
+      const segmentName = `seg-${String(segmentIndex).padStart(4, '0')}.jsonl`
+      const blob = await sessionService.getTrackSegment(id, segmentName)
+      const buffer = await blob.arrayBuffer()
+      const events = await parser.parseSegment(buffer, null)
       setSegmentEvents(segmentIndex, events)
-
+      
+      // Save to cache
       const segmentInfo = index.value.segments.find((entry) => entry.i === segmentIndex)
       await segmentCache.put(id, segmentIndex, {
         events,
         closed: segmentInfo?.closed ?? false,
       })
-    } catch (err) {
+    } catch (err: unknown) {
       if (err instanceof HttpError && err.status === 404) {
-        // Segmento aún no listo; no lo tratamos como error fatal
+        // Segment not ready yet
         console.debug(`Segment ${segmentIndex} not ready yet`)
         return
       }
@@ -218,17 +261,18 @@ export const useTracksStore = defineStore('tracks', () => {
       markSegmentLoading(segmentIndex, false)
     }
   }
-
+  
   /**
-   * Prefetch: intenta cargar segmentos vecinos (anterior y siguiente).
-   * No bloqueante: errores se loguean en debug.
+   * Prefetch surrounding segments (non-blocking)
    */
   const prefetchAround = (segmentIndex: number) => {
     const currentId = sessionId.value
     if (!currentId || !hasSegments.value) return
+    
     const idx = index.value
     const maxSegment = idx?.segments[idx.segments.length - 1]?.i ?? Number.POSITIVE_INFINITY
     const candidates = [segmentIndex - 1, segmentIndex + 1]
+    
     for (const candidate of candidates) {
       if (candidate < 0 || candidate > maxSegment) continue
       void ensureSegment(currentId, candidate).catch((err) => {
@@ -236,133 +280,98 @@ export const useTracksStore = defineStore('tracks', () => {
       })
     }
   }
-
+  
+  /**
+   * Get segment index for a given time
+   */
   const segmentIndexForTime = (time: number): number | null => {
     if (!index.value) return null
     const duration = index.value.segment_duration_s
     if (duration <= 0) return 0
     return Math.floor(time / duration)
   }
-
-  // Aplica filtros (confianza y clases seleccionadas) a un objeto detectado
-  const filterObject = (obj: TrackEvent['objs'][number]) => {
-    if (obj.conf < confMin.value) {
-      return false
-    }
-    if (selectedClasses.value.size > 0 && !selectedClasses.value.has(obj.cls)) {
-      return false
-    }
-    return true
-  }
-
+  
   /**
-   * Devuelve los objetos actuales y las trayectorias (trails) para un tiempo dado.
-   * - windowStart/windowEnd definen el rango de interés (eventos cercanos al tiempo)
-   * - Filtra por `confMin` y `selectedClasses`
+   * Get events at a specific time
+   * Returns current objects and trails (if enabled)
    */
   const eventsAtTime = (
-    time: number,
+    time: number
   ): { current: RenderObject[]; trails: Map<number, RenderObject[]> } => {
     if (!index.value) {
       return { current: [], trails: new Map() }
     }
-    // Aplicar compensación temporal: el video puede comenzar en un punto distinto a meta.start_time
+    
+    // Apply temporal compensation
     const adjustedTime = time + overlayShiftSeconds.value
     const windowStart = Math.max(
       0,
-      adjustedTime - (showTrails.value ? TRAIL_WINDOW_SECONDS : EVENT_WINDOW_SECONDS),
+      adjustedTime - (showTrails.value ? SEGMENT_CONFIG.TRAIL_WINDOW_SECONDS : SEGMENT_CONFIG.EVENT_WINDOW_SECONDS)
     )
-    const windowEnd = adjustedTime + EVENT_WINDOW_SECONDS
-    const tolerance = EVENT_WINDOW_SECONDS
-    const trailWindow = showTrails.value ? TRAIL_WINDOW_SECONDS : 0
-
+    const windowEnd = adjustedTime + SEGMENT_CONFIG.EVENT_WINDOW_SECONDS
+    const tolerance = SEGMENT_CONFIG.EVENT_WINDOW_SECONDS
+    const trailWindow = showTrails.value ? SEGMENT_CONFIG.TRAIL_WINDOW_SECONDS : 0
+    
     const results: RenderObject[] = []
     const trails = new Map<number, RenderObject[]>()
-
+    
     const segDuration = index.value.segment_duration_s
     const minSegment = Math.max(0, Math.floor(windowStart / segDuration))
     const maxSegment = Math.floor(windowEnd / segDuration) + 1
-
+    
     for (const [segmentIdx, events] of segmentEvents.value) {
       if (segmentIdx < minSegment || segmentIdx > maxSegment) {
         continue
       }
+      
       for (const event of events) {
         const eventTime = event.t_rel_s
         if (eventTime < windowStart || eventTime > windowEnd) {
           continue
         }
+        
         for (const obj of event.objs) {
           if (!filterObject(obj)) continue
-
-          // Work with raw bbox values from NDJSON. They are expected to be
-          // normalized [0,1], but some backends may provide absolute pixel
-          // coordinates. Detect that case and normalize using metadata if
-          // available. Keep the original behavior (clamp to [0,1]) otherwise.
-          let [x1, y1, x2, y2] = obj.bbox_xyxy
-          let normalizedFromPixels = false
-
-          const videoW = meta.value?.video?.width ?? null
-          const videoH = meta.value?.video?.height ?? null
-
-          // Heuristic: if any coordinate is > 1.5, they're likely pixels.
-          // Only normalize when we have valid video dimensions.
-          if ((x1 > 1.5 || x2 > 1.5 || y1 > 1.5 || y2 > 1.5) && videoW && videoH) {
-            x1 = x1 / videoW
-            x2 = x2 / videoW
-            y1 = y1 / videoH
-            y2 = y2 / videoH
-            normalizedFromPixels = true
-          }
-
-          // If values are outside [0,1] and we couldn't normalize (missing
-          // meta), log a debug hint so the developer can inspect the NDJSON.
-          if (!normalizedFromPixels && (x1 > 1 || x2 > 1 || y1 > 1 || y2 > 1)) {
-            // Keep this debug message low-volume: it only fires when malformed
-            // bboxes are observed and normalization couldn't be applied.
-            console.debug('Unexpected bbox ranges in NDJSON (not normalized) for', {
-              sessionId: sessionId.value,
-              segmentIdx,
-              bbox: obj.bbox_xyxy,
-              videoW,
-              videoH,
-            })
-          }
-
-          // Clamp into [0,1] after normalization attempt
-          const cx1 = clamp(x1, 0, 1)
-          const cy1 = clamp(y1, 0, 1)
-          const cx2 = clamp(x2, 0, 1)
-          const cy2 = clamp(y2, 0, 1)
-
-          // Discard degenerate boxes where coordinates are not in the
-          // expected order. The renderer also performs a similar check,
-          // but filtering early avoids creating invalid RenderObjects.
-          if (cx1 >= cx2 || cy1 >= cy2) {
-            // Optional debug for malformed boxes
-            console.debug('Dropping degenerate bbox after normalization/clamp', {
+          
+          // Process bounding box
+          const processedBBox = processBBox(
+            obj.bbox_xyxy,
+            meta.value?.video?.width,
+            meta.value?.video?.height
+          )
+          
+          if (!processedBBox) {
+            // Log debug info for invalid boxes
+            console.debug('Dropping invalid bbox', {
               sessionId: sessionId.value,
               segmentIdx,
               raw: obj.bbox_xyxy,
-              clamped: [cx1, cy1, cx2, cy2],
+              videoWidth: meta.value?.video?.width,
+              videoHeight: meta.value?.video?.height,
             })
             continue
           }
-
+          
           const renderItem: RenderObject = {
             trackId: obj.track_id,
             cls: obj.cls,
             clsName: obj.cls_name,
             conf: obj.conf,
-            bbox: [cx1, cy1, cx2, cy2],
+            bbox: processedBBox,
             time: eventTime,
           }
-
+          
+          // Add to current if within tolerance
           if (Math.abs(eventTime - adjustedTime) <= tolerance) {
             results.push(renderItem)
           }
-
-          if (trailWindow > 0 && eventTime <= adjustedTime && eventTime >= adjustedTime - trailWindow) {
+          
+          // Add to trails if within trail window
+          if (
+            trailWindow > 0 &&
+            eventTime <= adjustedTime &&
+            eventTime >= adjustedTime - trailWindow
+          ) {
             const list = trails.get(renderItem.trackId) ?? []
             list.push(renderItem)
             trails.set(renderItem.trackId, list)
@@ -370,15 +379,18 @@ export const useTracksStore = defineStore('tracks', () => {
         }
       }
     }
-
-    // Asegurar orden ascendente por tiempo en trails para dibujar correctamente
+    
+    // Sort trails by time (ascending) for proper rendering
     for (const [, list] of trails) {
       list.sort((a, b) => a.time - b.time)
     }
-
+    
     return { current: results, trails }
   }
-
+  
+  /**
+   * Toggle class filter
+   */
   const toggleClass = (classId: number) => {
     const next = new Set(selectedClasses.value)
     if (next.has(classId)) {
@@ -388,12 +400,27 @@ export const useTracksStore = defineStore('tracks', () => {
     }
     selectedClasses.value = next
   }
-
+  
+  /**
+   * Set overlay temporal shift
+   */
   const setOverlayShift = (shiftSeconds: number) => {
     overlayShiftSeconds.value = shiftSeconds
   }
-
+  
+  /**
+   * Reset all filters to defaults
+   */
+  const resetFilters = () => {
+    confMin.value = UI_CONFIG.FILTERS.DEFAULT_CONFIDENCE_MIN
+    showBoxes.value = UI_CONFIG.FILTERS.DEFAULT_SHOW_BOXES
+    showLabels.value = UI_CONFIG.FILTERS.DEFAULT_SHOW_LABELS
+    showTrails.value = UI_CONFIG.FILTERS.DEFAULT_SHOW_TRAILS
+    selectedClasses.value = new Set()
+  }
+  
   return {
+    // === State ===
     meta,
     index,
     sessionId,
@@ -403,13 +430,19 @@ export const useTracksStore = defineStore('tracks', () => {
     metaMissing,
     indexMissing,
     overlayShiftSeconds,
+    
+    // === UI State ===
     confMin,
     showBoxes,
     showLabels,
     showTrails,
     selectedClasses,
+    
+    // === Computed ===
     availableClasses,
     hasSegments,
+    
+    // === Actions ===
     resetForSession,
     loadMeta,
     loadIndex,
@@ -419,5 +452,6 @@ export const useTracksStore = defineStore('tracks', () => {
     segmentIndexForTime,
     toggleClass,
     setOverlayShift,
+    resetFilters,
   }
 })
