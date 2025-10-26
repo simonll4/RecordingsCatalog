@@ -75,7 +75,9 @@ class SessionService:
         tracks: List[Track],
         frame_idx: int,
         frame_width: Optional[int] = None,
-        frame_height: Optional[int] = None
+        frame_height: Optional[int] = None,
+        ts_mono_ns: Optional[int] = None,
+        ts_utc_ns: Optional[int] = None,
     ):
         """
         Agrega tracks de un frame a la sesión activa
@@ -85,6 +87,8 @@ class SessionService:
             frame_idx: Índice del frame
             frame_width: Ancho del frame
             frame_height: Alto del frame
+            ts_mono_ns: Timestamp monotónico (nanosegundos) reportado por el edge-agent
+            ts_utc_ns: Timestamp UTC (nanosegundos) reportado por el edge-agent
         """
         if not self.current_writer:
             logger.warning("No hay sesión activa para escribir tracks")
@@ -97,7 +101,9 @@ class SessionService:
             tracks,
             frame_idx,
             frame_width=frame_width,
-            frame_height=frame_height
+            frame_height=frame_height,
+            ts_mono_ns=ts_mono_ns,
+            ts_utc_ns=ts_utc_ns,
         )
     
     def end(self):

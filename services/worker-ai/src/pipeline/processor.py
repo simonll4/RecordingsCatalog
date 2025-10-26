@@ -105,7 +105,9 @@ class FrameProcessor:
                 tracks,
                 payload.frame_id,  # Usar frame_id del video, no contador interno
                 frame_width=img_w,
-                frame_height=img_h
+                frame_height=img_h,
+                ts_mono_ns=payload.ts_mono_ns,
+                ts_utc_ns=payload.ts_utc_ns,
             )
         
         # 6. Construir resultado

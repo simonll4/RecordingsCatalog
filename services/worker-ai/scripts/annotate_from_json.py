@@ -84,7 +84,8 @@ def find_video_by_filename(filename: str, recordings_base: str) -> str | None:
 def load_events_to_frame_map(tracks_path: str, fps: float) -> Dict[int, List[dict]]:
     """Carga tracks.jsonl y devuelve un mapa frame_index -> lista de objetos.
 
-    Preferimos la clave 'frame' si está presente. Si no, caemos a 't_rel_s' o 't' multiplicado por fps.
+    Preferimos posicionar eventos usando 't_rel_s' (segundos relativos). Si no está presente,
+    caemos a 'frame' o 't' multiplicado por fps.
     """
     frame_map: Dict[int, List[dict]] = {}
     with open(tracks_path, "r", encoding="utf-8") as f:
@@ -92,13 +93,19 @@ def load_events_to_frame_map(tracks_path: str, fps: float) -> Dict[int, List[dic
             if not line.strip():
                 continue
             evt = json.loads(line)
-            fr = evt.get("frame")
-            if fr is None:
-                t = evt.get("t_rel_s")
-                if t is None:
+            t_rel = evt.get("t_rel_s")
+            if t_rel is not None:
+                fr = int(round(float(t_rel) * fps))
+            else:
+                fr = evt.get("frame")
+                if fr is None:
                     t = evt.get("t", 0.0)
-                fr = int(round(float(t) * fps))
-            frame_map[int(fr)] = evt.get("objs", [])
+                    fr = int(round(float(t) * fps))
+            fr_int = int(fr)
+            objects = evt.get("objs", [])
+            if not objects:
+                continue
+            frame_map.setdefault(fr_int, []).extend(objects)
     return frame_map
 
 

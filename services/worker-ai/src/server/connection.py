@@ -195,6 +195,8 @@ class ConnectionHandler:
             width=frame_msg.width,
             height=frame_msg.height,
             data=frame_msg.data,
+            ts_mono_ns=getattr(frame_msg, "ts_mono_ns", None) or None,
+            ts_utc_ns=getattr(frame_msg, "ts_utc_ns", None) or None,
         )
 
         logger.debug(f"Frame recibido: session={payload.session_id}, frame_id={payload.frame_id}, size={len(frame_msg.data)} bytes")

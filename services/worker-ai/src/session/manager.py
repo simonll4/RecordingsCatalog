@@ -25,6 +25,13 @@ def _utcnow_iso() -> str:
     return _isoformat_utc(datetime.now(timezone.utc))
 
 
+def _ns_to_iso(ts_ns: int) -> str:
+    """Convierte un timestamp en nanosegundos UTC a ISO8601."""
+    seconds = ts_ns / 1_000_000_000
+    dt = datetime.fromtimestamp(seconds, tz=timezone.utc)
+    return _isoformat_utc(dt)
+
+
 def _atomic_json_dump(path: Path, payload: dict) -> None:
     """Escribe JSON en disco usando rename atómico."""
     tmp_path = path.with_suffix(path.suffix + ".tmp")
@@ -45,7 +52,7 @@ class SessionMeta:
     frame_count: int
     fps: float
     path: Optional[str] = None
-    video: Dict[str, Optional[float]] = field(default_factory=dict)
+    video: Dict[str, Optional[float | str]] = field(default_factory=dict)
     classes: List[Dict[str, str | int]] = field(default_factory=list)
 
 
@@ -82,6 +89,11 @@ class SessionWriter:
         self.start_time = _utcnow_iso()
         self.end_time: Optional[str] = None
 
+        self.session_start_mono_ns: Optional[int] = None
+        self.session_start_utc_ns: Optional[int] = None
+        self.latest_mono_ns: Optional[int] = None
+        self.latest_utc_ns: Optional[int] = None
+
         self.video_width: Optional[int] = None
         self.video_height: Optional[int] = None
 
@@ -109,6 +121,8 @@ class SessionWriter:
         frame_idx: int,  # IMPORTANTE: Debe ser el frame_id real del video, no un contador interno
         frame_width: Optional[int] = None,
         frame_height: Optional[int] = None,
+        ts_mono_ns: Optional[int] = None,
+        ts_utc_ns: Optional[int] = None,
     ) -> None:
         """Persiste tracks de un frame dentro del segmento correspondiente.
         
@@ -117,12 +131,45 @@ class SessionWriter:
             frame_idx: ID del frame en el video (debe venir de payload.frame_id)
             frame_width: Ancho del frame (opcional)
             frame_height: Alto del frame (opcional)
+            ts_mono_ns: Timestamp monotónico (nanosegundos) reportado por el edge-agent
+            ts_utc_ns: Timestamp UTC (nanosegundos) reportado por el edge-agent
         """
         if not tracks:
             return
 
-        # Calcular timestamp relativo basado en el frame_id real del video
-        t_rel_s = frame_idx / self.fps if self.fps > 0 else 0.0
+        # Registrar timestamps base al recibir el primer frame
+        if ts_mono_ns is not None and self.session_start_mono_ns is None:
+            self.session_start_mono_ns = ts_mono_ns
+        if ts_utc_ns is not None and self.session_start_utc_ns is None:
+            self.session_start_utc_ns = ts_utc_ns
+            self.start_time = _ns_to_iso(ts_utc_ns)
+
+        if ts_mono_ns is not None:
+            self.latest_mono_ns = ts_mono_ns
+        if ts_utc_ns is not None:
+            self.latest_utc_ns = ts_utc_ns
+
+        # Calcular timestamp relativo preferentemente usando los nanosegundos reportados
+        t_rel_s: Optional[float] = None
+        if ts_mono_ns is not None and self.session_start_mono_ns is not None:
+            t_rel_s = (ts_mono_ns - self.session_start_mono_ns) / 1_000_000_000
+        elif ts_utc_ns is not None and self.session_start_utc_ns is not None:
+            t_rel_s = (ts_utc_ns - self.session_start_utc_ns) / 1_000_000_000
+
+        if t_rel_s is None:
+            # Fallback al comportamiento previo si no tenemos timestamps
+            t_rel_s = frame_idx / self.fps if self.fps > 0 else 0.0
+
+        # Evitar valores negativos en caso de timestamps fuera de orden
+        if t_rel_s < 0:
+            logger.debug(
+                "Timestamp relativo negativo detectado para frame %d (t_rel_s=%f). "
+                "Usando 0 como base.",
+                frame_idx,
+                t_rel_s,
+            )
+            t_rel_s = 0.0
+
         segment_index = int(t_rel_s // self.segment_duration_s)
         segment = self._ensure_segment(segment_index)
 
@@ -156,6 +203,8 @@ class SessionWriter:
         event = {
             "t_rel_s": round(t_rel_s, 3),
             "frame": frame_idx,
+            "ts_mono_ns": ts_mono_ns,
+            "ts_utc_ns": ts_utc_ns,
             "objs": objs,
         }
 
@@ -172,7 +221,10 @@ class SessionWriter:
 
     def finalize(self) -> None:
         """Cierra archivos y escribe metadata final."""
-        self.end_time = _utcnow_iso()
+        if self.latest_utc_ns is not None:
+            self.end_time = _ns_to_iso(self.latest_utc_ns)
+        else:
+            self.end_time = _utcnow_iso()
         self._close_current_segment(mark_closed=True)
 
         self._write_index()
@@ -248,7 +300,15 @@ class SessionWriter:
         ]
 
         duration_s = 0.0
-        if self.latest_frame_idx >= 0 and self.fps > 0:
+        if (
+            self.session_start_mono_ns is not None
+            and self.latest_mono_ns is not None
+            and self.latest_mono_ns >= self.session_start_mono_ns
+        ):
+            duration_s = round(
+                (self.latest_mono_ns - self.session_start_mono_ns) / 1_000_000_000, 3
+            )
+        elif self.latest_frame_idx >= 0 and self.fps > 0:
             duration_s = round((self.latest_frame_idx + 1) / self.fps, 3)
 
         payload = {
@@ -262,11 +322,15 @@ class SessionWriter:
 
     def _write_meta(self) -> None:
         """Actualiza meta.json con datos de la sesión."""
-        video_info: Dict[str, Optional[float]] = {
+        video_info: Dict[str, Optional[float | str]] = {
             "width": self.video_width,
             "height": self.video_height,
             "fps": self.fps,
         }
+        if self.session_start_utc_ns is not None:
+            video_info["start_ts_utc_ns"] = str(self.session_start_utc_ns)
+        if self.latest_utc_ns is not None:
+            video_info["end_ts_utc_ns"] = str(self.latest_utc_ns)
 
         classes = [
             {"id": cid, "name": name}

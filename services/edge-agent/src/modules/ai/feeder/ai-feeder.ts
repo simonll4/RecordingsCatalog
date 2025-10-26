@@ -227,6 +227,9 @@ export class AIFeeder {
   // Liveness flag
   private _isStarted = false;
 
+  // Offset para convertir timestamp monotónico (process.hrtime) a UTC
+  private utcOffsetNs: bigint | null = null;
+
   constructor(capture: NV12CaptureGst, frameCacheTtlMs?: number) {
     this.capture = capture;
     this.frameCache = new FrameCache(frameCacheTtlMs || 2000);
@@ -764,11 +767,18 @@ export class AIFeeder {
 
     // Cache frame BEFORE sending to worker (for later retrieval)
     // Always cache original NV12, not JPEG
+    if (this.utcOffsetNs === null) {
+      const nowNs = BigInt(Date.now()) * 1_000_000n;
+      this.utcOffsetNs = nowNs - BigInt(meta.tsMonoNs);
+    }
+    const tsUtcNsBig = BigInt(meta.tsMonoNs) + (this.utcOffsetNs ?? 0n);
+    const captureIso = new Date(Number(tsUtcNsBig / 1_000_000n)).toISOString();
+
     this.frameCache.set({
       seqNo: frameId.toString(),
       data,
       meta,
-      captureTs: new Date().toISOString(),
+      captureTs: captureIso,
     });
 
     const envelope: pb.ai.IEnvelope = {
@@ -780,9 +790,7 @@ export class AIFeeder {
           frameId: Long.fromString(frameId.toString()),
           tsMonoNs: Long.fromString(meta.tsMonoNs.toString()),
           tsPdtNs: Long.fromString(meta.tsMonoNs.toString()),
-          tsUtcNs: Long.fromString(
-            (BigInt(Date.now()) * 1_000_000n).toString()
-          ),
+          tsUtcNs: Long.fromString(tsUtcNsBig.toString()),
           width: meta.width,
           height: meta.height,
           pixelFormat,

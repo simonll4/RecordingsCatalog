@@ -20,6 +20,8 @@ class FramePayload:
     width: int
     height: int
     data: bytes
+    ts_mono_ns: Optional[int] = None
+    ts_utc_ns: Optional[int] = None
 
 
 @dataclass
