@@ -25,7 +25,7 @@ export class DetectionRepository {
            ELSE detections.cls
          END,
          url_frame = CASE
-           WHEN EXCLUDED.conf > detections.conf THEN EXCLUDED.url_frame
+           WHEN EXCLUDED.conf > detections.conf THEN COALESCE(EXCLUDED.url_frame, detections.url_frame)
            ELSE detections.url_frame
          END,
          last_ts = EXCLUDED.last_ts

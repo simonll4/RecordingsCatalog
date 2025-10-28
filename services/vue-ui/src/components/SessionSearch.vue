@@ -6,9 +6,11 @@ import { ref } from 'vue'
  * Emite `search` con payload { from: ISOString, to: ISOString }.
  * - Tiene botones de rango rápido (15m, 1h, 3h, 6h)
  * - Permite seleccionar manualmente Desde/Hasta con `datetime-local`
+ * - Botón "Todas las sesiones" para traer sin filtros
  */
 const emit = defineEmits<{
   (e: 'search', payload: { from: string; to: string }): void
+  (e: 'search-all'): void
 }>()
 
 // Formatea una Date para `input[type=datetime-local]` (no incluye segundos)
@@ -63,6 +65,7 @@ const submit = () => {
       <button type="button" @click="applyQuickRange(60)">1 h</button>
       <button type="button" @click="applyQuickRange(180)">3 h</button>
       <button type="button" @click="applyQuickRange(360)">6 h</button>
+      <button type="button" class="btn-all" @click="emit('search-all')">Todas</button>
     </div>
     <form class="custom" @submit.prevent="submit">
       <label>
@@ -105,6 +108,18 @@ button {
 
 button:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+.btn-all {
+  background: rgba(77, 171, 247, 0.2);
+  border: 1px solid rgba(77, 171, 247, 0.5);
+  color: #4dabf7;
+  font-weight: 500;
+}
+
+.btn-all:hover {
+  background: rgba(77, 171, 247, 0.3);
+  border-color: rgba(77, 171, 247, 0.8);
 }
 
 .custom {

@@ -34,6 +34,13 @@ const handleSearch = async (range: { from: string; to: string }) => {
   })
 }
 
+// Handler para cargar todas las sesiones sin filtros
+const handleSearchAll = async () => {
+  await sessionsStore.loadSessions({
+    mode: 'all',
+  })
+}
+
 // Handler cuando el usuario selecciona una sesión: guarda y navega
 const handleSelect = (sessionId: string) => {
   if (!sessionId) return
@@ -55,7 +62,7 @@ onMounted(() => {
           Elegí una sesión para reproducir el clip y superponer las anotaciones.
         </p>
       </div>
-      <SessionSearch @search="handleSearch" />
+      <SessionSearch @search="handleSearch" @search-all="handleSearchAll" />
     </header>
 
     <SessionList

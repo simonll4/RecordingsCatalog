@@ -284,12 +284,29 @@ async function main() {
       );
 
       const hasRelevant = relevantDetections.length > 0;
+      const stableTrackDetections = relevantDetections.filter((det) => {
+        const trackId = det.trackId?.trim();
+        const isPlaceholder = !trackId || trackId.startsWith("det-");
+
+        if (isPlaceholder) {
+          logger.debug("Skipping detection without stable trackId", {
+            module: "main",
+            frameId: result.frameId?.toString(),
+            rawTrackId: det.trackId,
+          });
+        }
+
+        return !isPlaceholder;
+      });
+      const hasStableTracks = stableTrackDetections.length > 0;
 
       logger.debug("Filtered detections", {
         module: "main",
         total: detections.length,
         relevant: relevantDetections.length,
+        stableTracks: stableTrackDetections.length,
         hasRelevant,
+        hasStableTracks,
       });
 
       // =========================================================
@@ -298,19 +315,22 @@ async function main() {
       // Only ingest when:
       // - Session is ACTIVE (orchestrator opened a session)
       // - Relevant detections exist (matching configured classes)
-      if (sessionManager.hasActiveSession() && hasRelevant) {
+      if (sessionManager.hasActiveSession() && hasStableTracks) {
         // Transform protobuf detections to ingest API format
-        const ingestDetections = relevantDetections.map((det, idx) => ({
-          trackId: det.trackId || `track_${Date.now()}_${idx}`, // Fallback if no tracking
-          cls: det.cls || "",
-          conf: det.conf || 0,
-          bbox: {
-            x: det.bbox?.x1 || 0,
-            y: det.bbox?.y1 || 0,
-            w: (det.bbox?.x2 || 0) - (det.bbox?.x1 || 0), // Convert x2 to width
-            h: (det.bbox?.y2 || 0) - (det.bbox?.y1 || 0), // Convert y2 to height
-          },
-        }));
+        const ingestDetections = stableTrackDetections.map((det) => {
+          const trackId = det.trackId?.trim();
+          return {
+            trackId: trackId ?? "",
+            cls: det.cls || "",
+            conf: det.conf || 0,
+            bbox: {
+              x: det.bbox?.x1 || 0,
+              y: det.bbox?.y1 || 0,
+              w: (det.bbox?.x2 || 0) - (det.bbox?.x1 || 0), // Convert x2 to width
+              h: (det.bbox?.y2 || 0) - (det.bbox?.y1 || 0), // Convert y2 to height
+            },
+          };
+        });
 
         // Retrieve original NV12 frame from cache using frameId correlation
         const frameId = result.frameId?.toString() ?? null;
@@ -320,6 +340,12 @@ async function main() {
           // This batches the upload and handles retries
           void sessionManager.ingestFrame(frameId, ingestDetections);
         }
+      } else if (sessionManager.hasActiveSession() && hasRelevant) {
+        logger.debug("Session active but detections lack stable track IDs, skipping ingestion", {
+          module: "main",
+          frameId: result.frameId?.toString(),
+          detections: relevantDetections.length,
+        });
       }
 
       // =========================================================
