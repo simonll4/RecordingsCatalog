@@ -108,15 +108,15 @@ async def test_model_pooling():
     manager = ModelManager()
     
     # Primera carga
-    model1 = await manager.load("models/yolo11n.onnx")
+    model1 = await manager.load("models/yolo11s.onnx")
     assert model1 is not None
     
     # Segunda carga (debe retornar del pool)
-    model2 = await manager.load("models/yolo11n.onnx")
+    model2 = await manager.load("models/yolo11s.onnx")
     assert model2 is model1  # Misma instancia
     
     # Verificar que está en el pool
-    cached = manager.get("models/yolo11n.onnx")
+    cached = manager.get("models/yolo11s.onnx")
     assert cached is model1
 ```
 
@@ -189,9 +189,9 @@ python edge_agent.py
 3. Verificar logs del worker:
 ```
 Cliente conectado: ('127.0.0.1', 54321)
-Init recibido: model=models/yolo11n.onnx
-Iniciando carga de modelo: models/yolo11n.onnx
-Modelo cargado exitosamente: models/yolo11n.onnx
+Init recibido: model=models/yolo11s.onnx
+Iniciando carga de modelo: models/yolo11s.onnx
+Modelo cargado exitosamente: models/yolo11s.onnx
 InitOk enviado
 Frame recibido: session=test_session_001, frame_id=1
 ...

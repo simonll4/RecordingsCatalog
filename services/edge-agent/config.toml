@@ -47,9 +47,9 @@ postroll_ms = 5000
 [ai]
 # Ruta al modelo ONNX
 # DESARROLLO LOCAL: path absoluto en el host donde corre el worker
-model_name = "/home/simonll4/Desktop/final-scripting/tpfinal-v3/data/models/yolo11n.onnx"
+model_name = "/home/simonll4/Desktop/final-scripting/tpfinal-v3/data/models/yolo11s.onnx"
 # PRODUCCIÓN (Docker): descomentar la siguiente línea
-# model_name = "/models/yolo11n.onnx"
+# model_name = "/models/yolo11s.onnx"
 # Umbral de confianza para las detecciones
 umbral = 0.5
 # Resolución de entrada del modelo

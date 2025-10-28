@@ -50,7 +50,7 @@
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   # Exportar modelo YOLO a ONNX
-  python scripts/export_yolo_to_onnx.py --weights yolo11n.pt --nms
+  python scripts/export_yolo_to_onnx.py --weights yolo11s.pt --nms
   
   # Ver scripts/README.md para más detalles
 

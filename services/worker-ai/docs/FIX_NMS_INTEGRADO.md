@@ -15,7 +15,7 @@
 
 ### La Causa
 
-Tu modelo `yolo11n.onnx` fue **exportado con NMS integrado** (`nms=True`):
+Tu modelo `yolo11s.onnx` fue **exportado con NMS integrado** (`nms=True`):
 
 **Output shape del modelo**:
 - ✅ **Esperado** (sin NMS): `[1, 84, 8400]` → `[batch, bbox+classes, predictions]`
@@ -89,7 +89,7 @@ else:
 Ahora cuando cargas el modelo verás:
 
 ```
-Modelo cargado: /path/to/yolo11n.onnx
+Modelo cargado: /path/to/yolo11s.onnx
 Input shape: ['batch', 3, 'height', 'width']
 Output shape: ['batch', 300, 6]
 NMS integrado: True

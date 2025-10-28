@@ -57,13 +57,13 @@ pip install ultralytics
 #### 1. Exportar CON NMS (Recomendado para tu caso)
 
 ```bash
-python scripts/export_yolo_to_onnx.py --weights yolo11n.pt --nms
+python scripts/export_yolo_to_onnx.py --weights yolo11s.pt --nms
 ```
 
 **Output**:
 ```
 ✅ EXPORTACIÓN COMPLETADA
-📁 Archivo ONNX: yolo11n.onnx
+📁 Archivo ONNX: yolo11s.onnx
 📏 Tamaño: 10.34 MB
 🎯 NMS integrado: SÍ
 ```
@@ -71,7 +71,7 @@ python scripts/export_yolo_to_onnx.py --weights yolo11n.pt --nms
 #### 2. Exportar SIN NMS (Para experimentación)
 
 ```bash
-python scripts/export_yolo_to_onnx.py --weights yolo11n.pt
+python scripts/export_yolo_to_onnx.py --weights yolo11s.pt
 ```
 
 #### 3. Modelo custom con NMS
@@ -83,14 +83,14 @@ python scripts/export_yolo_to_onnx.py --weights path/to/custom_trained.pt --nms
 #### 4. Con tamaño de imagen específico
 
 ```bash
-python scripts/export_yolo_to_onnx.py --weights yolo11n.pt --imgsz 640 --nms
+python scripts/export_yolo_to_onnx.py --weights yolo11s.pt --imgsz 640 --nms
 ```
 
 #### 5. Especificar output path
 
 ```bash
 python scripts/export_yolo_to_onnx.py \
-    --weights yolo11n.pt \
+    --weights yolo11s.pt \
     --nms \
     --output ../../data/models/yolo11n_nms.onnx
 ```
@@ -122,7 +122,7 @@ NMS integrado: False
 Cuando cargas el modelo, el worker muestra:
 
 ```
-Modelo cargado: /path/to/yolo11n.onnx
+Modelo cargado: /path/to/yolo11s.onnx
 Input shape: ['batch', 3, 'height', 'width']
 Output shape: ['batch', 300, 6]
 NMS integrado: True  ← Aquí se ve
@@ -136,7 +136,7 @@ NMS integrado: True  ← Aquí se ve
 
 ```bash
 # Exportaste con este script:
-python scripts/export_yolo_to_onnx.py --weights yolo11n.pt --nms
+python scripts/export_yolo_to_onnx.py --weights yolo11s.pt --nms
                                                               ↑
                                                               Esto activó NMS integrado
 ```
@@ -196,7 +196,7 @@ python scripts/export_yolo_to_onnx.py --help
 
 | Parámetro | Default | Descripción |
 |-----------|---------|-------------|
-| `--weights` | yolo11n.pt | Path al modelo YOLO (.pt) |
+| `--weights` | yolo11s.pt | Path al modelo YOLO (.pt) |
 | `--imgsz` | 640 | Tamaño de imagen (640, 1280, etc.) |
 | `--nms` | False | Activar NMS integrado |
 | `--opset` | 21 | ONNX opset version |
@@ -208,7 +208,7 @@ python scripts/export_yolo_to_onnx.py --help
 
 - **Ultralytics Docs**: https://docs.ultralytics.com/modes/export/
 - **ONNX Runtime**: https://onnxruntime.ai/
-- **Tu modelo actual**: `yolo11n.onnx` con NMS integrado ✅
+- **Tu modelo actual**: `yolo11s.onnx` con NMS integrado ✅
 
 ---
 

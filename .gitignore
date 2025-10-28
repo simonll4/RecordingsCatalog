@@ -10,3 +10,4 @@ data/frames
 data/tracks
 # data/models  # Descomentar si no se quieren versionar modelos
 notas.txt
+finetuning

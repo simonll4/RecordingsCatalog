@@ -148,7 +148,7 @@ shm_size_mb = 50
 [ai]
 worker_host = "localhost"  # worker-ai para Docker
 worker_port = 7001
-model_name = "/models/yolo11n.onnx"
+model_name = "/models/yolo11s.onnx"
 umbral = 0.5
 width = 640
 height = 640

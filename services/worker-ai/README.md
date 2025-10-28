@@ -44,8 +44,11 @@ Ver [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para detalles completos.
 mamba env create -f environment.yml
 mamba activate worker-ai
 
+# Generar modelo ONNX (solo la primera vez)
+python scripts/export_yolo11s_to_onnx.py
+
 # Verificar que el modelo está disponible
-ls -lh data/models/yolo11n.onnx
+ls -lh data/models/yolo11s.onnx
 
 # Ejecutar
 python worker.py
@@ -181,7 +184,7 @@ docker run -p 7001:7001 -v $(pwd)/data:/data worker-ai
 
 ```bash
 # Exportar modelo YOLO a ONNX
-python scripts/export_yolo_to_onnx.py --weights yolo11n.pt --nms
+python scripts/export_yolo_to_onnx.py --weights yolo11s.pt --nms
 
 # Test de inferencia
 python test_detection.py

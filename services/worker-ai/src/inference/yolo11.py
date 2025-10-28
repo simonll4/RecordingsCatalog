@@ -146,13 +146,23 @@ class YOLO11Model:
         # Detectar si el modelo tiene NMS integrado
         # Formato con NMS: [batch, max_detections, 6] donde 6 = [x1, y1, x2, y2, conf, class]
         # Formato sin NMS: [batch, 84/85, num_predictions] donde 84/85 = [x, y, w, h, ...classes]
-        self.has_integrated_nms = False
+        self.has_integrated_nms: Optional[bool] = None
         if len(self.output_shape) == 3:
             last_dim = self.output_shape[-1]
-            # Si la última dimensión es 6, probablemente tiene NMS integrado
-            if (isinstance(last_dim, int) and last_dim == 6) or (isinstance(last_dim, str) and last_dim == '6'):
+            if isinstance(last_dim, int):
+                if last_dim == 6:
+                    self.has_integrated_nms = True
+                elif last_dim in (84, 85):
+                    self.has_integrated_nms = False
+            elif isinstance(last_dim, str) and last_dim.strip() == "6":
                 self.has_integrated_nms = True
-                logger.info("Modelo con NMS integrado detectado")
+
+        if self.has_integrated_nms is True:
+            logger.info("Modelo con NMS integrado detectado (según metadata ONNX)")
+        elif self.has_integrated_nms is False:
+            logger.info("Modelo sin NMS integrado detectado (según metadata ONNX)")
+        else:
+            logger.info("No se pudo determinar NMS desde metadata; se detectará en runtime")
 
         logger.info(f"Modelo cargado: {model_path}")
         logger.info(f"Input shape: {self.input_shape}")
@@ -540,6 +550,21 @@ class YOLO11Model:
 
         # Inferencia
         output = self.session.run(None, {self.input_name: input_tensor})[0]
+
+        # Detectar NMS en runtime si aún no está definido
+        if self.has_integrated_nms is None:
+            if output.ndim == 3 and output.shape[-1] == 6:
+                self.has_integrated_nms = True
+                logger.info(
+                    "NMS integrado detectado en runtime (output shape=%s)",
+                    output.shape,
+                )
+            else:
+                self.has_integrated_nms = False
+                logger.info(
+                    "Modelo sin NMS integrado detectado en runtime (output shape=%s)",
+                    output.shape,
+                )
 
         # Postprocesar según el tipo de modelo
         if self.has_integrated_nms:

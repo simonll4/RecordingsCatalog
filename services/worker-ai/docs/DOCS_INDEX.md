@@ -82,7 +82,7 @@ Guía rápida para encontrar la documentación que necesitas.
 1. **`scripts/export_yolo_to_onnx.py`**  
    Exportar modelos YOLO (.pt → .onnx)
    ```bash
-   python scripts/export_yolo_to_onnx.py --weights yolo11n.pt --nms
+   python scripts/export_yolo_to_onnx.py --weights yolo11s.pt --nms
    ```
 
 2. **`test_detection.py`**  

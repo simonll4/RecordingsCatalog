@@ -110,7 +110,7 @@ def inspect_model(model_path):
 
 
 if __name__ == "__main__":
-    model_path = "/home/simonll4/Desktop/final-scripting/tpfinal-v3/data/models/yolo11n.onnx"
+    model_path = "/home/simonll4/Desktop/final-scripting/tpfinal-v3/data/models/yolo11s.onnx"
     
     if len(sys.argv) > 1:
         model_path = sys.argv[1]

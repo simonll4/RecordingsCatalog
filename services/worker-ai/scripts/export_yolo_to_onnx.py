@@ -32,13 +32,13 @@ def main():
 Ejemplos de uso:
 
 1. Exportar CON NMS integrado (más rápido en producción):
-   python export_yolo_to_onnx.py --weights yolo11n.pt --nms
+   python export_yolo_to_onnx.py --weights yolo11s.pt --nms
 
 2. Exportar SIN NMS (más flexible):
-   python export_yolo_to_onnx.py --weights yolo11n.pt
+   python export_yolo_to_onnx.py --weights yolo11s.pt
 
 3. Exportar con tamaño de imagen específico:
-   python export_yolo_to_onnx.py --weights yolo11n.pt --imgsz 640 --nms
+   python export_yolo_to_onnx.py --weights yolo11s.pt --imgsz 640 --nms
 
 4. Exportar modelo custom:
    python export_yolo_to_onnx.py --weights path/to/custom.pt --nms
@@ -47,7 +47,7 @@ Ejemplos de uso:
     
     p.add_argument(
         "--weights",
-        default="yolo11n.pt",
+        default="yolo11s.pt",
         help="Path al modelo YOLO (.pt)"
     )
     

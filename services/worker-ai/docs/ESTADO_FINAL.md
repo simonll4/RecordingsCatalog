@@ -112,7 +112,7 @@ El **worker-ai** ha sido completamente reorganizado, simplificado y corregido. A
 
 ```bash
 # Verificar modelo
-ls -lh /home/simonll4/Desktop/final-scripting/tpfinal-v3/data/models/yolo11n.onnx
+ls -lh /home/simonll4/Desktop/final-scripting/tpfinal-v3/data/models/yolo11s.onnx
 
 # Inspeccionar formato del modelo
 python inspect_model.py
@@ -133,7 +133,7 @@ NMS integrado: True  ← Importante!
 **Logs esperados**:
 ```
 🚀 Worker AI escuchando en 0.0.0.0:7001
-Modelo cargado: /path/to/yolo11n.onnx
+Modelo cargado: /path/to/yolo11s.onnx
 Output shape: ['batch', 300, 6]
 NMS integrado: True  ← ¡Detectado automáticamente!
 ```
@@ -162,7 +162,7 @@ Si `visualization.enabled = true`, verás una ventana OpenCV con:
 ### Con NMS Integrado (Recomendado)
 
 ```bash
-python scripts/export_yolo_to_onnx.py --weights yolo11n.pt --nms
+python scripts/export_yolo_to_onnx.py --weights yolo11s.pt --nms
 ```
 
 **Ventajas**:
@@ -173,7 +173,7 @@ python scripts/export_yolo_to_onnx.py --weights yolo11n.pt --nms
 ### Sin NMS (Experimentación)
 
 ```bash
-python scripts/export_yolo_to_onnx.py --weights yolo11n.pt
+python scripts/export_yolo_to_onnx.py --weights yolo11s.pt
 ```
 
 **Ventajas**:
@@ -231,7 +231,7 @@ worker-ai/
 ## ✅ Checklist de Verificación
 
 ### Setup:
-- [x] Modelo YOLO en `data/models/yolo11n.onnx`
+- [x] Modelo YOLO en `data/models/yolo11s.onnx`
 - [x] Formato detectado: NMS integrado
 - [x] Config actualizado: `classes = ["person", "bottle"]`
 - [x] Código soporta ambos formatos automáticamente

@@ -210,7 +210,7 @@ npm run test:integration
 **Agent:**
 - `AI_WORKER_HOST`: worker-ai
 - `AI_WORKER_PORT`: 7001
-- `AI_MODEL_NAME`: /models/yolo11n.onnx
+- `AI_MODEL_NAME`: /models/yolo11s.onnx
 - `AI_UMBRAL`: 0.35
 - `AI_FPS_IDLE`: 5
 - `AI_FPS_ACTIVE`: 12
@@ -240,7 +240,7 @@ tpfinal-v3/
 │       └── healthcheck.py
 ├── data/
 │   └── models/
-│       └── yolo11n.onnx              # Modelo ONNX
+│       └── yolo11s.onnx              # Modelo ONNX
 ├── scripts/
 │   ├── generate-proto.sh
 │   └── setup-ai-worker.sh
@@ -265,7 +265,7 @@ docker-compose exec edge-agent env | grep AI_WORKER
 ```bash
 docker-compose exec worker-ai python3 -c "
 import onnxruntime as ort
-session = ort.InferenceSession('/models/yolo11n.onnx')
+session = ort.InferenceSession('/models/yolo11s.onnx')
 print('OK')
 "
 ```
