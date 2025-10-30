@@ -17,17 +17,17 @@ Sistema edge de detección y grabación automática de eventos mediante IA, con 
 └────────┘ └─────────┘ └────┬─────┘ └────────────┘
                             │
                       ┌─────▼──────┐
-                      │   web-ui   │
+                      │   vue-ui   │
                       └────────────┘
 ```
 
 ### Servicios
 
-- **edge-agent**: Captura video, ejecuta detección IA, controla grabaciones mediante FSM
+- **edge-agent**: Captura video, ejecuta detección IA y controla grabaciones mediante FSM
 - **worker-ai**: Worker de inferencia YOLO (ONNX Runtime) con protocolo TCP custom
-- **mediamtx**: Servidor RTSP para streaming e ingesta de grabaciones
+- **mediamtx**: Servidor RTSP/WebRTC para streaming en vivo e ingesta de grabaciones
 - **session-store**: API REST para gestión de sesiones y detecciones + PostgreSQL
-- **web-ui**: Interfaz web para explorar grabaciones
+- **vue-ui**: Interfaz web para explorar grabaciones
 - **postgres**: Base de datos para metadatos de sesiones
 
 ##  Despliegue Rápido
@@ -36,7 +36,7 @@ Sistema edge de detección y grabación automática de eventos mediante IA, con 
 
 - Docker + Docker Compose
 - Cámara USB/V4L2 o stream RTSP (opcional para testing)
-- Modelo YOLO ONNX en `data/models/yolov8n.onnx`
+- Modelo YOLO ONNX en `data/models/yolo11s.onnx`
 
 ### Levantar Sistema Completo
 
@@ -53,6 +53,8 @@ docker compose --profile edge up -d
 ```
 http://localhost:3000
 ```
+- Explorador de sesiones grabadas: `/`
+- Streaming en vivo (WebRTC): `/live`
 
 ##  Configuración
 
@@ -64,21 +66,32 @@ http://localhost:3000
 [device]
 id = "cam-local"
 
+[logging]
+level = "info"
+
 [source]
 kind = "rtsp"
 uri = "rtsp://usuario:password@host:554/stream"
 width = 640
 height = 480
 fps_hub = 15
+socket_path = "/dev/shm/cam_raw.sock"
+shm_size_mb = 50
 
 [ai]
-model_name = "/models/yolov8n.onnx"
+model_name = "/models/yolo11s.onnx"
 umbral = 0.4
 classes_filter = "person"
 fps_idle = 5
 fps_active = 12
 worker_host = "worker-ai"
 worker_port = 7001
+
+[mediamtx]
+host = "mediamtx"
+port = 8554
+record_path = "cam-local"
+live_path = "cam-local-live"
 
 [fsm]
 dwell_ms = 500
@@ -87,6 +100,9 @@ postroll_ms = 5000
 
 [store]
 base_url = "http://session-store:8080"
+
+[status]
+port = 7080
 ```
 
 ### Worker AI (`services/worker-ai/config.toml`)
@@ -98,7 +114,7 @@ bind_port = 7001
 
 [bootstrap]
 enabled = false  # true para pre-cargar modelo
-model_path = "/models/yolov8n.onnx"
+model_path = "/models/yolo11s.onnx"
 
 [visualization]
 enabled = false  # true para ver detecciones (desarrollo)
@@ -114,7 +130,7 @@ url = "postgres://postgres:postgres@postgres:5432/session_store"
 playback_base_url = "http://mediamtx:9996"
 ```
 
-### Web UI (`services/web-ui/config.toml`)
+### Vue UI (`services/vue-ui/config.toml`)
 
 ```toml
 [server]
@@ -130,11 +146,11 @@ mediamtx_url = "http://mediamtx:9996"
 ### Testing Local Worker AI (con visualización)
 
 ```bash
-cd scripts
-./run-worker-local.sh
+cd services/worker-ai
+./run.sh
 ```
 
-Esto ejecuta el worker con ventana de visualización de detecciones.
+Esto levanta el worker con la configuración local y visualización opcional.
 
 ### Ver Logs
 
@@ -165,7 +181,7 @@ docker compose --profile edge up -d
 tpfinal-v3/
 ├── docker-compose.yml          # Orquestación de servicios
 ├── data/
-│   ├── models/                # Modelos ONNX (yolov8n.onnx)
+│   ├── models/                # Modelos ONNX (yolo11s.onnx)
 │   ├── recordings/            # Grabaciones RTSP
 │   └── frames/                # Frames de detecciones
 ├── services/
@@ -181,19 +197,19 @@ tpfinal-v3/
 │   │   ├── config.toml        # ← Configuración
 │   │   ├── src/
 │   │   └── Dockerfile
-│   ├── web-ui/
+│   ├── vue-ui/
 │   │   ├── config.toml        # ← Configuración
 │   │   ├── server.js
 │   │   └── public/
 │   └── mediamtx/
 │       └── mediamtx.yml       # Configuración MediaMTX
 ├── scripts/
-│   └── run-worker-local.sh    # Desarrollo: worker local
+│   ├── rtsp_camera_clean.sh   # Limpieza rápida de streams RTSP
+│   └── rtsp_camera_gst.sh     # Utilidades GStreamer para cámaras IP
 └── docs/
-    ├── AI-FLOW.md             # Flujo de procesamiento IA
-    ├── CAMERA_SETUP.md        # Setup de cámaras
-    ├── QUICKSTART_AI_WORKER.md # Guía worker AI
-    └── SESSION_STORE_COMPLETE.md # API session-store
+    ├── OVERVIEW.md             # Descripción general del sistema
+    ├── SETUP.md                # Pasos de instalación y configuración
+    └── OPERATIONS.md           # Comandos de operación y soporte
 ```
 
 ## Características
@@ -202,6 +218,7 @@ tpfinal-v3/
 - **FSM inteligente** - Grabación automática por detecciones
 - **Worker AI escalable** - Protocolo TCP con control de backpressure
 - **Streaming NV12** - Procesamiento eficiente sin re-encoding
+- **Streaming en vivo** - Flujo WebRTC (WHEP) con auto-conexión y estado del edge-agent visible desde la UI (`/live`)
 - **Playback on-demand** - MediaMTX API para recuperar grabaciones
 - **UI responsive** - Exploración temporal de sesiones
 - **PostgreSQL** - Metadatos de sesiones y detecciones
@@ -210,20 +227,18 @@ tpfinal-v3/
 
 ### Cámara Física
 
-El `docker-compose.yml` **ya mapea `/dev/video*` y `group_add=video` por defecto**. Si estás en un host sin cámara física o en entorno sin acceso a dispositivos (ej: Docker Desktop), **comentá esas líneas**:
+El `docker-compose.yml` no mapea la cámara por defecto. Si necesitás acceder a `/dev/video*` dentro del contenedor, agregá las líneas siguientes (ajustando rutas y GID):
 
 ```yaml
 edge-agent:
-  # devices:
-  #   - "/dev/video0:/dev/video0"
-  #   - "/dev/video1:/dev/video1"
-  # group_add:
-  #   - "44"
-  # privileged: true
+  devices:
+    - "/dev/video0:/dev/video0"
   group_add:
-    - "44"  # GID grupo video
+    - "44"  # GID del grupo video en tu host
   privileged: true
 ```
+
+Consulta `docs/SETUP.md` para más variantes y consejos.
 
 ### RTSP Remoto
 
@@ -237,18 +252,18 @@ uri = "rtsp://192.168.1.100:554/stream"
 
 ### Modelos YOLO
 
-Descargar o exportar modelo ONNX a `data/models/`:
+Exportar el modelo ONNX por defecto:
 
 ```bash
-cd scripts
-python export-yolo-onnx.py  # Requiere ultralytics
+python services/worker-ai/scripts/export_yolo11s_to_onnx.py
+# El modelo queda en data/models/yolo11s.onnx
 ```
 
 ## Troubleshooting
 
 **Edge-agent no arranca**: Verificar que existe `/dev/video0` o configurar RTSP
 
-**Worker-ai timeout**: Verificar que existe el modelo en `/models/yolov8n.onnx`
+**Worker-ai timeout**: Verificar que existe el modelo en `/models/yolo11s.onnx`
 
 **No se reproducen videos**: Verificar que MediaMTX tiene acceso a `/recordings`
 

@@ -217,21 +217,19 @@ export type AIConfig = {
  *   - Default: 8554 (standard RTSP)
  *   - Alternative: 554 (privileged port)
  *
- * path: Stream path
- *   - Example: "live" → rtsp://host:8554/live
- *   - Can include device ID: "camera/{deviceId}"
+ * Paths:
+ *   - recordPath: Stream path utilizado para grabación por sesión
+ *   - livePath: Stream path continuo para visualización en vivo (sin grabación)
  *
- * Full URL:
- *   rtsp://{host}:{port}/{path}
- *
- * Publisher Connection:
- *   MediaMtxOnDemandPublisherGst connects to this URL when ACTIVE.
- *   Streams H.264 video using rtspclientsink element.
+ * Example URLs:
+ *   - rtsp://{host}:{port}/{recordPath}
+ *   - rtsp://{host}:{port}/{livePath}
  */
 export type MediaMTXConfig = {
   host: string;
   port: number;
-  path: string;
+  recordPath: string;
+  livePath: string;
 };
 
 /**
@@ -373,6 +371,16 @@ export type BusConfig = {
 };
 
 /**
+ * Status Configuration - HTTP status server
+ *
+ * Controls the embedded HTTP endpoint used by UI/monitoring systems to
+ * query the current state of the edge agent (e.g., live stream availability).
+ */
+export type StatusConfig = {
+  port: number;
+};
+
+/**
  * App Configuration - Complete Application Configuration
  *
  * Root of the configuration tree. All modules access the CONFIG singleton
@@ -445,4 +453,5 @@ export type AppConfig = {
   fsm: FSMConfig;
   store: StoreConfig;
   bus: BusConfig;
+  status: StatusConfig;
 };

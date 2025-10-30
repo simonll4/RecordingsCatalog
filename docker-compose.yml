@@ -35,6 +35,10 @@ services:
     ports:
       - "8554:8554" # RTSP ingest
       - "9996:9996" # Playback API (recordings)
+      - "8889:8889" # WebRTC (WHEP/WHIP)
+      - "8888:8888" # HLS (opcional)
+      - "8189:8189/udp" # WebRTC ICE UDP
+      - "8189:8189/tcp" # WebRTC ICE TCP (fallback)
     volumes:
       - ./services/mediamtx/mediamtx.yml:/mediamtx.yml:ro
       - ./services/mediamtx/hooks:/hooks:ro
@@ -95,6 +99,8 @@ services:
       TZ: UTC
     extra_hosts:
       - "host.docker.internal:host-gateway" # Permite conectar al worker-ai local
+    ports:
+      - "7080:7080" # Status API
     volumes:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro

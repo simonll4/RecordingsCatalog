@@ -29,10 +29,18 @@ const getBaseUrls = () => {
   
   const mediamtxUrl = import.meta.env.VITE_MEDIAMTX_BASE_URL || 
     buildServiceUrl(SERVICE_URLS.DEFAULT_PORTS.MEDIAMTX)
+
+  const webrtcUrl = import.meta.env.VITE_WEBRTC_BASE_URL || 
+    buildServiceUrl(SERVICE_URLS.DEFAULT_PORTS.WEBRTC)
+
+  const edgeAgentUrl = import.meta.env.VITE_EDGE_AGENT_BASE_URL ||
+    buildServiceUrl(SERVICE_URLS.DEFAULT_PORTS.EDGE_AGENT)
   
   return {
     sessionStore: sessionStoreUrl.replace(/\/$/, ''),
     mediamtx: mediamtxUrl.replace(/\/$/, ''),
+    webrtc: webrtcUrl.replace(/\/$/, ''),
+    edgeAgent: edgeAgentUrl.replace(/\/$/, ''),
   }
 }
 
@@ -55,9 +63,19 @@ export const mediamtxClient = new HttpClient({
 })
 
 /**
+ * Edge Agent HTTP Client
+ */
+export const edgeAgentClient = new HttpClient({
+  baseURL: urls.edgeAgent,
+  headers: {},
+})
+
+/**
  * Export base URLs for direct use when needed
  */
 export const BASE_URLS = {
   SESSION_STORE: `${urls.sessionStore}/sessions`,
   MEDIAMTX: urls.mediamtx,
+  WEBRTC: urls.webrtc,
+  EDGE_AGENT: urls.edgeAgent,
 } as const

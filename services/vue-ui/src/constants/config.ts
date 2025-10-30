@@ -52,6 +52,9 @@ export const ENV_CONFIG = {
   EXTRA_SECONDS: parseInt(import.meta.env.VITE_EXTRA_SECONDS || '5', 10),
   SESSION_STORE_BASE_URL: import.meta.env.VITE_SESSION_STORE_BASE_URL,
   MEDIAMTX_BASE_URL: import.meta.env.VITE_MEDIAMTX_BASE_URL,
+  WEBRTC_BASE_URL: import.meta.env.VITE_WEBRTC_BASE_URL,
+  EDGE_AGENT_BASE_URL: import.meta.env.VITE_EDGE_AGENT_BASE_URL,
+  LIVE_STREAM_PATH: import.meta.env.VITE_LIVE_STREAM_PATH || 'cam-local-live',
 } as const
 
 // Service URLs Configuration
@@ -60,5 +63,12 @@ export const SERVICE_URLS = {
   DEFAULT_PORTS: {
     SESSION_STORE: 8080,
     MEDIAMTX: 9996,
+    WEBRTC: 8889,
+    EDGE_AGENT: 7080,
   },
+} as const
+
+export const LIVE_STREAM_CONFIG = {
+  PATH: import.meta.env.VITE_LIVE_STREAM_PATH || 'cam-local-live',
+  STATUS_REFRESH_MS: 3000,
 } as const

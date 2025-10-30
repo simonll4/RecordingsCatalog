@@ -63,9 +63,10 @@ Componentes principales (implementación actual):
   - `AIClientTcp` (`src/modules/ai/client/ai-client-tcp.ts`): TCP + Protobuf
   - `AIFeeder` (`src/modules/ai/feeder/ai-feeder.ts`): sliding window + latest‑wins; frame cache
 
-- Publisher (`src/modules/streaming/adapters/gstreamer/media-mtx-on-demand-publisher-gst.ts`)
+- Publishers (`src/modules/streaming/adapters/gstreamer/media-mtx-on-demand-publisher-gst.ts`)
 
-  - `shmsrc → encoder(H.264) → rtspclientsink` hacia MediaMTX
+  - Instancia controlada por FSM (grabación): `shmsrc → encoder(H.264) → rtspclientsink` @ `recordPath`
+  - Instancia continua (live): mismo pipeline hacia `livePath` (origen para WebRTC)
   - Encoder auto‑detectado (`src/media/encoder.ts`)
 
 - Session Store (`src/modules/store/adapters/http/session-store-http.ts`)
@@ -127,7 +128,7 @@ socket_path = "/dev/shm/cam_raw.sock"
 shm_size_mb = 50
 
 [ai]
-worker_host = "localhost"  # worker-ai para Docker
+worker_host = "localhost"  # Cambiar a "worker-ai" cuando el agente corra en Docker
 worker_port = 7001
 model_name = "/models/yolo11s.onnx"
 umbral = 0.5
@@ -140,12 +141,16 @@ fps_active = 12
 [mediamtx]
 host = "localhost"
 port = 8554
-path = "cam-local"
+record_path = "cam-local"
+live_path = "cam-local-live"
 
 [fsm]
 dwell_ms = 500      # Ventana de confirmación
 silence_ms = 3000   # Timeout sin detecciones
 postroll_ms = 5000  # Grabación post-detección
+
+[status]
+port = 7080         # Puerto del servidor HTTP de estado
 
 [store]
 base_url = "http://localhost:8080"
@@ -157,9 +162,10 @@ base_url = "http://localhost:8080"
 - I420 frame bytes ≈ `W*H*1.5`
 - SHM recomendado: `~50*frameBytes` en MB
 - `classes_filter`: Clases COCO válidas (80 clases disponibles, ver config.toml)
+- `status.port`: Puerto HTTP (por defecto 7080) para exponer `/status` y permitir que la UI consulte el estado del agente
 - **Hostnames según entorno**:
-  - **Docker Compose**: usar nombres de servicios (`mediamtx`, `session-store`, `worker-ai` vía `host.docker.internal`)
-  - **Desarrollo local**: usar `localhost` para servicios locales
+  - **Docker Compose**: usar nombres de servicios (`mediamtx`, `session-store`, `worker-ai`)
+  - **Desarrollo local**: usar `localhost` o la IP del servicio externo
 
 ## Puesta en Marcha
 

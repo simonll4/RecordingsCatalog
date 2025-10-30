@@ -10,6 +10,23 @@ playbackAddress: :9996
 # Value of the Access-Control-Allow-Origin header provided in every HTTP response.
 playbackAllowOrigin: '*'
 
+webrtc: yes
+webrtcAddress: 0.0.0.0:8889
+webrtcEncryption: false
+webrtcAllowOrigin: '*'
+webrtcLocalUDPAddress: 0.0.0.0:8189
+webrtcLocalTCPAddress: 0.0.0.0:8189
+webrtcIPsFromInterfaces: yes
+webrtcAdditionalHosts: ["127.0.0.1", "localhost"]
+webrtcICEServers2:
+  - url: stun:stun.l.google.com:19302
+  - url: stun:stun1.l.google.com:19302
+
+# Optional HLS output (handy for debugging / fallback players)
+hls: yes
+hlsAddress: :8888
+hlsAllowOrigin: '*'
+
 rtsp: yes
 # List of enabled RTSP transport protocols.
 # UDP is the most performant, but doesn't work when there's a NAT/firewall between
@@ -18,13 +35,31 @@ rtsp: yes
 # TCP is the most versatile.
 # The handshake is always performed with TCP.
 rtspTransports: [tcp]
-# Use secure protocol variants (RTSPS, TLS, SRTP).
-# Available values are "no", "strict", "optional".
+# Use secure protocol variants (RTSPS, TLS, SRTP). Available values are "no", "strict", "optional".
 rtspEncryption: "no"
 # Address of the TCP/RTSP listener. This is needed only when encryption is "no" or "optional".
 rtspAddress: :8554
 
 paths:
+  cam-local:
+    record: yes
+    recordFormat: fmp4
+    # Formato plano compatible con playback API
+    recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+    # Segmentos de 5 minutos (ajusta según tu caso de uso)
+    recordSegmentDuration: 5m
+    # Opcional: retención automática (borrar después de 7 días)
+    recordDeleteAfter: 168h
+    # Hooks para sincronización de tiempos
+    runOnReady: /hooks/publish.sh
+    runOnRecordSegmentComplete: /hooks/segment_complete.sh
+
+  cam-local-live:
+    record: no
+    # Stream continuo sin grabación (WebRTC)
+    runOnReady: ""
+
+  # Fallback genérico para cualquier otro path
   all:
     record: yes
     recordFormat: fmp4

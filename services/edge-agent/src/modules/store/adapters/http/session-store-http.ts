@@ -173,7 +173,8 @@ export class SessionStoreHttp implements SessionStore {
         body: JSON.stringify({
           sessionId,
           devId: CONFIG.deviceId,
-          streamPath: CONFIG.mediamtx.path,
+          path: CONFIG.mediamtx.recordPath,
+          streamPath: CONFIG.mediamtx.recordPath,
           startTs: actualStartTs,
           reason: "relevance",
         }),

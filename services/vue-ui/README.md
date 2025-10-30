@@ -86,6 +86,15 @@ VITE_SESSION_STORE_BASE_URL=http://localhost:8080
 # MediaMTX API URL  
 VITE_MEDIAMTX_BASE_URL=http://localhost:9996
 
+# WebRTC (WHEP) base URL para live streaming
+VITE_WEBRTC_BASE_URL=http://localhost:8889
+
+# Edge Agent status API
+VITE_EDGE_AGENT_BASE_URL=http://localhost:7080
+
+# Path del stream en vivo expuesto por MediaMTX
+VITE_LIVE_STREAM_PATH=cam-local-live
+
 # Playback configuration
 VITE_START_OFFSET_MS=200
 VITE_EXTRA_SECONDS=5
@@ -186,5 +195,8 @@ docker build -t vue-ui .
 docker run -p 8080:80 \
   -e VITE_SESSION_STORE_BASE_URL=http://session-store:8080 \
   -e VITE_MEDIAMTX_BASE_URL=http://mediamtx:9996 \
+  -e VITE_WEBRTC_BASE_URL=http://mediamtx:8889 \
+  -e VITE_EDGE_AGENT_BASE_URL=http://edge-agent:7080 \
+  -e VITE_LIVE_STREAM_PATH=cam-local-live \
   vue-ui
 ```

@@ -23,4 +23,5 @@ COPY config.toml ./
 RUN npm run build
 
 ENV NODE_ENV=production
+EXPOSE 7080
 CMD ["npm", "start"]

@@ -10,7 +10,8 @@
  * Video Pipeline:
  * - CameraHub: Always-on video capture (RTSP) → Shared Memory (I420 format)
  * - NV12Capture: Reads from SHM and converts I420 → NV12 frames for AI processing
- * - Publisher: On-demand RTSP streaming (SHM → MediaMTX) for remote viewing
+ * - RecordPublisher: On-demand RTSP streaming (SHM → MediaMTX) coordinated by FSM
+ * - LivePublisher: Continuous RTSP stream (SHM → MediaMTX → WebRTC) for live monitoring
  *
  * AI Pipeline:
  * - AIFeeder: Frame coordinator with backpressure control and sliding window
@@ -33,10 +34,12 @@
  * 3. AIFeeder sends frames to worker, receives detections
  * 4. Detections trigger FSM state changes (IDLE→DWELL→ACTIVE→CLOSING)
  * 5. During ACTIVE, frames+detections are ingested to session-store
- * 6. Publisher streams on-demand when external clients connect
+ * 6. Record publisher streams on-demand when sessions are ACTIVE
+ * 7. Live publisher keeps a continuous low-latency feed for the UI
  */
 
 // === Core ===
+import type { Server as HttpServer } from "node:http";
 import { CONFIG } from "../config/index.js";
 import { Bus } from "../core/bus/bus.js";
 import { Orchestrator } from "../core/orchestrator/orchestrator.js";
@@ -49,6 +52,7 @@ import { SessionStoreHttp } from "../modules/store/index.js";
 
 // === App ===
 import { SessionManager } from "./session.js";
+import { AgentStatusService, startStatusServer } from "./status.js";
 
 // === Shared ===
 import { logger } from "../shared/logging.js";
@@ -75,8 +79,17 @@ async function main() {
   // NV12Capture: Reads from shared memory → provides NV12 frames to AI pipeline
   const nv12Capture = new NV12CaptureGst();
 
-  // Publisher: On-demand RTSP streaming to MediaMTX (activated by external viewers)
-  const publisher = new MediaMtxOnDemandPublisherGst();
+  // Publishers:
+  // - recordPublisher: On-demand (FSM-controlled) stream tied to recording sessions
+  // - livePublisher: Continuous stream for live view (starts at boot)
+  const recordPublisher = new MediaMtxOnDemandPublisherGst({
+    streamPath: CONFIG.mediamtx.recordPath,
+    label: "record",
+  });
+  const livePublisher = new MediaMtxOnDemandPublisherGst({
+    streamPath: CONFIG.mediamtx.livePath,
+    label: "live",
+  });
 
   // --- AI Pipeline Components ---
   // TCP client for binary communication with AI worker process
@@ -100,6 +113,22 @@ async function main() {
   // This allows SessionManager to retrieve original frames when detections arrive
   const frameCache = aiFeeder.getFrameCache();
   const sessionManager = new SessionManager(frameCache, frameIngester);
+  const statusService = new AgentStatusService();
+  let statusServer: HttpServer | null = null;
+
+  const recordPublisherAdapter = {
+    start: async () => {
+      await recordPublisher.start();
+      statusService.setRecordStreamRunning(true);
+    },
+    stop: async () => {
+      try {
+        await recordPublisher.stop();
+      } finally {
+        statusService.setRecordStreamRunning(false);
+      }
+    },
+  };
 
   // ============================================================
   // MODULE CONFIGURATION
@@ -133,17 +162,40 @@ async function main() {
   let orchestratorReady = false;
   let feederStarted = false;
 
+  const parseEventTimestamp = (value: unknown): Date => {
+    if (typeof value === "string") {
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+    return new Date();
+  };
+
   // --- Session Lifecycle Event Handlers ---
   // These events are published by the Orchestrator FSM when state transitions occur
 
   // Handle session.open event (FSM enters ACTIVE state)
   bus.subscribe("session.open", (event) => {
     sessionManager.openSession(event.sessionId);
+    statusService.setSessionActive(true, event.sessionId ?? null);
   });
 
   // Handle session.close event (FSM exits CLOSING state back to IDLE)
   bus.subscribe("session.close", (event) => {
     sessionManager.closeSession(event.sessionId);
+    statusService.setSessionActive(false, event.sessionId ?? null);
+  });
+
+  // Track AI activity for status reporting
+  bus.subscribe("ai.detection", (event: any) => {
+    const ts = parseEventTimestamp(event?.meta?.ts);
+    statusService.setDetection(ts);
+  });
+
+  bus.subscribe("ai.keepalive", (event: any) => {
+    const ts = parseEventTimestamp(event?.meta?.ts);
+    statusService.setHeartbeat(ts);
   });
 
   // --- AI Worker Callbacks ---
@@ -503,7 +555,7 @@ async function main() {
     camera, // Video capture control
     capture: aiFeeder as any, // Frame rate control (setFps method)
     ai: aiAdapter as any, // AI session correlation
-    publisher, // RTSP streaming control
+    publisher: recordPublisherAdapter as any, // RTSP streaming control (recording path)
     store, // Session lifecycle API
   });
 
@@ -532,7 +584,18 @@ async function main() {
   //    - AIFeeder.start() is called from onReady callback after this
 
   logger.info("Starting camera hub", { module: "main" });
+  statusServer = await startStatusServer(statusService, CONFIG.status.port);
   await camera.start();
+
+  logger.info("Waiting for camera hub ready", { module: "main" });
+  await camera.ready();
+
+  logger.info("Starting continuous live publisher", {
+    module: "main",
+    streamPath: CONFIG.mediamtx.livePath,
+  });
+  await livePublisher.start();
+  statusService.setLiveStreamRunning(true);
 
   logger.info("Connecting to AI worker", { module: "main" });
   await aiClient.connect();
@@ -580,8 +643,23 @@ async function main() {
       logger.debug("Disconnecting AI client", { module: "main" });
       await aiClient.shutdown();
 
+      logger.debug("Stopping live publisher", { module: "main" });
+      try {
+        await livePublisher.stop();
+      } finally {
+        statusService.setLiveStreamRunning(false);
+      }
+
       logger.debug("Stopping camera hub", { module: "main" });
       await camera.stop();
+
+      if (statusServer) {
+        logger.debug("Stopping status server", { module: "main" });
+        await new Promise<void>((resolve) =>
+          statusServer!.close(() => resolve())
+        );
+        statusServer = null;
+      }
 
       // Success - clear timeout and exit cleanly
       clearTimeout(timeout);

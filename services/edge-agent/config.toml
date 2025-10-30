@@ -28,8 +28,10 @@ shm_size_mb = 50
 [mediamtx]
 host = "mediamtx"
 port = 8554
-# Path de streaming (rtsp://mediamtx:8554/{path})
-path = "cam-local"
+# Path de grabación por sesión (rtsp://mediamtx:8554/{record_path})
+record_path = "cam-local"
+# Path de streaming continuo para live view (rtsp://mediamtx:8554/{live_path})
+live_path = "cam-local-live"
 
 # Configuración de la máquina de estados (FSM)
 [fsm]
@@ -72,3 +74,6 @@ worker_port = 7001
 [store]
 # URL base del servicio session-store
 base_url = "http://session-store:8080"
+
+[status]
+port = 7080

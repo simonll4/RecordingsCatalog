@@ -7,6 +7,14 @@ import { RouterLink, RouterView } from 'vue-router'
   <div class="app-shell">
     <header class="app-header">
       <RouterLink to="/" class="brand">Media Tracker</RouterLink>
+      <nav class="app-nav">
+        <RouterLink to="/" class="app-nav__link" exact-active-class="app-nav__link--active">
+          Grabaciones
+        </RouterLink>
+        <RouterLink to="/live" class="app-nav__link" active-class="app-nav__link--active">
+          En vivo
+        </RouterLink>
+      </nav>
     </header>
     <main class="app-main">
       <RouterView />
@@ -30,6 +38,7 @@ import { RouterLink, RouterView } from 'vue-router'
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(12, 14, 18, 0.85);
   backdrop-filter: blur(10px);
+  gap: 1.5rem;
 }
 
 .brand {
@@ -37,6 +46,31 @@ import { RouterLink, RouterView } from 'vue-router'
   font-weight: 600;
   color: inherit;
   text-decoration: none;
+}
+
+.app-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.app-nav__link {
+  color: rgba(255, 255, 255, 0.65);
+  text-decoration: none;
+  font-weight: 500;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+.app-nav__link:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.app-nav__link--active {
+  color: #fff;
+  background: rgba(99, 102, 241, 0.18);
 }
 
 .app-main {
@@ -50,6 +84,12 @@ import { RouterLink, RouterView } from 'vue-router'
 @media (max-width: 768px) {
   .app-main {
     padding: 1rem;
+  }
+
+  .app-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
   }
 }
 </style>

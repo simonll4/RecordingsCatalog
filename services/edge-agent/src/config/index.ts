@@ -103,7 +103,11 @@ export const CONFIG: AppConfig = {
   mediamtx: {
     host: tomlConfig.mediamtx.host,
     port: tomlConfig.mediamtx.port,
-    path: tomlConfig.mediamtx.path,
+    recordPath: tomlConfig.mediamtx.record_path ?? tomlConfig.mediamtx.path,
+    livePath:
+      tomlConfig.mediamtx.live_path ??
+      tomlConfig.mediamtx.path ??
+      tomlConfig.mediamtx.record_path,
   },
 
   fsm: {
@@ -115,6 +119,13 @@ export const CONFIG: AppConfig = {
   store: {
     baseUrl: tomlConfig.store.base_url,
     apiKey: undefined, // Not used
+  },
+
+  status: {
+    port:
+      typeof tomlConfig.status?.port === "number"
+        ? tomlConfig.status.port
+        : 7080,
   },
 
   bus: {
@@ -161,4 +172,20 @@ if (CONFIG.ai.width % 2 !== 0 || CONFIG.ai.height % 2 !== 0) {
 // Source FPS must be >= AI active FPS (otherwise AI can't keep up)
 if (CONFIG.source.fpsHub < CONFIG.ai.fps.active) {
   throw new Error("Source FPS hub must be >= AI active FPS");
+}
+
+if (!CONFIG.mediamtx.recordPath) {
+  throw new Error("mediamtx.record_path must be configured");
+}
+
+if (!CONFIG.mediamtx.livePath) {
+  throw new Error("mediamtx.live_path must be configured");
+}
+
+if (
+  !Number.isInteger(CONFIG.status.port) ||
+  CONFIG.status.port < 1024 ||
+  CONFIG.status.port > 65535
+) {
+  throw new Error("status.port must be an integer between 1024 and 65535");
 }

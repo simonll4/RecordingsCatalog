@@ -106,12 +106,21 @@ export class MediaMtxOnDemandPublisherGst implements Publisher {
   private state: PublisherState = "idle";
   private shouldBeRunning: boolean = false; // Track if publisher should be active
   private restartAttempt: number = 0;
+  private readonly streamPath: string;
+  private readonly label: string;
+
+  constructor(options?: { streamPath?: string; label?: string }) {
+    this.streamPath = options?.streamPath ?? CONFIG.mediamtx.recordPath;
+    this.label = options?.label ?? "record";
+  }
 
   async start(): Promise<void> {
     if (this.state !== "idle") {
       logger.debug("Publisher not idle, skipping start", {
         module: "media-mtx-on-demand-publisher-gst",
         state: this.state,
+        streamPath: this.streamPath,
+        label: this.label,
       });
       return;
     }
@@ -132,6 +141,7 @@ export class MediaMtxOnDemandPublisherGst implements Publisher {
       height,
       fpsHub,
       CONFIG.mediamtx,
+      this.streamPath,
       encoder
     );
 
@@ -139,6 +149,8 @@ export class MediaMtxOnDemandPublisherGst implements Publisher {
       module: "media-mtx-on-demand-publisher-gst",
       encoder: encoder.element,
       attempt: this.restartAttempt,
+      streamPath: this.streamPath,
+      label: this.label,
     });
 
     this.proc = spawnProcess({
@@ -162,6 +174,8 @@ export class MediaMtxOnDemandPublisherGst implements Publisher {
           code,
           signal,
           shouldBeRunning: this.shouldBeRunning,
+          streamPath: this.streamPath,
+          label: this.label,
         });
 
         this.state = "idle";
@@ -175,6 +189,8 @@ export class MediaMtxOnDemandPublisherGst implements Publisher {
             module: "media-mtx-on-demand-publisher-gst",
             delay,
             attempt: this.restartAttempt,
+            streamPath: this.streamPath,
+            label: this.label,
           });
 
           setTimeout(() => {
@@ -197,6 +213,8 @@ export class MediaMtxOnDemandPublisherGst implements Publisher {
     if (this.state === "idle") {
       logger.debug("Publisher already idle", {
         module: "media-mtx-on-demand-publisher-gst",
+        streamPath: this.streamPath,
+        label: this.label,
       });
       return;
     }
@@ -204,6 +222,8 @@ export class MediaMtxOnDemandPublisherGst implements Publisher {
     if (this.state === "stopping") {
       logger.debug("Publisher already stopping", {
         module: "media-mtx-on-demand-publisher-gst",
+        streamPath: this.streamPath,
+        label: this.label,
       });
       return;
     }
@@ -211,6 +231,8 @@ export class MediaMtxOnDemandPublisherGst implements Publisher {
     this.state = "stopping";
     logger.info("Stopping publisher", {
       module: "media-mtx-on-demand-publisher-gst",
+      streamPath: this.streamPath,
+      label: this.label,
     });
 
     const proc = this.proc;
@@ -230,6 +252,8 @@ export class MediaMtxOnDemandPublisherGst implements Publisher {
       const timeout = setTimeout(() => {
         logger.warn("Publisher didn't stop gracefully, forcing kill", {
           module: "media-mtx-on-demand-publisher-gst",
+          streamPath: this.streamPath,
+          label: this.label,
         });
         killProcess(proc, "SIGKILL");
         resolve();
@@ -240,6 +264,8 @@ export class MediaMtxOnDemandPublisherGst implements Publisher {
         this.state = "idle";
         logger.info("Publisher stopped", {
           module: "media-mtx-on-demand-publisher-gst",
+          streamPath: this.streamPath,
+          label: this.label,
         });
         resolve();
       });

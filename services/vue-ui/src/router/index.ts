@@ -20,6 +20,11 @@ const router = createRouter({
       component: () => import('../views/Session.vue'),
       props: true,
     },
+    {
+      path: '/live',
+      name: 'live',
+      component: () => import('../views/Live.vue'),
+    },
   ],
   scrollBehavior() {
     return { top: 0 }

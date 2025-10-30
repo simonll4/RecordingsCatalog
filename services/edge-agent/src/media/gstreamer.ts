@@ -344,7 +344,7 @@ export function buildNV12Capture(
  * Output:
  *   - Protocol: RTSP over TCP
  *   - Format: H.264 byte-stream
- *   - Destination: rtsp://{mediamtx.host}:{mediamtx.port}/{mediamtx.path}
+ *   - Destination: rtsp://{mediamtx.host}:{mediamtx.port}/{streamPath}
  *
  * Why H.264?
  * ==========
@@ -382,7 +382,8 @@ export function buildNV12Capture(
  * @param sourceWidth - Hub resolution width
  * @param sourceHeight - Hub resolution height
  * @param sourceFpsHub - Hub framerate (not hardcoded!)
- * @param mediamtx - MediaMTX server configuration
+ * @param mediamtx - MediaMTX server configuration (host/port)
+ * @param streamPath - Stream path to publish (e.g., CONFIG.mediamtx.recordPath)
  * @param encoder - H.264 encoder configuration (from detectEncoder())
  * @returns Array of gst-launch-1.0 arguments
  *
@@ -392,7 +393,8 @@ export function buildNV12Capture(
  *   "/tmp/camera_shm",
  *   1280, 720,
  *   30,
- *   { host: "mediamtx", port: 8554, path: "live" },
+ *   { host: "mediamtx", port: 8554 },
+ *   "live",
  *   { element: "x264enc", extraArgs: ["tune=zerolatency", "bitrate=2000"] }
  * );
  *
@@ -405,9 +407,10 @@ export function buildPublish(
   sourceHeight: number,
   sourceFpsHub: number, // FPS from hub (don't hardcode!)
   mediamtx: MediaMTXConfig,
+  streamPath: string,
   encoder: EncoderConfig
 ): string[] {
-  const rtspUrl = `rtsp://${mediamtx.host}:${mediamtx.port}/${mediamtx.path}`;
+  const rtspUrl = `rtsp://${mediamtx.host}:${mediamtx.port}/${streamPath}`;
 
   const base = [
     "--gst-debug-no-color",

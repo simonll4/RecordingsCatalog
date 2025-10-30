@@ -57,7 +57,8 @@ export class SessionRepository {
   async findOpenByPath(path: string): Promise<SessionRecord | null> {
     const result = await pool.query<SessionRecord>(
       `SELECT * FROM sessions
-       WHERE path = $1 AND end_ts IS NULL
+       WHERE (path = $1 OR (path IS NULL AND device_id = $1))
+         AND end_ts IS NULL
        ORDER BY start_ts DESC
        LIMIT 1`,
       [path]
@@ -68,7 +69,7 @@ export class SessionRepository {
   async findRecentlyClosedByPath(path: string, withinSeconds: number): Promise<SessionRecord | null> {
     const result = await pool.query<SessionRecord>(
       `SELECT * FROM sessions
-       WHERE path = $1 
+       WHERE (path = $1 OR (path IS NULL AND device_id = $1))
          AND end_ts IS NOT NULL
          AND end_ts > NOW() - INTERVAL '1 second' * $2
        ORDER BY end_ts DESC
