@@ -8,7 +8,7 @@
  * =====================
  *
  * Video Pipeline:
- * - CameraHub: Always-on video capture (V4L2/RTSP) → Shared Memory (I420 format)
+ * - CameraHub: Always-on video capture (RTSP) → Shared Memory (I420 format)
  * - NV12Capture: Reads from SHM and converts I420 → NV12 frames for AI processing
  * - Publisher: On-demand RTSP streaming (SHM → MediaMTX) for remote viewing
  *
@@ -24,7 +24,7 @@
  *
  * Storage:
  * - SessionStore: HTTP API client for persisting sessions and detections
- * - FrameIngester: Batches and uploads frames with detection metadata
+ * - FrameIngester: Uploads frames with detection metadata (con retry automático)
  *
  * Flow:
  * =====
@@ -69,7 +69,7 @@ async function main() {
   const bus = new Bus();
 
   // --- Video Pipeline Components ---
-  // CameraHub: Captures from V4L2/RTSP device → writes I420 to shared memory
+  // CameraHub: Captures from RTSP source → writes I420 to shared memory
   const camera = new CameraHubGst();
 
   // NV12Capture: Reads from shared memory → provides NV12 frames to AI pipeline
@@ -112,6 +112,8 @@ async function main() {
     width: CONFIG.ai.width, // Frame width for inference
     height: CONFIG.ai.height, // Frame height for inference
     maxInflight: 4, // Max frames in-flight (sliding window size)
+    classesFilter: CONFIG.ai.classesFilter, // Clases relevantes configuradas
+    confidenceThreshold: CONFIG.ai.umbral, // Minimum confidence for detections
     policy: "LATEST_WINS", // Drop old pending frames when window is full
     preferredFormat: "NV12", // Pixel format for AI worker
   });
@@ -265,7 +267,7 @@ async function main() {
      *
      * @param result - Protobuf Result message from AI worker
      */
-    onResult: (result) => {
+    onResult: (result: any) => {
       const detections = result.detections?.items || [];
 
       logger.debug("Received detection result", {
@@ -279,12 +281,12 @@ async function main() {
       // =========================================================
       // Only detections matching CONFIG.ai.classesFilter are "relevant"
       // This prevents false positives from triggering recordings
-      const relevantDetections = detections.filter((det) =>
+      const relevantDetections = detections.filter((det: any) =>
         CONFIG.ai.classesFilter.includes(det.cls || "")
       );
 
       const hasRelevant = relevantDetections.length > 0;
-      const stableTrackDetections = relevantDetections.filter((det) => {
+      const stableTrackDetections = relevantDetections.filter((det: any) => {
         const trackId = det.trackId?.trim();
         const isPlaceholder = !trackId || trackId.startsWith("det-");
 
@@ -317,17 +319,22 @@ async function main() {
       // - Relevant detections exist (matching configured classes)
       if (sessionManager.hasActiveSession() && hasStableTracks) {
         // Transform protobuf detections to ingest API format
-        const ingestDetections = stableTrackDetections.map((det) => {
+        const ingestDetections = stableTrackDetections.map((det: any) => {
           const trackId = det.trackId?.trim();
+          const x1 = det.bbox?.x1 ?? 0;
+          const y1 = det.bbox?.y1 ?? 0;
+          const x2 = det.bbox?.x2 ?? x1;
+          const y2 = det.bbox?.y2 ?? y1;
+
           return {
             trackId: trackId ?? "",
             cls: det.cls || "",
             conf: det.conf || 0,
             bbox: {
-              x: det.bbox?.x1 || 0,
-              y: det.bbox?.y1 || 0,
-              w: (det.bbox?.x2 || 0) - (det.bbox?.x1 || 0), // Convert x2 to width
-              h: (det.bbox?.y2 || 0) - (det.bbox?.y1 || 0), // Convert y2 to height
+              x: x1,
+              y: y1,
+              w: Math.max(0, x2 - x1),
+              h: Math.max(0, y2 - y1),
             },
           };
         });
@@ -337,7 +344,7 @@ async function main() {
 
         if (frameId !== null) {
           // Ingest frame + detections via SessionManager
-          // This batches the upload and handles retries
+          // FrameIngester gestiona la subida y aplica reintentos
           void sessionManager.ingestFrame(frameId, ingestDetections);
         }
       } else if (sessionManager.hasActiveSession() && hasRelevant) {
@@ -353,7 +360,7 @@ async function main() {
       // =========================================================
       if (hasRelevant) {
         // Transform protobuf detections to bus event format
-        const eventDetections = relevantDetections.map((det) => ({
+        const eventDetections = relevantDetections.map((det: any) => ({
           cls: det.cls || "",
           conf: det.conf || 0,
           bbox: [
@@ -393,7 +400,7 @@ async function main() {
         bus.publish("ai.detection", {
           type: "ai.detection",
           relevant: true,
-          score: Math.max(...eventDetections.map((d) => d.conf), 0), // Highest confidence
+          score: Math.max(...eventDetections.map((d: any) => d.conf), 0), // Highest confidence
           detections: eventDetections,
           meta: frameMeta,
         });
@@ -447,26 +454,6 @@ async function main() {
   let activeSessionId: string | null = null;
 
   const aiAdapter = {
-    /**
-     * Set model configuration
-     *
-     * Note: AIFeeder is configured once via init() during startup.
-     * This method is kept for interface compatibility with Orchestrator.
-     */
-    async setModel(cfg: any) {
-      logger.info("Model config set", { module: "main", config: cfg });
-    },
-
-    /**
-     * Run inference on frame
-     *
-     * Note: AIFeeder handles frame submission directly via NV12Capture subscription.
-     * This method is kept for interface compatibility with Orchestrator.
-     */
-    async run(frame: Buffer, meta: any) {
-      // No-op: AIFeeder manages frame flow independently
-    },
-
     /**
      * Set session ID for frame correlation
      *

@@ -59,7 +59,9 @@ class ModelLoadJob:
             logger.info(f"[DEBUG] Carga de modelo cancelada: {model_path}")
             raise
         except Exception as e:
-            logger.error(f"[DEBUG] Error cargando modelo {model_path}: {e}", exc_info=True)
+            logger.error(
+                f"[DEBUG] Error cargando modelo {model_path}: {e}", exc_info=True
+            )
 
             if self.on_error:
                 await self.on_error(model_path, e)

@@ -126,7 +126,7 @@ Diagramas visuales de la arquitectura refactorizada.
 └─────┬──────┘          └────────┬─────┘    └────────┬─────┘
       │                          │                    │
       │ sessionService           │ sessionService     │ sessionService
-      │   .getSession()          │   .getSessionMeta()│   .getSessionIndex()
+      │   .getSession()          │   .getTrackMeta()  │   .getTrackIndex()
       │                          │                    │
       └──────────────────────────┴────────────────────┘
                                  │

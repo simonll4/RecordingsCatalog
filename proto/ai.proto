@@ -80,6 +80,8 @@ message Request {
 message Init {
   string model = 1;
   Capabilities caps = 2;
+  repeated string classes_filter = 3; // Lista de clases a habilitar (opcional)
+  float confidence_threshold = 4; // Umbral mínimo de confianza (opcional)
 }
 
 message Capabilities {

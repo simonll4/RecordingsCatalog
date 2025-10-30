@@ -4,35 +4,16 @@ Sistema de captura y análisis de video basado en eventos, optimizado para baja 
 
 ## 📚 Documentación Rápida
 
-### Guías de Desarrollo
+### Documentación
 
-| Documento                                         | Descripción                                   |
-| ------------------------------------------------- | --------------------------------------------- |
-| [STYLE_GUIDE.md](docs/STYLE_GUIDE.md)             | 🎨 Convenciones de estilo y mejores prácticas |
-| [CODE_ORGANIZATION.md](docs/CODE_ORGANIZATION.md) | 📋 Organización del código                    |
-
-### Arquitectura y Sistema
-
-| Documento                                               | Descripción                 |
-| ------------------------------------------------------- | --------------------------- |
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md)                 | 🏗️ Arquitectura del sistema |
-| [EVENTS.md](docs/EVENTS.md)                             | 📡 Sistema de eventos       |
-| [ARCHITECTURE_DIAGRAM.md](docs/ARCHITECTURE_DIAGRAM.md) | 📊 Diagrama visual          |
-
-### Implementación Técnica
-
-| Documento                                                           | Descripción                         |
-| ------------------------------------------------------------------- | ----------------------------------- |
-| [PROTOCOL_V1_IMPLEMENTATION.md](docs/PROTOCOL_V1_IMPLEMENTATION.md) | 🔌 Protocolo binario v1 (AI worker) |
-| [PROTOCOL_V1_QUICKSTART.md](docs/PROTOCOL_V1_QUICKSTART.md)         | 🚀 Guía rápida del protocolo v1     |
-
-### Troubleshooting y Planificación
-
-| Documento                                                         | Descripción                     |
-| ----------------------------------------------------------------- | ------------------------------- |
-| [LOGGING.md](docs/LOGGING.md)                                     | 🪵 Sistema de logging           |
-| [ROBUSTNESS_VERIFICATION.md](docs/ROBUSTNESS_VERIFICATION.md)     | ✅ Guía de verificación de robustez |
-| [FUTURE_FEATURES.md](docs/FUTURE_FEATURES.md)                     | 🔮 Funcionalidades planificadas |
+| Documento                                               | Descripción                         |
+| ------------------------------------------------------- | ----------------------------------- |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md)                 | 🏗️ Visión general y flujo           |
+| [ARCHITECTURE_DIAGRAM.md](docs/ARCHITECTURE_DIAGRAM.md) | 📊 Diagrama visual                  |
+| [EVENTS.md](docs/EVENTS.md)                             | 📡 Tópicos del bus                  |
+| [PROTOCOL_V1.md](docs/PROTOCOL_V1.md)                   | 🔌 Protocolo v1 (resumen)           |
+| [QUICKSTART.md](docs/QUICKSTART.md)                     | 🚀 Puesta en marcha                 |
+| [OPERATIONS.md](docs/OPERATIONS.md)                     | 🛠️ Operación (logging, salud)       |
 
 ---
 
@@ -56,7 +37,7 @@ Sistema de captura y análisis de video basado en eventos, optimizado para baja 
 - Hub SHM I420 (WxH @ fpsHub) desde cámaras RTSP para múltiples consumidores
 - Streaming RTSP bajo demanda hacia MediaMTX (encoder auto-detectado)
 - Motor de IA externo (worker-ai) vía Protocolo v1 (NV12/I420 RAW o JPEG)
-- Batching + retry de detecciones hacia Session Store
+- Reintentos de detecciones hacia Session Store
 - Logging estructurado y métricas integradas
 
 ## Arquitectura y Componentes
@@ -168,8 +149,6 @@ postroll_ms = 5000  # Grabación post-detección
 
 [store]
 base_url = "http://localhost:8080"
-batch_max = 50
-flush_interval_ms = 250
 ```
 
 **Notas de configuración:**

@@ -87,7 +87,8 @@ export const CONFIG: AppConfig = {
     height: tomlConfig.ai.height,
     classesFilter: tomlConfig.ai.classes_filter
       .split(",")
-      .map((s: string) => s.trim()),
+      .map((s: string) => s.trim())
+      .filter((s: string) => s.length > 0),
     fps: {
       idle: tomlConfig.ai.fps_idle,
       active: tomlConfig.ai.fps_active,
@@ -114,8 +115,6 @@ export const CONFIG: AppConfig = {
   store: {
     baseUrl: tomlConfig.store.base_url,
     apiKey: undefined, // Not used
-    batchMax: tomlConfig.store.batch_max,
-    flushIntervalMs: tomlConfig.store.flush_interval_ms,
   },
 
   bus: {

@@ -171,7 +171,7 @@ export type AIEvents = AIDetectionEvent | AIKeepaliveEvent;
  *   Emit when RTSP publisher successfully starts (pipeline state=PLAYING).
  *   Indicates stream is available on MediaMTX.
  *
- * See docs/FUTURE_FEATURES.md for implementation plan.
+ * Reservado para versiones futuras.
  *
  * @property reason - Start reason (e.g., "session_active", "manual_start")
  */
@@ -188,7 +188,7 @@ export type StreamStartEvent = {
  * Future Purpose:
  *   Emit when RTSP publisher stops stream (normal shutdown).
  *
- * See docs/FUTURE_FEATURES.md for implementation plan.
+ * Reservado para versiones futuras.
  *
  * @property reason - Stop reason (e.g., "session_ended", "shutdown", "error")
  */
@@ -206,7 +206,7 @@ export type StreamStopEvent = {
  *   Emit when fatal error occurs in RTSP streaming pipeline.
  *   Enables retry logic or alert notifications.
  *
- * See docs/FUTURE_FEATURES.md for implementation plan.
+ * Reservado para versiones futuras.
  *
  * @property module - Module that generated error (e.g., "publisher", "gstreamer")
  * @property error - Error message or description

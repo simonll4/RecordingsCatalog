@@ -18,8 +18,8 @@ Cuando se monta `Session.vue`:
 
 1. Se llama a `tracksStore.resetForSession(sessionId)` para limpiar caches.
 2. Se lanzan en paralelo:
-   - `tracksStore.loadMeta(sessionId)` → `fetchSessionMeta()` → `/sessions/:id/meta`.
-   - `tracksStore.loadIndex(sessionId)` → `fetchSessionIndex()` → `/sessions/:id/index`.
+   - `tracksStore.loadMeta(sessionId)` → `sessionService.getTrackMeta()` → `/sessions/:id/tracks/meta.json`.
+   - `tracksStore.loadIndex(sessionId)` → `sessionService.getTrackIndex()` → `/sessions/:id/tracks/index.json`.
 3. El `session-store` lee `meta.json` e `index.json` en `data/tracks/<session_id>/`, generados por el `worker-ai`.
    - `meta.json` describe `video`, `classes`, `start_time`, `end_time`, etc.
    - `index.json` lista segmentos NDJSON (`tracks/seg-xxxx.jsonl`) con `t0`, `t1`, `count`, `closed`.
@@ -27,16 +27,15 @@ Cuando se monta `Session.vue`:
 
 ## 3. Obtención del recording (MediaMTX)
 
-1. `Session.vue` invoca `fetchSessionClip(sessionId)` → `/sessions/:id/clip`.
-2. El `session-store` calcula `start` y `duration` usando `start_ts`/`end_ts` (con margenes configurados).
-3. Devuelve una URL de MediaMTX (`http://mediamtx:9996/get?...`).
-4. La UI reescribe la URL usando `MEDIAMTX_BASE_URL` (`src/config.ts`) y la asigna al `<video>` en `Player.vue`.
-5. El `<video>` descarga el MP4 progresivo directamente desde MediaMTX, sin pasar por un proxy adicional.
+1. `Session.vue` obtiene el detalle de la sesión (`sessionService.getSession(sessionId)`).
+2. Con esa data, `playbackService.buildSessionPlaybackUrl(session)` genera la URL `GET` de MediaMTX (`http://mediamtx:9996/get?...`).
+3. Opcionalmente, `playbackService.probePlaybackUrl(...)` verifica la disponibilidad con reintentos.
+4. La URL final se asigna al `<video>` en `Player.vue`, que descarga el MP4 progresivo directamente desde MediaMTX.
 
 ## 4. Streaming de anotaciones
 
 1. `useTracksStore` determina qué segmento NDJSON corresponde al `video.currentTime` (`segmentIndexForTime`).
-2. `ensureSegment(sessionId, i)` pide `/sessions/:id/segment/:i`:
+2. `ensureSegment(sessionId, i)` pide `/sessions/:id/tracks/:segment` (NDJSON por segmento):
    - Si el archivo existe: se descarga NDJSON, se parsea en `ndjsonParser.worker.ts` y se cachea (memoria + Dexie).
    - Si no existe (sesión en vivo) y responde 404, se ignora y se reintentará cuando corresponda.
 3. `CanvasOverlay` combina la hora actual con los eventos cargados y dibuja cajas, labels y trayectorias.
@@ -60,8 +59,8 @@ Cuando se monta `Session.vue`:
 | `services/vue-ui/src/components/TrackLegend.vue`       | Controles de overlay (filtros, toggles).                                    |
 | `services/vue-ui/src/stores/useSessions.ts`            | Estado del listado de sesiones.                                             |
 | `services/vue-ui/src/stores/useTracks.ts`              | Cache de metadatos, segmentos y filtros de anotaciones.                     |
-| `services/vue-ui/src/api/sessions.ts`                  | Fetchers al `session-store` y MediaMTX.                                     |
-| `services/session-store/src/routes/sessions.ts`        | API para sesiones, clip, meta/index y segmentos NDJSON.                     |
+| `services/vue-ui/src/api/sessions.ts`                  | Fetchers al `session-store` y MediaMTX (vía servicios).                     |
+| `services/session-store/src/routes/session.routes.ts`  | API para sesiones, meta/index y segmentos NDJSON.                           |
 | `services/worker-ai/src/session/manager.py`            | Genera `meta.json`, `index.json` y `tracks/seg-xxxx.jsonl`.                 |
 | `services/mediamtx`                                    | Sirve grabaciones (`/get?path=...`).                                        |
 

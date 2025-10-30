@@ -15,6 +15,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   const selectedId = ref<string | null>(null)
+  const lastParams = ref<ListSessionsParams | undefined>(undefined)
 
   // Computed que devuelve la sesión seleccionada o null si no hay coincidencia
   const selectedSession = computed(
@@ -26,10 +27,20 @@ export const useSessionsStore = defineStore('sessions', () => {
    * Accepts params for range/all mode and limits
    */
   const loadSessions = async (params: ListSessionsParams = {}) => {
+    const hasCustomParams = Object.keys(params).length > 0
+    const effectiveParams: ListSessionsParams =
+      hasCustomParams
+        ? { ...params }
+        : lastParams.value
+        ? { ...lastParams.value }
+        : { mode: 'all' }
+
+    lastParams.value = { ...effectiveParams }
+
     isLoading.value = true
     error.value = null
     try {
-      const response = await sessionService.listSessions(params)
+      const response = await sessionService.listSessions(effectiveParams)
       sessions.value = response.sessions
     } catch (err) {
       logError('useSessionsStore.loadSessions', err)
@@ -50,7 +61,7 @@ export const useSessionsStore = defineStore('sessions', () => {
    * Refresh sessions (reload with current params)
    */
   const refreshSessions = async () => {
-    await loadSessions()
+    await loadSessions({})
   }
 
   /**
@@ -60,6 +71,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     sessions.value = []
     selectedId.value = null
     error.value = null
+    lastParams.value = undefined
   }
 
   return {

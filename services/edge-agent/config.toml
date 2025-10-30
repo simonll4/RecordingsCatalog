@@ -1,7 +1,6 @@
+# ========================
 # Edge Agent Configuration
 # ========================
-# Este archivo es la fuente única de verdad para la configuración del edge-agent.
-# Todas las configuraciones deben definirse aquí, no mediante variables de entorno.
 
 # Identificador único del dispositivo edge
 [device]
@@ -13,14 +12,12 @@ level = "debug"
 
 # Configuración de la fuente de video (RTSP)
 [source]
-# Tipo de fuente (solo RTSP soportado)
 kind = "rtsp"
-# URI de la cámara IP RTSP
 uri = "rtsp://admin:KBXBIN@192.168.1.82:554/Streaming/Channels/1"
 # Resolución de captura
 width = 640
 height = 480
-# FPS constante de captura (frames por segundo)
+# FPS constante de captura
 fps_hub = 15
 # Path del socket de memoria compartida
 socket_path = "/dev/shm/cam_raw.sock"
@@ -75,7 +72,3 @@ worker_port = 7001
 [store]
 # URL base del servicio session-store
 base_url = "http://session-store:8080"
-# Tamaño máximo del batch de detecciones
-batch_max = 50
-# Intervalo de flush del batch (ms)
-flush_interval_ms = 250

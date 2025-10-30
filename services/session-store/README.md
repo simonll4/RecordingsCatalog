@@ -59,8 +59,9 @@ src/
 - `POST /sessions/close` - Cerrar sesión existente
 - `GET /sessions` - Listar sesiones
 - `GET /sessions/:sessionId` - Obtener detalles de sesión
-- `GET /sessions/:sessionId/tracks/index` - Obtener índice de tracks
-- `GET /sessions/:sessionId/tracks/:segment` - Descargar segmento de track
+- `GET /sessions/:sessionId/tracks/meta.json` - Obtener metadatos de tracks
+- `GET /sessions/:sessionId/tracks/index.json` - Obtener índice de tracks
+- `GET /sessions/:sessionId/tracks/:segment` - Descargar segmento NDJSON
 
 ### Ingest
 - `POST /ingest` - Ingestar frame con detecciones
@@ -86,13 +87,7 @@ node_env = "production"
 url = "postgres://usuario:password@host:puerto/database"
 
 [mediamtx]
-playback_base_url = "http://mediamtx:9996"
-segment_duration_sec = 300
 # hook_token = "optional-token"
-
-[playback]
-extra_seconds = 1
-start_offset_ms = 1000
 
 [frames]
 storage_path = "/data/frames"
@@ -100,6 +95,9 @@ storage_path = "/data/frames"
 [tracks]
 storage_path = "/data/tracks"
 ```
+
+> Nota: las credenciales y URLs incluidas en el snippet anterior son valores de desarrollo.
+> Ajusta `config.toml` con passwords y hosts reales antes de desplegar en producción.
 
 ## 💾 Base de Datos
 
@@ -169,6 +167,7 @@ El servicio está diseñado para ejecutarse en un contenedor Docker. Ver `docker
    - Paths de frames ahora usan `CONFIG.FRAMES_STORAGE_PATH` en lugar de hardcodear `/data/frames`
    - Payload de `/sessions/open` acepta tanto `path` como `streamPath` para compatibilidad con edge-agent
    - Eliminada extensión UUID de PostgreSQL no utilizada
+   - Eliminados parámetros de config no usados (`mediamtx.playback_base_url`, `mediamtx.segment_duration_sec`, sección `[playback]`)
 
 3. **Arquitectura**:
    - Código reorganizado en capas con responsabilidades claras

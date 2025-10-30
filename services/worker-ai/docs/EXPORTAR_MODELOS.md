@@ -102,7 +102,7 @@ python scripts/export_yolo_to_onnx.py \
 ### Opción 1: Usar el script de inspección
 
 ```bash
-python inspect_model.py path/to/modelo.onnx
+python scripts/inspect_model.py path/to/modelo.onnx
 ```
 
 **CON NMS**:
@@ -218,7 +218,7 @@ Después de exportar un modelo:
 
 - [ ] Copiar a `data/models/`
 - [ ] Actualizar `config.local.toml` (si cambió el nombre)
-- [ ] Ejecutar `python inspect_model.py` para verificar formato
+- [ ] Ejecutar `python scripts/inspect_model.py` para verificar formato
 - [ ] Reiniciar worker
 - [ ] Verificar logs: "NMS integrado: True/False"
 - [ ] Probar detecciones con edge-agent

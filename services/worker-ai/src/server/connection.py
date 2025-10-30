@@ -1,21 +1,23 @@
 """Manejador de conexiones TCP - Coordina servicios del pipeline"""
 
 import asyncio
-from typing import Optional
+from typing import List, Optional, Tuple
 
 import ai_pb2 as pb
 
 from ..core.logger import setup_logger
 from ..config.runtime import RuntimeConfig
+from ..pipeline.dto import FramePayload
+from ..pipeline.processor import FrameProcessor
 from ..transport.framing import FrameReader, FrameWriter
 from ..transport.protobuf_codec import ProtobufCodec
-from ..pipeline.processor import FrameProcessor
-from ..pipeline.dto import FramePayload
 from ..visualization.viewer import Visualizer
+from ..inference.yolo11 import COCO_CLASSES
 from .heartbeat import HeartbeatTask
 from .model_loader import ModelLoadJob
 
 logger = setup_logger("server.connection")
+COCO_NAME_TO_ID = {name.lower(): idx for idx, name in enumerate(COCO_CLASSES)}
 
 
 class ConnectionHandler:
@@ -40,6 +42,7 @@ class ConnectionHandler:
         self.config = config
         self.processor = processor
         self.visualizer = visualizer
+        self.class_filter_override: Optional[List[int]] = None
 
         # Transporte
         self.frame_reader = FrameReader(reader, max_size=config.max_frame_size)
@@ -55,7 +58,7 @@ class ConnectionHandler:
             on_error=self._on_model_error,
         )
         self.heartbeat_task: Optional[HeartbeatTask] = None
-        
+
         # DEBUG: Contador de frames recibidos
         self.frames_received_count = 0
         self.frames_processed_count = 0
@@ -78,12 +81,14 @@ class ConnectionHandler:
                 if envelope is None:
                     logger.warning(f"[DEBUG] decode_envelope() retornó None")
                     break
-                
+
                 self.envelopes_received_count += 1
-                
+
                 # DEBUG: Log cada 25 envelopes
                 if self.envelopes_received_count % 25 == 0:
-                    logger.info(f"[DEBUG] Envelopes recibidos: {self.envelopes_received_count}, tipo: {envelope.msg_type}")
+                    logger.info(
+                        f"[DEBUG] Envelopes recibidos: {self.envelopes_received_count}, tipo: {envelope.msg_type}"
+                    )
 
                 # Procesar según tipo de mensaje
                 if envelope.msg_type == pb.MT_END:
@@ -94,7 +99,9 @@ class ConnectionHandler:
                 if envelope.request:
                     has_frame = envelope.request.HasField("frame")
                     has_init = envelope.request.HasField("init")
-                    logger.debug(f"[DEBUG] Request recibido: has_init={has_init}, has_frame={has_frame}")
+                    logger.debug(
+                        f"[DEBUG] Request recibido: has_init={has_init}, has_frame={has_frame}"
+                    )
                     await self._handle_request(envelope.request)
                 elif envelope.heartbeat:
                     await self._send_heartbeat()
@@ -120,6 +127,31 @@ class ConnectionHandler:
         else:
             logger.warning("Request sin init, frame o end")
 
+    def _parse_classes_filter(
+        self, classes: List[str]
+    ) -> Tuple[List[int], List[str], List[str]]:
+        """
+        Normaliza lista de clases y devuelve IDs válidos, nombres resueltos y desconocidos.
+        """
+        class_ids: List[int] = []
+        resolved_names: List[str] = []
+        unknown: List[str] = []
+        seen: set[str] = set()
+
+        for raw_name in classes:
+            normalized = raw_name.strip().lower()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            class_id = COCO_NAME_TO_ID.get(normalized)
+            if class_id is None:
+                unknown.append(raw_name)
+                continue
+            class_ids.append(class_id)
+            resolved_names.append(COCO_CLASSES[class_id])
+
+        return class_ids, resolved_names, unknown
+
     async def _handle_init(self, init: pb.Init):
         """Maneja mensaje Init - Inicia carga de modelo"""
         logger.info(f"[DEBUG] Init recibido: model={init.model}")
@@ -130,6 +162,49 @@ class ConnectionHandler:
             await self._send_error(pb.BAD_MESSAGE, "Model path is empty")
             return
 
+        # Aplicar filtro de clases enviado por el edge-agent (si corresponde)
+        if len(init.classes_filter) > 0:
+            class_ids, class_names, unknown = self._parse_classes_filter(
+                list(init.classes_filter)
+            )
+            if class_ids:
+                self.processor.set_class_filter(class_ids)
+                self.class_filter_override = class_ids
+                logger.info(
+                    "Filtro de clases actualizado desde edge-agent: %s",
+                    class_names,
+                )
+            else:
+                self.processor.set_class_filter(None)
+                self.class_filter_override = None
+                if unknown:
+                    logger.warning(
+                        "Clases desconocidas recibidas en Init: %s. Se procesarán todas las clases.",
+                        unknown,
+                    )
+        else:
+            self.class_filter_override = None
+
+        # Aplicar umbral de confianza si el cliente lo envía en Init
+        # proto3 escalares no tienen HasField; usar getattr y validar rango
+        conf_th = getattr(init, "confidence_threshold", None)
+        try:
+            if conf_th is not None:
+                # Si la versión del proto no incluye el campo, getattr devolverá None
+                # Solo aplicamos si está en (0, 1]
+                val = float(conf_th)
+                if 0.0 < val <= 1.0:
+                    prev = self.processor.model_manager.conf_threshold
+                    self.processor.model_manager.conf_threshold = val
+                    logger.info(
+                        "Umbral de confianza actualizado desde edge-agent: %.3f (antes: %.3f)",
+                        val,
+                        prev,
+                    )
+        except Exception:
+            # Silencioso: si no se puede parsear, se ignora
+            pass
+
         # Si el modelo ya está cargado, responder inmediatamente
         if self.processor.model_manager.get(model_path):
             logger.info(f"[DEBUG] Modelo ya cargado, reutilizando: {model_path}")
@@ -138,7 +213,9 @@ class ConnectionHandler:
             return
 
         # Iniciar carga asíncrona
-        logger.info(f"[DEBUG] Modelo no cargado, iniciando carga asíncrona: {model_path}")
+        logger.info(
+            f"[DEBUG] Modelo no cargado, iniciando carga asíncrona: {model_path}"
+        )
         self.model_loader.start(model_path)
 
         # Iniciar heartbeats durante la carga
@@ -161,7 +238,9 @@ class ConnectionHandler:
             logger.info(f"[DEBUG] Enviando InitOk al cliente")
             await self._send_init_ok()
         else:
-            logger.warning(f"[DEBUG] No se puede enviar InitOk, frame_writer está cerrado")
+            logger.warning(
+                f"[DEBUG] No se puede enviar InitOk, frame_writer está cerrado"
+            )
 
     async def _on_model_error(self, model_path: str, error: Exception):
         """Callback cuando falla la carga del modelo"""
@@ -176,13 +255,17 @@ class ConnectionHandler:
     async def _handle_frame(self, frame_msg: pb.Frame):
         """Maneja mensaje Frame - Ejecuta pipeline de procesamiento"""
         self.frames_received_count += 1
-        
+
         # DEBUG: Log TODOS los frames recibidos
-        logger.info(f"[FRAME] Frame recibido: id={frame_msg.frame_id}, session={frame_msg.session_id or 'none'}, size={len(frame_msg.data)} bytes, resolution={frame_msg.width}x{frame_msg.height}, format={frame_msg.pixel_format}, codec={frame_msg.codec}")
-        
+        logger.info(
+            f"[FRAME] Frame recibido: id={frame_msg.frame_id}, session={frame_msg.session_id or 'none'}, size={len(frame_msg.data)} bytes, resolution={frame_msg.width}x{frame_msg.height}, format={frame_msg.pixel_format}, codec={frame_msg.codec}"
+        )
+
         # Verificar que el modelo esté listo
         if self.processor.current_model_path is None:
-            logger.warning(f"[DEBUG] Frame #{self.frames_received_count} recibido pero modelo no cargado")
+            logger.warning(
+                f"[DEBUG] Frame #{self.frames_received_count} recibido pero modelo no cargado"
+            )
             await self._send_error(pb.MODEL_NOT_READY, "Model not initialized")
             return
 
@@ -199,16 +282,20 @@ class ConnectionHandler:
             ts_utc_ns=getattr(frame_msg, "ts_utc_ns", None) or None,
         )
 
-        logger.debug(f"Frame recibido: session={payload.session_id}, frame_id={payload.frame_id}, size={len(frame_msg.data)} bytes")
+        logger.debug(
+            f"Frame recibido: session={payload.session_id}, frame_id={payload.frame_id}, size={len(frame_msg.data)} bytes"
+        )
 
         # Procesar frame
         result = self.processor.process_frame(payload)
-        
+
         if result is not None:
             self.frames_processed_count += 1
 
         if result is None:
-            logger.warning(f"[DEBUG] Frame processing failed for frame_id={payload.frame_id}")
+            logger.warning(
+                f"[DEBUG] Frame processing failed for frame_id={payload.frame_id}"
+            )
             await self._send_error(pb.INVALID_FRAME, "Frame processing failed")
             return
 
@@ -232,11 +319,19 @@ class ConnectionHandler:
                             last_seen_frame=0,
                         )
                         tracks.append(track)
-                
+
                 # DEBUG: Agregar info del frame en la imagen
                 info_text = f"Frame: {payload.frame_id} | Detections: {len(result.detections)} | Session: {payload.session_id or 'none'}"
-                cv2.putText(img, info_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                
+                cv2.putText(
+                    img,
+                    info_text,
+                    (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 255, 0),
+                    2,
+                )
+
                 # Mostrar frame (con o sin detecciones)
                 self.visualizer.show(img, tracks)
 
@@ -253,11 +348,13 @@ class ConnectionHandler:
             }
             for det in result.detections
         ]
-        
+
         # DEBUG: Log detecciones cada 25 frames
         if self.frames_processed_count % 25 == 0:
             classes_detected = [d["class_name"] for d in detections_dict]
-            logger.info(f"[DEBUG] Enviando resultado: frame_id={result.frame_id}, detecciones={len(detections_dict)}, clases={classes_detected}")
+            logger.info(
+                f"[DEBUG] Enviando resultado: frame_id={result.frame_id}, detecciones={len(detections_dict)}, clases={classes_detected}"
+            )
 
         await self._send_result(detections_dict, result.frame_id, result.session_id)
 

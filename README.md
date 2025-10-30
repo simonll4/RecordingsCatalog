@@ -65,8 +65,8 @@ http://localhost:3000
 id = "cam-local"
 
 [source]
-kind = "v4l2"  # o "rtsp"
-uri = "/dev/video0"  # o "rtsp://..."
+kind = "rtsp"
+uri = "rtsp://usuario:password@host:554/stream"
 width = 640
 height = 480
 fps_hub = 15

@@ -20,13 +20,6 @@ nms_iou = 0.6
 # El modelo tiene las 80 clases COCO pero con NMS integrado
 classes = ["bottle","person"]
 
-# Configuración de visualización (debugging)
-[visualization]
-# Habilitar ventana de visualización con detecciones (solo para debugging)
-enabled = true
-# Nombre de la ventana
-window_name = "AI Worker - Detections"
-
 # Configuración del tracker
 [tracker]
 # Habilitar tracking (true/false)
@@ -44,3 +37,10 @@ output_dir = "../../data/tracks"
 default_fps = 10.0
 # Duración objetivo de cada segmento NDJSON en segundos
 segment_duration_s = 10.0
+
+# Configuración de visualización (debugging)
+[visualization]
+# Habilitar ventana de visualización con detecciones (solo para debugging)
+enabled = true
+# Nombre de la ventana
+window_name = "AI Worker - Detections"

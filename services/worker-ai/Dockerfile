@@ -32,7 +32,7 @@ RUN mkdir -p /models /data/tracks
 
 # Health check (TCP port check)
 HEALTHCHECK --interval=10s --timeout=2s --retries=3 \
-    CMD curl -f http://localhost:7001 || exit 1
+    CMD python -c "import socket; s = socket.socket(); s.settimeout(2); s.connect(('127.0.0.1', 7001)); s.close()"
 
 # Usuario no-root
 RUN useradd -m -u 1000 worker && \

@@ -16,19 +16,11 @@ url = "postgres://postgres:postgres@postgres:5432/session_store"
 
 # Configuración de MediaMTX (servidor de playback)
 [mediamtx]
-# URL base del API de playback de MediaMTX
-playback_base_url = "http://mediamtx:9996"
-# Duración de segmentos de grabación en segundos (debe coincidir con recordSegmentDuration)
-segment_duration_sec = 300
 # Token opcional para validar hooks (dejar vacío para desactivar)
 # hook_token = "your-secret-token"
 
 # Configuración de playback de grabaciones
-[playback]
-# Segundos extra agregados al final de la grabación
-extra_seconds = 1
-# Offset de inicio en milisegundos (fallback cuando media_start_ts no está disponible)
-start_offset_ms = 1000
+# [playback] (eliminado - no utilizado)
 
 # Configuración de frames (imágenes de detecciones)
 [frames]

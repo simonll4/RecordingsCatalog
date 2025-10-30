@@ -9,13 +9,32 @@ cd "$SCRIPT_DIR"
 echo "🤖 Worker AI - Starting..."
 echo ""
 
+# Preparar restauración de config.toml si creamos un symlink temporal
+RESTORE_CONFIG=""
+BACKUP_PATH="config.toml.__backup_run"
+
+cleanup() {
+    if [ "$RESTORE_CONFIG" = "__remove__" ]; then
+        rm -f config.toml
+    elif [ -n "$RESTORE_CONFIG" ] && [ -f "$RESTORE_CONFIG" ]; then
+        rm -f config.toml
+        mv "$RESTORE_CONFIG" config.toml
+    fi
+}
+trap cleanup EXIT
+
 # Usar config.local.toml si existe, sino config.toml
 if [ -f "config.local.toml" ]; then
     echo "📝 Usando config.local.toml (desarrollo local)"
     export CONFIG_FILE="config.local.toml"
-    # Crear symlink temporal si no existe
     if [ ! -L "config.toml" ] || [ "$(readlink config.toml)" != "config.local.toml" ]; then
-        cp config.toml config.docker.toml 2>/dev/null || true
+        if [ -e "config.toml" ]; then
+            rm -f "$BACKUP_PATH"
+            cp config.toml "$BACKUP_PATH"
+            RESTORE_CONFIG="$BACKUP_PATH"
+        else
+            RESTORE_CONFIG="__remove__"
+        fi
         ln -sf config.local.toml config.toml
     fi
 else

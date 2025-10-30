@@ -9,6 +9,7 @@
 import { sessionService, playbackService } from './services'
 import type { 
   SessionSummary,
+  TrackMeta,
 } from './schemas/session.schemas'
 import type { TrackIndex } from '../types/tracks'
 
@@ -23,6 +24,13 @@ export const listSessions = async (
   params: { mode?: 'range' | 'all'; limit?: number; from?: string; to?: string } = {}
 ) => {
   return sessionService.listSessions(params)
+}
+
+/**
+ * @deprecated Use sessionService.getTrackMeta() directly
+ */
+export const fetchSessionMeta = async (sessionId: string): Promise<TrackMeta> => {
+  return sessionService.getTrackMeta(sessionId)
 }
 
 

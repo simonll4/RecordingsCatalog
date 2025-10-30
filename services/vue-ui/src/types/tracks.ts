@@ -27,12 +27,12 @@ export interface TrackMeta {
   frame_count: number
   fps: number
   path?: string | null
-  video: {
+  video?: {
     width: number | null
     height: number | null
     fps: number | null
-  }
-  classes: Array<{ id: number; name: string }>
+  } | null
+  classes?: Array<{ id: number; name: string }>
 }
 
 /** Información por segmento dentro de index.json */

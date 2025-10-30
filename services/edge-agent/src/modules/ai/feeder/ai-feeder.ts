@@ -105,6 +105,8 @@ export interface AIFeederConfig {
   width: number; // Frame width for inference (e.g., 640)
   height: number; // Frame height for inference (e.g., 480)
   maxInflight: number; // Max frames in-flight (sliding window size)
+  classesFilter?: string[]; // Clases COCO a filtrar (opcional)
+  confidenceThreshold?: number; // Detection confidence threshold (optional)
 
   /**
    * Frame Queuing Policy

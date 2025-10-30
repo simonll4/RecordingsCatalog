@@ -162,7 +162,9 @@ class YOLO11Model:
         elif self.has_integrated_nms is False:
             logger.info("Modelo sin NMS integrado detectado (según metadata ONNX)")
         else:
-            logger.info("No se pudo determinar NMS desde metadata; se detectará en runtime")
+            logger.info(
+                "No se pudo determinar NMS desde metadata; se detectará en runtime"
+            )
 
         logger.info(f"Modelo cargado: {model_path}")
         logger.info(f"Input shape: {self.input_shape}")
@@ -212,7 +214,7 @@ class YOLO11Model:
     ) -> List[Detection]:
         """
         Procesa salida de modelo YOLO con NMS integrado
-        
+
         Args:
             output: Salida del modelo shape (1, N, 6) donde 6 = [x1, y1, x2, y2, conf, class]
             scale: Factor de escala usado en preproceso
@@ -220,75 +222,74 @@ class YOLO11Model:
             orig_shape: (height, width) de la imagen original
             conf_thres: Umbral de confianza
             classes_filter: Lista de class_id a incluir (si es None, todas)
-            
+
         Returns:
             Lista de detecciones
         """
         orig_h, orig_w = orig_shape
         pad_w, pad_h = pad
-        
+
         # El modelo con NMS ya devuelve [batch, num_dets, 6]
         if output.ndim == 3:
             output = output[0]  # Quitar batch dimension
-        
+
         # output ahora es (N, 6) donde N es número de detecciones
         # Formato: [x1, y1, x2, y2, confidence, class_id]
-        
+
         detections = []
         for det in output:
             x1, y1, x2, y2, conf, class_id = det
-            
+
             # Filtrar por confianza
             if conf < conf_thres:
                 continue
-            
+
             # Convertir class_id a entero
             class_id = int(class_id)
-            
+
             # Filtrar por clase si es necesario
             if classes_filter is not None and len(classes_filter) > 0:
                 if class_id not in classes_filter:
                     continue
-            
+
             # Las coordenadas ya están en formato xyxy en espacio letterbox
             # Deshacer padding y escala
             x1 = (x1 - pad_w) / scale
             y1 = (y1 - pad_h) / scale
             x2 = (x2 - pad_w) / scale
             y2 = (y2 - pad_h) / scale
-            
+
             # Clip a dimensiones originales
             x1 = max(0, min(x1, orig_w))
             y1 = max(0, min(y1, orig_h))
             x2 = max(0, min(x2, orig_w))
             y2 = max(0, min(y2, orig_h))
-            
+
             # Validar bbox
             if x2 <= x1 or y2 <= y1:
                 continue
-            
+
             # Normalizar a [0, 1]
             x1_norm = x1 / orig_w
             y1_norm = y1 / orig_h
             x2_norm = x2 / orig_w
             y2_norm = y2 / orig_h
-            
+
             # Nombre de clase
-            class_name = COCO_CLASSES[class_id] if class_id < len(COCO_CLASSES) else f"class_{class_id}"
-            
+            class_name = (
+                COCO_CLASSES[class_id]
+                if class_id < len(COCO_CLASSES)
+                else f"class_{class_id}"
+            )
+
             detection = Detection(
                 class_id=class_id,
                 class_name=class_name,
                 confidence=float(conf),
-                bbox=(
-                    float(x1_norm),
-                    float(y1_norm),
-                    float(x2_norm),
-                    float(y2_norm)
-                )
+                bbox=(float(x1_norm), float(y1_norm), float(x2_norm), float(y2_norm)),
             )
             detections.append(detection)
-        
+
         return detections
 
     def postprocess(

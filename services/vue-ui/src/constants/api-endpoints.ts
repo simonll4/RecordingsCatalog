@@ -32,8 +32,6 @@ export const SESSION_ENDPOINTS = {
 // MediaMTX Endpoints
 export const MEDIAMTX_ENDPOINTS = {
   GET: '/get',
-  LIVE: '/live',
-  PLAYBACK: '/playback',
 } as const
 
 // HTTP Headers

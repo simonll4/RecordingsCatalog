@@ -121,16 +121,15 @@ const exists = await sessionStoreClient.head('/sessions/abc123')
 Encapsulan la lógica de negocio para interactuar con APIs:
 
 **SessionService** (`session.service.ts`):
-- `listSessions(params)` - Lista sesiones con filtros
+- `listSessions(params)` - Lista sesiones con filtros (`all` o `range`)
 - `getSession(id)` - Obtiene detalles de una sesión
-- `getSessionMeta(id)` - Obtiene metadata
-- `getSessionIndex(id)` - Obtiene índice de segmentos
-- `getSessionClip(id)` - Obtiene info de clip
-- `getSessionSegment(id, index)` - Descarga un segmento
+- `getTrackMeta(id)` - Obtiene metadata de tracks (meta.json)
+- `getTrackIndex(id)` - Obtiene índice de segmentos (index.json)
+- `getTrackSegment(id, segment)` - Descarga un segmento NDJSON
+- `sessionExists(id)` - Verifica existencia de sesión
 
 **PlaybackService** (`playback.service.ts`):
 - `buildSessionPlaybackUrl(session)` - Genera URL de reproducción
-- `rewriteClipUrl(clipData)` - Reescribe URLs de MediaMTX
 - `probePlaybackUrl(...)` - Valida URLs con retry logic
 
 **Ejemplo de uso:**
@@ -160,8 +159,8 @@ Centraliza todas las constantes de configuración.
 ```typescript
 import { SESSION_ENDPOINTS, MEDIAMTX_ENDPOINTS } from '@/constants'
 
-const metaUrl = SESSION_ENDPOINTS.META('session-id')
-// '/session-id/meta'
+const metaUrl = SESSION_ENDPOINTS.TRACK_META('session-id')
+// '/session-id/tracks/meta.json'
 
 const getUrl = MEDIAMTX_ENDPOINTS.GET
 // '/get'
@@ -393,7 +392,7 @@ import { sessionService } from '@/api'
 
 // Usar los métodos del servicio
 sessionService.listSessions(params)
-sessionService.getSessionMeta(id)
+sessionService.getTrackMeta(id)
 ```
 
 #### 2. Configuración

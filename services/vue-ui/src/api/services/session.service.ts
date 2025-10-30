@@ -3,17 +3,20 @@
  * Handles all session-related API operations
  */
 
-import { sessionStoreClient, HttpError } from '../http'
+import { sessionStoreClient } from '../http'
 import { 
   SESSION_ENDPOINTS, 
-  API_HEADERS,
   QUERY_PARAMS 
 } from '@/constants'
 import {
   sessionSummarySchema,
   rangeSessionsSchema,
   listSessionsSchema,
+  trackMetaSchema,
+  trackIndexSchema,
   type SessionSummary,
+  type TrackMeta,
+  type TrackIndex,
 } from '../schemas/session.schemas'
 
 /**
@@ -37,14 +40,6 @@ export interface ListSessionsResponse {
 }
 
 /**
- * Segment fetch result
- */
-export interface SegmentFetchResult {
-  buffer: ArrayBuffer
-  encoding: string | null
-}
-
-/**
  * Session Service Class
  * Encapsulates all session-related API calls
  */
@@ -53,13 +48,13 @@ export class SessionService {
    * List sessions from the session store
    */
   async listSessions(params: ListSessionsParams = {}): Promise<ListSessionsResponse> {
-    if (params.mode === 'all') {
+    const mode = params.mode ?? 'all'
+
+    if (mode === 'all') {
       const data = await sessionStoreClient.getJson(
         SESSION_ENDPOINTS.LIST,
         listSessionsSchema,
-        {
-          params: params.limit ? { [QUERY_PARAMS.LIMIT]: params.limit } : undefined,
-        }
+        params.limit ? { params: { [QUERY_PARAMS.LIMIT]: params.limit } } : undefined
       )
       
       return {
@@ -69,10 +64,17 @@ export class SessionService {
     }
 
     // Default to range mode
-    const queryParams: Record<string, string | number | undefined> = {}
-    if (params.limit) queryParams[QUERY_PARAMS.LIMIT] = params.limit
-    if (params.from) queryParams[QUERY_PARAMS.FROM] = params.from
-    if (params.to) queryParams[QUERY_PARAMS.TO] = params.to
+    if (!params.from || !params.to) {
+      throw new Error('listSessions in "range" mode requires both "from" and "to" ISO timestamps')
+    }
+
+    const queryParams: Record<string, string | number> = {
+      [QUERY_PARAMS.FROM]: params.from,
+      [QUERY_PARAMS.TO]: params.to,
+    }
+    if (params.limit) {
+      queryParams[QUERY_PARAMS.LIMIT] = params.limit
+    }
     
     const data = await sessionStoreClient.getJson(
       SESSION_ENDPOINTS.LIST_RANGE,
@@ -102,21 +104,33 @@ export class SessionService {
   /**
    * Fetch track meta for a session
    */
-  async getTrackMeta(sessionId: string): Promise<any> {
-    const response = await sessionStoreClient.getRaw(
-      SESSION_ENDPOINTS.TRACK_META(sessionId)
+  async getTrackMeta(sessionId: string): Promise<TrackMeta> {
+    const data = await sessionStoreClient.getJson(
+      SESSION_ENDPOINTS.TRACK_META(sessionId),
+      trackMetaSchema
     )
-    return response.json()
+
+    const video = data.video ?? { width: null, height: null, fps: null }
+
+    return {
+      ...data,
+      video: {
+        width: video.width ?? null,
+        height: video.height ?? null,
+        fps: video.fps ?? null,
+      },
+      classes: data.classes ?? [],
+    }
   }
 
   /**
    * Fetch track index for a session
    */
-  async getTrackIndex(sessionId: string): Promise<any> {
-    const response = await sessionStoreClient.getRaw(
-      SESSION_ENDPOINTS.TRACK_INDEX(sessionId)
+  async getTrackIndex(sessionId: string): Promise<TrackIndex> {
+    return sessionStoreClient.getJson(
+      SESSION_ENDPOINTS.TRACK_INDEX(sessionId),
+      trackIndexSchema
     )
-    return response.json()
   }
 
   /**

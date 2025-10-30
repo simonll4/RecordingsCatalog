@@ -14,7 +14,7 @@ Diagrama simplificado y alineado con la implementación actual.
    |                                                              |
    |  +-----------------+      SHM (I420)      +---------------+  |
    |  |  CameraHubGst   | ───────────────────► | PublisherGst  |──┼──► RTSP
-   |  | (RTSP/V4L2→I420)|                     +---------------+  |
+   |  |   (RTSP→I420)   |                     +---------------+  |
    |  +-----------------+                            ▲           |
    |              │                                   | commands  |
    |              │ SHM (I420)                        |           |

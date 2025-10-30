@@ -110,7 +110,9 @@ def inspect_model(model_path):
 
 
 if __name__ == "__main__":
-    model_path = "/home/simonll4/Desktop/final-scripting/tpfinal-v3/data/models/yolo11s.onnx"
+    repo_root = Path(__file__).resolve().parents[2]
+    default_model = repo_root / "data" / "models" / "yolo11s.onnx"
+    model_path = str(default_model)
     
     if len(sys.argv) > 1:
         model_path = sys.argv[1]

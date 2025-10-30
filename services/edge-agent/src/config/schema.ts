@@ -309,8 +309,8 @@ export type FSMConfig = {
  *   - Format: "Bearer {apiKey}"
  *   - Leave empty if API is unauthenticated
  *
- * Note: La ingesta de detecciones/frames se realiza con FrameIngester (/ingest)
- * y no requiere parámetros de batching aquí.
+ * Nota: La ingesta de detecciones/frames se realiza con FrameIngester (/ingest),
+ * por lo que no hay parámetros adicionales de batching en esta sección.
  *
  * API Endpoints:
  * ==============
@@ -330,8 +330,6 @@ export type FSMConfig = {
 export type StoreConfig = {
   baseUrl: string;
   apiKey?: string;
-  batchMax?: number;
-  flushIntervalMs?: number;
 };
 
 /**
@@ -412,7 +410,7 @@ export type BusConfig = {
  *
  * store: Session store API configuration
  *   - See StoreConfig for details
- *   - Defines HTTP endpoint, batching parameters
+ *   - Defines HTTP endpoint
  *
  * bus: Event bus configuration
  *   - See BusConfig for details

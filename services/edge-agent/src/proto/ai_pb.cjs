@@ -861,6 +861,8 @@ $root.ai = (function() {
          * @interface IInit
          * @property {string|null} [model] Init model
          * @property {ai.ICapabilities|null} [caps] Init caps
+         * @property {Array.<string>|null} [classesFilter] Init classesFilter
+         * @property {number|null} [confidenceThreshold] Init confidenceThreshold
          */
 
         /**
@@ -872,6 +874,7 @@ $root.ai = (function() {
          * @param {ai.IInit=} [properties] Properties to set
          */
         function Init(properties) {
+            this.classesFilter = [];
             if (properties)
                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                     if (properties[keys[i]] != null)
@@ -893,6 +896,22 @@ $root.ai = (function() {
          * @instance
          */
         Init.prototype.caps = null;
+
+        /**
+         * Init classesFilter.
+         * @member {Array.<string>} classesFilter
+         * @memberof ai.Init
+         * @instance
+         */
+        Init.prototype.classesFilter = $util.emptyArray;
+
+        /**
+         * Init confidenceThreshold.
+         * @member {number} confidenceThreshold
+         * @memberof ai.Init
+         * @instance
+         */
+        Init.prototype.confidenceThreshold = 0;
 
         /**
          * Creates a new Init instance using the specified properties.
@@ -922,6 +941,11 @@ $root.ai = (function() {
                 writer.uint32(/* id 1, wireType 2 =*/10).string(message.model);
             if (message.caps != null && Object.hasOwnProperty.call(message, "caps"))
                 $root.ai.Capabilities.encode(message.caps, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+            if (message.classesFilter != null && message.classesFilter.length)
+                for (var i = 0; i < message.classesFilter.length; ++i)
+                    writer.uint32(/* id 3, wireType 2 =*/26).string(message.classesFilter[i]);
+            if (message.confidenceThreshold != null && Object.hasOwnProperty.call(message, "confidenceThreshold"))
+                writer.uint32(/* id 4, wireType 5 =*/37).float(message.confidenceThreshold);
             return writer;
         };
 
@@ -964,6 +988,16 @@ $root.ai = (function() {
                     }
                 case 2: {
                         message.caps = $root.ai.Capabilities.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 3: {
+                        if (!(message.classesFilter && message.classesFilter.length))
+                            message.classesFilter = [];
+                        message.classesFilter.push(reader.string());
+                        break;
+                    }
+                case 4: {
+                        message.confidenceThreshold = reader.float();
                         break;
                     }
                 default:
@@ -1009,6 +1043,16 @@ $root.ai = (function() {
                 if (error)
                     return "caps." + error;
             }
+            if (message.classesFilter != null && message.hasOwnProperty("classesFilter")) {
+                if (!Array.isArray(message.classesFilter))
+                    return "classesFilter: array expected";
+                for (var i = 0; i < message.classesFilter.length; ++i)
+                    if (!$util.isString(message.classesFilter[i]))
+                        return "classesFilter: string[] expected";
+            }
+            if (message.confidenceThreshold != null && message.hasOwnProperty("confidenceThreshold"))
+                if (typeof message.confidenceThreshold !== "number")
+                    return "confidenceThreshold: number expected";
             return null;
         };
 
@@ -1031,6 +1075,15 @@ $root.ai = (function() {
                     throw TypeError(".ai.Init.caps: object expected");
                 message.caps = $root.ai.Capabilities.fromObject(object.caps);
             }
+            if (object.classesFilter) {
+                if (!Array.isArray(object.classesFilter))
+                    throw TypeError(".ai.Init.classesFilter: array expected");
+                message.classesFilter = [];
+                for (var i = 0; i < object.classesFilter.length; ++i)
+                    message.classesFilter[i] = String(object.classesFilter[i]);
+            }
+            if (object.confidenceThreshold != null)
+                message.confidenceThreshold = Number(object.confidenceThreshold);
             return message;
         };
 
@@ -1047,14 +1100,24 @@ $root.ai = (function() {
             if (!options)
                 options = {};
             var object = {};
+            if (options.arrays || options.defaults)
+                object.classesFilter = [];
             if (options.defaults) {
                 object.model = "";
                 object.caps = null;
+                object.confidenceThreshold = 0;
             }
             if (message.model != null && message.hasOwnProperty("model"))
                 object.model = message.model;
             if (message.caps != null && message.hasOwnProperty("caps"))
                 object.caps = $root.ai.Capabilities.toObject(message.caps, options);
+            if (message.classesFilter && message.classesFilter.length) {
+                object.classesFilter = [];
+                for (var j = 0; j < message.classesFilter.length; ++j)
+                    object.classesFilter[j] = message.classesFilter[j];
+            }
+            if (message.confidenceThreshold != null && message.hasOwnProperty("confidenceThreshold"))
+                object.confidenceThreshold = options.json && !isFinite(message.confidenceThreshold) ? String(message.confidenceThreshold) : message.confidenceThreshold;
             return object;
         };
 

@@ -171,7 +171,7 @@ Output shape: ['batch', 300, 6]
 
 ### Test rápido:
 ```bash
-python test_detection.py
+python scripts/inspect_model.py
 ```
 
 Debería mostrar:
@@ -179,7 +179,6 @@ Debería mostrar:
 ✅ Modelo cargado correctamente
 Output shape: ['batch', 300, 6]
 NMS integrado: True
-✅ Inferencia exitosa
 ```
 
 ### Test con edge-agent:

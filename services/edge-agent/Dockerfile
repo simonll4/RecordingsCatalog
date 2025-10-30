@@ -1,9 +1,7 @@
 FROM node:20-alpine AS base
 WORKDIR /app
 
-# Instalar GStreamer, plugins y dependencias de sharp
-# NOTA: Si falla "gstreamer-tools", reemplazar por "gst-plugins-base-tools"
-# según versión de Alpine. Verificar con: apk search gst-
+# Instalar GStreamer, plugins y dependencias necesarias (incluye sharp/vips)
 RUN apk add --no-cache \
     gstreamer \
     gstreamer-tools \

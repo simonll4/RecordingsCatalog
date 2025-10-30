@@ -27,21 +27,25 @@ EOF
 )
 
 # Enviar al session-store
+CURL_ARGS="--max-time 5 --silent --show-error --fail"
+
 if [ -n "$HOOK_TOKEN" ]; then
   curl -X POST "$STORE_URL/hooks/mediamtx/publish" \
     -H "Content-Type: application/json" \
     -H "X-Hook-Token: $HOOK_TOKEN" \
     -d "$PAYLOAD" \
-    --max-time 5 \
-    --silent \
-    --show-error
+    $CURL_ARGS
 else
   curl -X POST "$STORE_URL/hooks/mediamtx/publish" \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD" \
-    --max-time 5 \
-    --silent \
-    --show-error
+    $CURL_ARGS
+fi
+
+status=$?
+if [ $status -ne 0 ]; then
+  echo "[publish.sh] ERROR: curl exit code $status" >&2
+  exit $status
 fi
 
 exit 0

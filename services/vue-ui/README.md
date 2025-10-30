@@ -4,8 +4,11 @@ Vue 3 + TypeScript application for viewing and managing recording sessions with 
 
 ## 📚 Documentation
 
-- **[Architecture Guide](./ARCHITECTURE.md)** - Detailed architecture and module documentation
-- **[Refactoring Guide](./REFACTORING_GUIDE.md)** - Guide for using the new modular structure
+- [Architecture](docs/ARCHITECTURE.md) – Visión general y módulos
+- [Visual Architecture](docs/VISUAL_ARCHITECTURE.md) – Diagrama visual
+- [Recording & Annotations](docs/recording-and-annotations.md) – Flujo de reproducción y overlays
+- [Quickstart](docs/QUICKSTART.md) – Puesta en marcha
+- [Operations](docs/OPERATIONS.md) – Config, variables y troubleshooting
 
 ## 🏗️ Architecture
 
@@ -132,7 +135,7 @@ const tracksStore = useTracksStore()
 await tracksStore.loadMeta('session-id')
 ```
 
-For more examples, see the [Refactoring Guide](./REFACTORING_GUIDE.md).
+Para ejemplos adicionales, ver los servicios en `src/api/services/` y las stores en `src/stores/`.
 
 ## 🔧 Development
 
@@ -148,11 +151,11 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed documentation on:
 
 ### Adding New Features
 
-1. **API Changes**: Update constants in `src/constants/api-endpoints.ts`
-2. **New Services**: Add to `src/api/services/`
-3. **Utilities**: Add to `src/utils/`
-4. **Composables**: Add to `src/composables/`
-5. **State**: Add stores to `src/stores/`
+1. API endpoints: `src/constants/api-endpoints.ts`
+2. Services: `src/api/services/`
+3. Utilities: `src/utils/`
+4. Composables: `src/composables/`
+5. State: `src/stores/`
 
 ## 📦 Build and Deploy
 

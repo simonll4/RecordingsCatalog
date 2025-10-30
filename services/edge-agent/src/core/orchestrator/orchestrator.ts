@@ -122,7 +122,7 @@ import { TimerManager } from "./timers.js";
  * Concrete implementations are injected from main.ts.
  */
 type Adapters = {
-  camera: CameraHub; // Video capture (V4L2/RTSP → SHM)
+  camera: CameraHub; // Video capture (RTSP → SHM)
   capture: any; // NV12 capture with setMode(idle|active) method
   ai: AIEngine; // AI detection engine (session correlation)
   publisher: Publisher; // RTSP streaming (SHM → MediaMTX)
@@ -158,7 +158,7 @@ export class Orchestrator {
    * Initialize Orchestrator
    *
    * Startup sequence:
-   * 1. Wait for camera hub to be ready (may take time for V4L2/RTSP source)
+   * 1. Wait for camera hub to be ready (may take time for RTSP source)
    * 2. Subscribe to all relevant bus events
    * 3. Enter IDLE state, ready to process detections
    *

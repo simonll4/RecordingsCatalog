@@ -34,7 +34,52 @@ export const listSessionsSchema = z.object({
   sessions: z.array(sessionSummarySchema),
 })
 
+// Track metadata (meta.json) produced by worker-ai SessionWriter
+export const trackMetaSchema = z.object({
+  session_id: z.string(),
+  device_id: z.string(),
+  start_time: z.string(),
+  end_time: z.string().nullable(),
+  frame_count: z.number(),
+  fps: z.number(),
+  path: z.string().nullish(),
+  video: z
+    .object({
+      width: z.number().nullable().default(null),
+      height: z.number().nullable().default(null),
+      fps: z.number().nullable().default(null),
+    })
+    .default({ width: null, height: null, fps: null }),
+  classes: z
+    .array(
+      z.object({
+        id: z.number(),
+        name: z.string(),
+      })
+    )
+    .default([]),
+})
+
+// Track index schema for index.json
+export const trackIndexSchema = z.object({
+  segment_duration_s: z.number(),
+  segments: z.array(
+    z.object({
+      i: z.number(),
+      t0: z.number(),
+      t1: z.number(),
+      url: z.string(),
+      count: z.number(),
+      closed: z.boolean().optional(),
+    })
+  ),
+  fps: z.number(),
+  duration_s: z.number(),
+})
+
 // Type exports
 export type SessionSummary = z.infer<typeof sessionSummarySchema>
 export type RangeSessions = z.infer<typeof rangeSessionsSchema>
 export type ListSessions = z.infer<typeof listSessionsSchema>
+export type TrackMeta = z.infer<typeof trackMetaSchema>
+export type TrackIndex = z.infer<typeof trackIndexSchema>

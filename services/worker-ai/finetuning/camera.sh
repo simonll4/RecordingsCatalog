@@ -10,7 +10,7 @@ OUT_ARG="${2:-}"
 
 # Configuration constants (easy to change). Can be overridden via env vars.
 # Duration in seconds to record (default 10)
-DURATION="${DURATION:-10}"
+DURATION="${DURATION:-20}"
 # Directory to place recordings (default recordings/)
 OUT_DIR="${OUT_DIR:-recordings}"
 

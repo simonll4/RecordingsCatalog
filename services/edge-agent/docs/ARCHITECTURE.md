@@ -23,10 +23,10 @@ src/
 │   ├── video/
 │   │   ├── ports/camera-hub.ts
 │   │   └── adapters/gstreamer/
-│   │       ├── camera-hub-gst.ts       # RTSP/V4L2 → I420 → SHM
+│   │       ├── camera-hub-gst.ts       # RTSP → I420 → SHM
 │   │       └── nv12-capture-gst.ts     # SHM → NV12/I420 frames
 │   ├── ai/
-│   │   ├── ports/ai-engine.ts          # Contrato de IA (setModel, setSessionId)
+│   │   ├── ports/ai-engine.ts          # Contrato de IA (setSessionId, closeSession)
 │   │   ├── client/ai-client-tcp.ts     # TCP + Protobuf (worker externo)
 │   │   ├── feeder/ai-feeder.ts         # Coordinación de frames + backpressure
 │   │   └── ingest/frame-ingester.ts    # POST /ingest al Session Store
@@ -86,43 +86,20 @@ Notas de timers:
 - DWELL: periodo fijo; no se resetea con nuevas detecciones.
 - ACTIVE: el timer de silencio se resetea solo con `ai.detection` relevante (no con `ai.keepalive`).
 
-## Flujo de Datos
-
-Video:
+## Flujo de Datos (resumen)
 
 - CameraHubGst publica I420 en SHM (`/dev/shm/...`).
-- NV12CaptureGst lee de SHM y entrega frames NV12/I420 al `AIFeeder`.
-- PublisherGst lee de SHM y publica RTSP a MediaMTX bajo demanda (ACTIVE/CLOSING).
+- NV12CaptureGst lee de SHM y entrega NV12/I420 al `AIFeeder`.
+- `AIFeeder` aplica ventana deslizante (LATEST_WINS) y envía frames vía `AIClientTcp`.
+- `main.ts` recibe `Result`, filtra por clases y publica `ai.detection/ai.keepalive`.
+- Con sesión activa, `SessionManager` + `FrameIngester` suben JPEG + metadatos al Session Store.
+- PublisherGst publica RTSP a MediaMTX (en ACTIVE/CLOSING).
 
-IA y Ingesta:
+## Configuración
+`services/edge-agent/config.toml` es la fuente de verdad. Claves relevantes: `[source]`, `[ai]`, `[mediamtx]`, `[fsm]`, `[store]`, `[logging]`.
 
-- `AIFeeder` aplica backpressure (ventana + latest-wins) y envía frames al worker vía `AIClientTcp`.
-- `main.ts` recibe resultados, filtra por clases configuradas y publica al Bus:
-  - `ai.detection` si hay clases relevantes
-  - `ai.keepalive` si no hay detecciones relevantes
-- Si existe `sessionId` activo, `main.ts` usa `FrameIngester` para enviar NV12 + detecciones al Session Store.
-
-## Configuración Principal
-
-Ver `config.toml` en el root del servicio. Secciones principales:
-
-- **video**: `source_kind`, `source_uri`, `width/height`, `fps_hub`, `socket_path`, `shm_size_mb`
-- **ai**: `worker_host/port`, `model_name`, `width/height`, `classes_filter`, `fps_idle/active`, `frame_cache_ttl_ms`
-- **fsm**: `dwell_ms`, `silence_ms`, `postroll_ms`
-- **mediamtx**: `host/port/path`
-- **store**: `base_url`, `batch_max`, `flush_interval_ms`
-- **logging**: `level` (debug|info|warn|error)
-
-## Desarrollo rápido
-
-```bash
-cd services/edge-agent
-npm install
-# Configurar level = "info" en config.toml (recomendado para desarrollo)
-npm run dev
-```
-
-## Protocolo v1
-
-- Implementación y detalles: [PROTOCOL_V1_IMPLEMENTATION.md](PROTOCOL_V1_IMPLEMENTATION.md)
-- Guía rápida de puesta en marcha: [PROTOCOL_V1_QUICKSTART.md](PROTOCOL_V1_QUICKSTART.md)
+## Referencias
+- Eventos: `docs/EVENTS.md`
+- Protocolo: `docs/PROTOCOL_V1.md`
+- Quickstart: `docs/QUICKSTART.md`
+- Operación: `docs/OPERATIONS.md`

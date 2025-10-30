@@ -9,7 +9,6 @@
 
 // Ports (interfaces)
 export * from "./ports/ai-engine.js";
-export * from "./ports/ai-client.js";
 
 // Implementaciones
 export * from "./client/ai-client-tcp.js";

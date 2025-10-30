@@ -1,13 +1,88 @@
-node_modules
+# Dependencies
+node_modules/
+services/**/node_modules/
+
+# Build output
+dist/
+services/**/dist/
+dist-ssr/
+
+# Logs
+logs/
+*.log
 npm-debug.log
-.DS_Store
-dist
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+services/edge-agent/logs/
+!services/edge-agent/logs/.gitkeep
+
+# Coverage artifacts
+coverage/
+.nyc_output/
+services/vue-ui/cypress/videos/
+services/vue-ui/cypress/screenshots/
+
+# Local environment
 .env
-services/**/node_modules
-services/**/dist
+.env.local
+.env.*.local
+*.local
+
+# Editor files
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*.swo
+*~
+*.tsbuildinfo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python artifacts (worker-ai)
+services/worker-ai/__pycache__/
+services/worker-ai/**/*.py[cod]
+services/worker-ai/**/*.so
+services/worker-ai/.Python
+
+# Virtual environments (worker-ai)
+services/worker-ai/venv/
+services/worker-ai/env/
+services/worker-ai/ENV/
+services/worker-ai/.venv/
+
+# Worker AI data
+services/worker-ai/**/*.onnx
+services/worker-ai/**/*.pt
+services/worker-ai/**/*.pth
+services/worker-ai/data/
+
+# Edge Agent generated files
+services/edge-agent/src/proto/ai_pb.js
+services/edge-agent/src/proto/ai_pb.d.ts
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Repo data assets
 data/recordings
 data/frames
 data/tracks
-# data/models  # Descomentar si no se quieren versionar modelos
+services/worker-ai/finetuning/dataset/
+services/worker-ai/finetuning/frames/
+services/worker-ai/finetuning/recordings/
+services/worker-ai/finetuning/label-studio/data/
+
 notas.txt
-finetuning

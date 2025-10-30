@@ -79,8 +79,7 @@
  *
  * Resolution Mismatch:
  *   - Log error but continue (frames may be rejected later)
- *   - Future enhancement: Reconfigure NV12 capture pipeline
- *   - See docs/FUTURE_FEATURES.md for implementation plan
+ *   - Futuro: Reconfigurar NV12 capture dinámicamente (no implementado)
  *
  * Invalid Policy:
  *   - Force LATEST_WINS (only supported policy)
@@ -106,6 +105,8 @@ export interface HandshakeConfig {
   height: number; // Target frame height (e.g., 480)
   maxInflight: number; // Max concurrent frames (window size, e.g., 4)
   preferredFormat: "NV12" | "I420"; // Preferred pixel format
+  classesFilter?: string[]; // Optional list of classes to filter
+  confidenceThreshold?: number; // Optional detection confidence threshold
 }
 
 /**
@@ -151,39 +152,55 @@ export function buildInitMessage(
   streamId: string,
   preferJpeg = false
 ): pb.ai.IEnvelope {
+  const classesFilter = Array.isArray(config.classesFilter)
+    ? config.classesFilter
+        .map((cls) => cls.trim())
+        .filter((cls) => cls.length > 0)
+    : [];
+
+  const initMessage: pb.ai.IInit = {
+    model: config.model,
+    caps: {
+      acceptedPixelFormats: [
+        pb.ai.PixelFormat.PF_NV12,
+        pb.ai.PixelFormat.PF_I420,
+      ],
+      // Prefer JPEG during degradation (smaller frames)
+      acceptedCodecs: preferJpeg
+        ? [
+            pb.ai.Codec.CODEC_JPEG, // Prefer JPEG
+            pb.ai.Codec.CODEC_NONE, // RAW fallback
+          ]
+        : [
+            pb.ai.Codec.CODEC_NONE, // Prefer RAW
+            pb.ai.Codec.CODEC_JPEG, // JPEG fallback
+          ],
+      maxWidth: config.width,
+      maxHeight: config.height,
+      maxInflight: config.maxInflight,
+      supportsLetterbox: true,
+      supportsNormalize: true,
+      preferredLayout: "NCHW",
+      preferredDtype: "FP32",
+      // NV12/I420 requires 1.5 bytes per pixel (Y + UV/2)
+      desiredMaxFrameBytes: Math.floor(config.width * config.height * 1.5),
+    },
+  };
+
+  if (classesFilter.length > 0) {
+    initMessage.classesFilter = classesFilter;
+  }
+
+  if (typeof config.confidenceThreshold === "number") {
+    initMessage.confidenceThreshold = config.confidenceThreshold;
+  }
+
   return {
     protocolVersion: 1,
     streamId: streamId,
     msgType: pb.ai.MsgType.MT_INIT,
     req: {
-      init: {
-        model: config.model,
-        caps: {
-          acceptedPixelFormats: [
-            pb.ai.PixelFormat.PF_NV12,
-            pb.ai.PixelFormat.PF_I420,
-          ],
-          // Prefer JPEG during degradation (smaller frames)
-          acceptedCodecs: preferJpeg
-            ? [
-                pb.ai.Codec.CODEC_JPEG, // Prefer JPEG
-                pb.ai.Codec.CODEC_NONE, // RAW fallback
-              ]
-            : [
-                pb.ai.Codec.CODEC_NONE, // Prefer RAW
-                pb.ai.Codec.CODEC_JPEG, // JPEG fallback
-              ],
-          maxWidth: config.width,
-          maxHeight: config.height,
-          maxInflight: config.maxInflight,
-          supportsLetterbox: true,
-          supportsNormalize: true,
-          preferredLayout: "NCHW",
-          preferredDtype: "FP32",
-          // NV12/I420 requires 1.5 bytes per pixel (Y + UV/2)
-          desiredMaxFrameBytes: Math.floor(config.width * config.height * 1.5),
-        },
-      },
+      init: initMessage,
     },
   };
 }
@@ -197,7 +214,7 @@ export function buildInitMessage(
  * Error Cases:
  *   - Missing chosen config → throws Error
  *   - Wrong policy → logs warning, continues with LATEST_WINS
- *   - Resolution mismatch → logs error, continues (see docs/FUTURE_FEATURES.md)
+ *   - Resolution mismatch → logs error, continúa (posible reconfiguración futura)
  *
  * @param initOk - InitOk message from worker
  * @param config - Original handshake config (for validation)
@@ -253,7 +270,7 @@ export function handleInitOk(
     //
     // Por ahora, continuamos con resolución configurada.
     // Si worker no puede procesar, disparará Error y activará degradación.
-    // Ver docs/FUTURE_FEATURES.md para plan de implementación completo.
+    // Nota: Reconfiguración dinámica de pipeline no implementada.
   }
 
   const maxFrameBytes = initOk.maxFrameBytes || 0;

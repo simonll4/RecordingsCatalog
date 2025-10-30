@@ -1,4 +1,5 @@
 """Gestión de sesiones de tracking con persistencia segmentada en JSON"""
+
 from __future__ import annotations
 
 import json
@@ -97,9 +98,7 @@ class SessionWriter:
         self.video_width: Optional[int] = None
         self.video_height: Optional[int] = None
 
-        self.device_id = (
-            session_id.split("_", 2)[1] if "_" in session_id else "unknown"
-        )
+        self.device_id = session_id.split("_", 2)[1] if "_" in session_id else "unknown"
 
         logger.info(
             "Sesión iniciada: %s -> %s (segmento=%.1fs)",
@@ -125,7 +124,7 @@ class SessionWriter:
         ts_utc_ns: Optional[int] = None,
     ) -> None:
         """Persiste tracks de un frame dentro del segmento correspondiente.
-        
+
         Args:
             tracks: Lista de tracks detectados
             frame_idx: ID del frame en el video (debe venir de payload.frame_id)
@@ -384,12 +383,16 @@ class SessionManager:
             raise ValueError(f"session_id inválido: {normalized}")
         return normalized
 
-    def start_session(self, session_id: str, fps: Optional[float] = None) -> SessionWriter:
+    def start_session(
+        self, session_id: str, fps: Optional[float] = None
+    ) -> SessionWriter:
         """Abre una nueva sesión (cerrando la previa si estaba activa)."""
         session_id = self.normalize_session_id(session_id)
 
         if session_id in self.active_sessions:
-            logger.warning("Sesión %s ya existía, cerrando instancia previa", session_id)
+            logger.warning(
+                "Sesión %s ya existía, cerrando instancia previa", session_id
+            )
             self.end_session(session_id)
 
         effective_fps = fps or self.default_fps

@@ -45,5 +45,4 @@ Anota frames usando datos de tracking almacenados en archivos JSON.
 
 - **`../EXPORTAR_MODELOS.md`** - Guía completa de exportación de modelos
 - **`../QUICKSTART.md`** - Inicio rápido del worker
-- **`../test_detection.py`** - Test de inferencia YOLO
-- **`../inspect_model.py`** - Inspeccionar formato de modelos ONNX
+- **`./inspect_model.py`** - Inspeccionar formato de modelos ONNX

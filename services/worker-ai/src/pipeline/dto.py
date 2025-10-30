@@ -1,4 +1,5 @@
 """Data Transfer Objects para el pipeline de procesamiento"""
+
 from dataclasses import dataclass
 from typing import Optional, List, Tuple
 import numpy as np
@@ -7,12 +8,14 @@ import numpy as np
 @dataclass
 class InitRequest:
     """Solicitud de inicialización del modelo"""
+
     model_path: str
 
 
 @dataclass
 class FramePayload:
     """Payload de un frame a procesar"""
+
     session_id: Optional[str]
     frame_id: int
     codec: int
@@ -27,6 +30,7 @@ class FramePayload:
 @dataclass
 class Detection:
     """Una detección individual"""
+
     x1: float
     y1: float
     x2: float
@@ -39,6 +43,7 @@ class Detection:
 @dataclass
 class FrameResult:
     """Resultado del procesamiento de un frame"""
+
     frame_id: int
     session_id: str
     detections: List[Detection]

@@ -202,9 +202,6 @@ export class SessionStoreHttp implements SessionStore {
    * Updates session in store with end timestamp and post-roll duration.
    * Called by Orchestrator when FSM returns to IDLE state.
    *
-   * Flushes any pending detections before closing.
-   * Removes batcher for this session.
-   *
    * @param sessionId - Session to close
    * @param endTs - Optional end timestamp (default: current time)
    * @returns Promise<void>

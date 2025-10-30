@@ -29,7 +29,7 @@ Ver [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para detalles completos.
 
 ## 🚀 Inicio Rápido
 
-**Lee esto primero**: [`QUICKSTART.md`](QUICKSTART.md) - Guía rápida completa
+**Lee esto primero**: [`QUICKSTART.md`](docs/QUICKSTART.md) - Guía rápida completa
 
 ### Prerequisitos
 
@@ -48,7 +48,7 @@ mamba activate worker-ai
 python scripts/export_yolo11s_to_onnx.py
 
 # Verificar que el modelo está disponible
-ls -lh data/models/yolo11s.onnx
+ls -lh ../../data/models/yolo11s.onnx
 
 # Ejecutar
 python worker.py
@@ -60,11 +60,8 @@ python worker.py
 ### Verificación Rápida
 
 ```bash
-# Test del modelo YOLO
-python test_detection.py
-
-# Inspeccionar modelo
-python inspect_model.py
+# Inspeccionar el modelo ONNX (formato, clases, NMS integrado)
+python scripts/inspect_model.py
 ```
 
 El worker escuchará en `0.0.0.0:7001` por defecto.
@@ -116,6 +113,7 @@ worker-ai/
 │   ├── session/          # Persistencia JSON
 │   └── visualization/    # OpenCV viewer
 ├── docs/                 # Documentación completa
+├── finetuning/           # Recursos opcionales para fine-tuning
 └── data/tracks/          # Salida de sesiones
 ```
 
@@ -151,7 +149,9 @@ data/tracks/
 
 ### Protocolos Soportados
 
-- **Init**: Carga modelo YOLO11
+- **Init**: Carga modelo YOLO11 y aplica parámetros enviados por el edge-agent:
+  - `classes_filter`: lista de clases (por nombre COCO) a habilitar
+  - `confidence_threshold`: umbral mínimo de confianza (0-1)
 - **Frame**: Procesa frame (JPEG, NV12, I420)
 - **End**: Finaliza sesión
 - **Heartbeat**: Keepalive durante carga de modelo
@@ -171,14 +171,14 @@ docker run -p 7001:7001 -v $(pwd)/data:/data worker-ai
 ### Guías de Usuario
 - **[QUICKSTART.md](QUICKSTART.md)** - ⭐ Inicio rápido (lee esto primero)
 - **[EXPORTAR_MODELOS.md](EXPORTAR_MODELOS.md)** - Exportar modelos YOLO a ONNX
-- **[REORGANIZATION_NOTES.md](REORGANIZATION_NOTES.md)** - Cambios y mejoras aplicadas
+- Cambios y mejoras aplicadas → ver historial en Git
 - **[FIX_NMS_INTEGRADO.md](FIX_NMS_INTEGRADO.md)** - Explicación del fix de NMS
 
 ### Documentación Técnica
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) - Arquitectura detallada
 - [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) - Guía de testing
-- [REFACTORING_SUMMARY.md](docs/REFACTORING_SUMMARY.md) - Historial de refactoring
-- [examples.md](docs/examples.md) - Ejemplos de uso
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - Arquitectura detallada
+- [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) - Guía de testing
 
 ## 🛠️ Scripts Útiles
 
@@ -186,11 +186,8 @@ docker run -p 7001:7001 -v $(pwd)/data:/data worker-ai
 # Exportar modelo YOLO a ONNX
 python scripts/export_yolo_to_onnx.py --weights yolo11s.pt --nms
 
-# Test de inferencia
-python test_detection.py
-
 # Inspeccionar modelo ONNX
-python inspect_model.py
+python scripts/inspect_model.py
 
 # Anotar frames desde JSON
 python scripts/annotate_from_json.py

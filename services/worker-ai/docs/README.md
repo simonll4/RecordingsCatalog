@@ -4,7 +4,6 @@
 
 ### Arquitectura y Diseño
 
-- **[REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md)** - Resumen completo de la refactorización
   - Objetivos y cambios implementados
   - Estructura de módulos creados
   - Métricas de mejora (531 → 48 líneas en worker_new.py)
@@ -37,7 +36,7 @@
 
 ### Ejemplos y Uso
 
-- **[examples.md](examples.md)** - Ejemplos de uso
+<!-- Se simplificó la documentación: ver ARCHITECTURE y TESTING_GUIDE -->
   - Casos de uso comunes
   - Ejemplos de configuración
   - Integración con edge-agent
@@ -50,9 +49,9 @@
 
 ## 🚀 Inicio Rápido
 
-1. Lee [REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md) para entender la arquitectura
+1. Lee [ARCHITECTURE.md](ARCHITECTURE.md) para entender la arquitectura
 2. Consulta [TESTING_GUIDE.md](TESTING_GUIDE.md) para ejecutar y verificar
-3. Revisa [examples.md](examples.md) para casos de uso
+3. (Opcional) Revisa [examples.md](examples.md) para casos de uso
 
 ## 📖 Navegación por Tema
 
@@ -67,6 +66,5 @@
 - Artefactos → [artefactos-del-worker.md](artefactos-del-worker.md)
 
 ### Para Mantenedores
-- Refactorización → [REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md)
 - Arquitectura → [ARCHITECTURE.md](ARCHITECTURE.md)
 - Testing → [TESTING_GUIDE.md](TESTING_GUIDE.md)

@@ -1,4 +1,5 @@
 """Procesador de pipeline - Orquesta decode → inferencia → tracking → persistencia"""
+
 from typing import Optional, List
 import numpy as np
 
@@ -14,14 +15,14 @@ logger = setup_logger("pipeline.processor")
 
 class FrameProcessor:
     """Orquesta el procesamiento completo de frames"""
-    
+
     def __init__(
         self,
         decoder: FrameDecoder,
         model_manager: ModelManager,
         tracking_service: TrackingService,
         session_service: SessionService,
-        class_filter_ids: Optional[List[int]] = None
+        class_filter_ids: Optional[List[int]] = None,
     ):
         """
         Args:
@@ -36,69 +37,83 @@ class FrameProcessor:
         self.tracking_service = tracking_service
         self.session_service = session_service
         self.class_filter_ids = class_filter_ids
-        
+
         self.current_model_path: Optional[str] = None
         self.frame_idx = 0
-    
+
+    def set_class_filter(self, class_ids: Optional[List[int]]):
+        """
+        Actualiza el filtro de clases activo
+
+        Args:
+            class_ids: Lista de IDs de clases a permitir o None para todas
+        """
+        if class_ids is not None and len(class_ids) == 0:
+            class_ids = None
+        self.class_filter_ids = class_ids
+        if class_ids:
+            logger.info(f"Filtro de clases actualizado: {class_ids}")
+        else:
+            logger.info("Filtro de clases deshabilitado (todas las clases)")
+
     def process_frame(self, payload: FramePayload) -> Optional[FrameResult]:
         """
         Procesa un frame completo: decode → inferencia → tracking → persistencia
-        
+
         Args:
             payload: Datos del frame a procesar
-            
+
         Returns:
             FrameResult con detecciones o None si hay error
         """
         # 1. Gestionar sesión
         session_changed = self._manage_session(payload.session_id)
-        
+
         # 2. Decodificar frame
         img = self.decoder.decode(
             payload.data,
             payload.codec,
             payload.pixel_format,
             payload.width,
-            payload.height
+            payload.height,
         )
-        
+
         if img is None:
             logger.error("Fallo en decodificación de frame")
             return None
-        
+
         img_h, img_w = img.shape[:2]
-        
+
         # 3. Inferencia
         if self.current_model_path is None:
             logger.error("No hay modelo cargado para inferencia")
             return None
-        
+
         try:
             detections = self.model_manager.infer(
-                self.current_model_path,
-                img,
-                classes_filter=self.class_filter_ids
+                self.current_model_path, img, classes_filter=self.class_filter_ids
             )
-            
+
             # Log informativo cuando hay detecciones
             if detections:
-                logger.info(f"Detecciones: {len(detections)} objetos - {', '.join(set(d.class_name for d in detections))}")
-            
+                logger.info(
+                    f"Detecciones: {len(detections)} objetos - {', '.join(set(d.class_name for d in detections))}"
+                )
+
         except Exception as e:
             logger.error(f"Error en inferencia: {e}")
             return None
-        
+
         # 4. Tracking (solo si hay sesión activa)
         tracking_active = (
-            self.tracking_service.enabled and 
-            self.session_service.is_active()
+            self.tracking_service.enabled and self.session_service.is_active()
         )
-        
+
         if tracking_active:
             tracks = self.tracking_service.update(detections)
         else:
             tracks = []
-        
+
         # 5. Persistencia (solo si hay tracks)
         if tracking_active and tracks:
             self.session_service.append(
@@ -109,62 +124,66 @@ class FrameProcessor:
                 ts_mono_ns=payload.ts_mono_ns,
                 ts_utc_ns=payload.ts_utc_ns,
             )
-        
+
         # 6. Construir resultado
         result_detections = []
-        
+
         if tracking_active:
             # Usar tracks
             for track in tracks:
                 x1, y1, x2, y2 = track.bbox
-                result_detections.append(Detection(
-                    x1=x1,
-                    y1=y1,
-                    x2=x2,
-                    y2=y2,
-                    confidence=track.confidence,
-                    class_name=track.class_name,
-                    track_id=str(track.track_id)
-                ))
+                result_detections.append(
+                    Detection(
+                        x1=x1,
+                        y1=y1,
+                        x2=x2,
+                        y2=y2,
+                        confidence=track.confidence,
+                        class_name=track.class_name,
+                        track_id=str(track.track_id),
+                    )
+                )
         else:
             # Usar detecciones directas
             for idx, det in enumerate(detections):
                 x1, y1, x2, y2 = det.bbox
-                result_detections.append(Detection(
-                    x1=x1,
-                    y1=y1,
-                    x2=x2,
-                    y2=y2,
-                    confidence=det.confidence,
-                    class_name=det.class_name,
-                    track_id=f"det-{payload.frame_id}-{idx}"
-                ))
-        
+                result_detections.append(
+                    Detection(
+                        x1=x1,
+                        y1=y1,
+                        x2=x2,
+                        y2=y2,
+                        confidence=det.confidence,
+                        class_name=det.class_name,
+                        track_id=f"det-{payload.frame_id}-{idx}",
+                    )
+                )
+
         self.frame_idx += 1
-        
+
         return FrameResult(
             frame_id=payload.frame_id,
             session_id=payload.session_id or "",
             detections=result_detections,
             frame_width=img_w,
             frame_height=img_h,
-            tracking_active=tracking_active
+            tracking_active=tracking_active,
         )
-    
+
     def _manage_session(self, session_id: Optional[str]) -> bool:
         """
         Gestiona el estado de la sesión
-        
+
         Args:
             session_id: ID de sesión del frame (puede ser None)
-            
+
         Returns:
             True si cambió la sesión, False en caso contrario
         """
         # Normalizar session_id
         trimmed_session = (session_id or "").strip()
         normalized_session = trimmed_session if trimmed_session else None
-        
+
         # Si no hay session_id, cerrar sesión activa
         if normalized_session is None:
             if self.session_service.is_active():
@@ -174,7 +193,7 @@ class FrameProcessor:
                 self.frame_idx = 0
                 return True
             return False
-        
+
         # Si cambió la sesión, cerrar la anterior
         current = self.session_service.get_current_session_id()
         if current and current != normalized_session:
@@ -182,7 +201,7 @@ class FrameProcessor:
             self.session_service.end()
             self.tracking_service.reset()
             self.frame_idx = 0
-        
+
         # Si no hay sesión activa y no es una recién cerrada, iniciar nueva
         if not self.session_service.is_active():
             if not self.session_service.was_recently_closed(normalized_session):
@@ -194,33 +213,35 @@ class FrameProcessor:
                     logger.error(f"No se pudo iniciar sesión: {normalized_session}")
             else:
                 logger.debug(f"Frame para sesión recién cerrada: {normalized_session}")
-        
+
         return False
-    
+
     def set_model(self, model_path: str):
         """
         Establece el modelo activo para inferencia
-        
+
         Args:
             model_path: Ruta al modelo
         """
         self.current_model_path = model_path
         logger.info(f"Modelo activo establecido: {model_path}")
-    
+
     def end_session(self):
         """Finaliza la sesión activa"""
         if self.session_service.is_active():
             self.session_service.end()
             self.tracking_service.reset()
             self.frame_idx = 0
-    
-    def get_image_for_visualization(self, payload: FramePayload) -> Optional[np.ndarray]:
+
+    def get_image_for_visualization(
+        self, payload: FramePayload
+    ) -> Optional[np.ndarray]:
         """
         Decodifica un frame para visualización
-        
+
         Args:
             payload: Datos del frame
-            
+
         Returns:
             Imagen BGR o None si falla
         """
@@ -229,5 +250,5 @@ class FrameProcessor:
             payload.codec,
             payload.pixel_format,
             payload.width,
-            payload.height
+            payload.height,
         )

@@ -20,7 +20,7 @@
  * 3. Frame + Detection Ingestion
  *    - Retrieves original NV12 frames from cache by frameId
  *    - Combines frame data with detection metadata
- *    - Uploads to session-store via FrameIngester (handles batching/retries)
+ *    - Uploads to session-store via FrameIngester (con reintentos automáticos)
  *
  * Integration:
  * ===========

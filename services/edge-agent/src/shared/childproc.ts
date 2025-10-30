@@ -25,7 +25,7 @@
  * GStreamer-Aware Filtering
  *   - Filters out known non-critical GStreamer warnings
  *   - Prevents log spam from expected edge cases
- *   - Examples: V4L2 crop failures, SHM client disconnect, etc.
+ *   - Examples: legacy driver warnings, SHM client disconnect, etc.
  *
  * Signal Handling
  *   - Graceful shutdown with SIGINT first (clean pipeline teardown)
@@ -44,7 +44,14 @@
  * const proc = spawnProcess({
  *   module: "camera-hub",
  *   command: "gst-launch-1.0",
- *   args: ["v4l2src", "!", "videoconvert", "!", "shmsink"],
+ *   args: [
+ *     "rtspsrc", "location=rtsp://camera/stream", "latency=200",
+ *     "!", "rtph264depay",
+ *     "!", "h264parse",
+ *     "!", "avdec_h264",
+ *     "!", "videoconvert",
+ *     "!", "shmsink", "socket-path=/dev/shm/cam.sock"
+ *   ],
  *   env: { GST_DEBUG: "2" },
  *   onExit: (code, signal) => {
  *     if (code !== 0) {
@@ -62,10 +69,10 @@
  *
  * These warnings appear frequently but are not actionable:
  *
- * - VIDIOC_S_CROP failed: V4L2 crop not supported (harmless)
- * - Failed to get default compose region: V4L2 compose not available
- * - VIDIOC_G_SELECTION: V4L2 selection API not supported
- * - Uncertain or not enough buffers: V4L2 buffer pool warning
+ * - VIDIOC_S_CROP failed: Mensajes heredados de drivers V4L2 (inofensivos)
+ * - Failed to get default compose region: Avisos de drivers V4L2 legacy
+ * - VIDIOC_G_SELECTION: API V4L2 no soportada (no afecta RTSP)
+ * - Uncertain or not enough buffers: Advertencia de pool de buffers
  * - lost frames detected: Occasional frame drops (expected under load)
  * - One client is gone, closing: SHM client disconnected (normal)
  * - Passing event: RTSP internal events (noise)
@@ -187,10 +194,10 @@ export function spawnProcess(opts: SpawnOptions): ChildProcess {
       lines.forEach((line: string) => {
         // Filtrar warnings conocidos de GStreamer que no son críticos
         const ignoredWarnings = [
-          "VIDIOC_S_CROP failed", // V4L2 crop no soportado
-          "Failed to get default compose region", // V4L2 compose region
-          "VIDIOC_G_SELECTION", // V4L2 selection no soportado
-          "Uncertain or not enough buffers", // V4L2 buffer pool
+          "VIDIOC_S_CROP failed", // Mensaje legacy de drivers V4L2
+          "Failed to get default compose region", // Aviso legacy de drivers V4L2
+          "VIDIOC_G_SELECTION", // Aviso legacy de drivers V4L2
+          "Uncertain or not enough buffers", // Advertencia genérica de buffers
           "lost frames detected", // Frames perdidos ocasionales
           "One client is gone, closing", // SHM cliente desconectado (esperado)
           "Passing event", // RTSP stream eventos internos
