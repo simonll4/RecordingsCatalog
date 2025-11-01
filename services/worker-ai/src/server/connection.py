@@ -12,12 +12,10 @@ from ..pipeline.processor import FrameProcessor
 from ..transport.framing import FrameReader, FrameWriter
 from ..transport.protobuf_codec import ProtobufCodec
 from ..visualization.viewer import Visualizer
-from ..inference.yolo11 import COCO_CLASSES
 from .heartbeat import HeartbeatTask
 from .model_loader import ModelLoadJob
 
 logger = setup_logger("server.connection")
-COCO_NAME_TO_ID = {name.lower(): idx for idx, name in enumerate(COCO_CLASSES)}
 
 
 class ConnectionHandler:
@@ -29,7 +27,8 @@ class ConnectionHandler:
         writer: asyncio.StreamWriter,
         config: RuntimeConfig,
         processor: FrameProcessor,
-        visualizer: Optional[Visualizer],
+    visualizer: Optional[Visualizer],
+    class_catalog: List[str],
     ):
         """
         Args:
@@ -38,11 +37,16 @@ class ConnectionHandler:
             config: Configuración runtime
             processor: Procesador de pipeline
             visualizer: Visualizador (opcional)
+            class_catalog: Catálogo de clases disponible (ordenado)
         """
         self.config = config
         self.processor = processor
         self.visualizer = visualizer
         self.class_filter_override: Optional[List[int]] = None
+        self.class_catalog = class_catalog
+        self.class_name_to_id = {
+            name.lower(): idx for idx, name in enumerate(self.class_catalog)
+        }
 
         # Transporte
         self.frame_reader = FrameReader(reader, max_size=config.max_frame_size)
@@ -143,12 +147,12 @@ class ConnectionHandler:
             if not normalized or normalized in seen:
                 continue
             seen.add(normalized)
-            class_id = COCO_NAME_TO_ID.get(normalized)
+            class_id = self.class_name_to_id.get(normalized)
             if class_id is None:
                 unknown.append(raw_name)
                 continue
             class_ids.append(class_id)
-            resolved_names.append(COCO_CLASSES[class_id])
+            resolved_names.append(self.class_catalog[class_id])
 
         return class_ids, resolved_names, unknown
 
@@ -381,6 +385,8 @@ class ConnectionHandler:
             logger.info(f"[DEBUG] Escribiendo InitOk al socket")
             await self.frame_writer.write_frame(data)
             logger.info(f"[DEBUG] InitOk enviado exitosamente")
+        except (BrokenPipeError, ConnectionResetError) as e:
+            logger.info("Cliente cerró la conexión al enviar InitOk: %s", e)
         except Exception as e:
             logger.error(f"[DEBUG] Error enviando InitOk: {e}", exc_info=True)
 
@@ -389,6 +395,8 @@ class ConnectionHandler:
         try:
             data = self.codec.encode_result(detections, frame_id, session_id)
             await self.frame_writer.write_frame(data)
+        except (BrokenPipeError, ConnectionResetError) as e:
+            logger.info("Cliente cerró la conexión al enviar resultado: %s", e)
         except Exception as e:
             logger.error(f"Error enviando resultado: {e}")
 
@@ -397,6 +405,8 @@ class ConnectionHandler:
         try:
             data = self.codec.encode_error(error_code, message)
             await self.frame_writer.write_frame(data)
+        except (BrokenPipeError, ConnectionResetError) as e:
+            logger.info("Cliente cerró la conexión antes de recibir error: %s", e)
         except Exception as e:
             logger.error(f"Error enviando error: {e}")
 
@@ -405,6 +415,8 @@ class ConnectionHandler:
         try:
             data = self.codec.encode_heartbeat()
             await self.frame_writer.write_frame(data)
+        except (BrokenPipeError, ConnectionResetError) as e:
+            logger.info("Cliente cerró la conexión antes de recibir heartbeat: %s", e)
         except Exception as e:
             logger.error(f"Error enviando heartbeat: {e}")
 
@@ -422,7 +434,19 @@ class ConnectionHandler:
         self.processor.end_session()
 
         # Cerrar conexión
-        self.frame_writer.close()
-        await self.frame_writer.wait_closed()
+        try:
+            self.frame_writer.close()
+        except Exception as err:
+            logger.debug("Error cerrando writer: %s", err)
+
+        try:
+            await self.frame_writer.wait_closed()
+        except (BrokenPipeError, ConnectionResetError) as err:
+            logger.info(
+                "Conexión cerrada por el cliente (%s), ignorando broken pipe",
+                err,
+            )
+        except Exception as err:
+            logger.warning("Error esperando cierre del writer: %s", err)
 
         logger.info(f"Cliente desconectado: {self.peer}")

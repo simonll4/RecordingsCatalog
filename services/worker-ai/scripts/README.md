@@ -12,7 +12,7 @@ Descarga automáticamente `yolo11s.pt` y lo exporta a ONNX (con NMS integrado po
 python scripts/export_yolo11s_to_onnx.py
 ```
 
-Genera `data/models/yolo11s.onnx`, listo para el worker.
+Genera `../models/yolo11s.onnx`, listo para el worker (montado como `/models` en Docker).
 
 ---
 

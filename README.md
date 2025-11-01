@@ -24,10 +24,11 @@ Sistema edge de detección y grabación automática de eventos mediante IA, con 
 ### Servicios
 
 - **edge-agent**: Captura video, ejecuta detección IA y controla grabaciones mediante FSM
+- **manager (dentro de edge-agent)**: expone API para estado/control (`/status`, `/control/*`, `/config/classes*`)
 - **worker-ai**: Worker de inferencia YOLO (ONNX Runtime) con protocolo TCP custom
 - **mediamtx**: Servidor RTSP/WebRTC para streaming en vivo e ingesta de grabaciones
 - **session-store**: API REST para gestión de sesiones y detecciones + PostgreSQL
-- **vue-ui**: Interfaz web para explorar grabaciones
+- **vue-ui**: Interfaz web para explorar grabaciones, ver live y controlar el agente
 - **postgres**: Base de datos para metadatos de sesiones
 
 ##  Despliegue Rápido
@@ -36,7 +37,7 @@ Sistema edge de detección y grabación automática de eventos mediante IA, con 
 
 - Docker + Docker Compose
 - Cámara USB/V4L2 o stream RTSP (opcional para testing)
-- Modelo YOLO ONNX en `data/models/yolo11s.onnx`
+- Modelo YOLO ONNX en `services/worker-ai/models/yolo11s.onnx` (montado como `/models` en el contenedor del worker)
 
 ### Levantar Sistema Completo
 
@@ -55,6 +56,7 @@ http://localhost:3000
 ```
 - Explorador de sesiones grabadas: `/`
 - Streaming en vivo (WebRTC): `/live`
+- Control del agente (start/stop + clases): `/control`
 
 ##  Configuración
 
@@ -130,15 +132,16 @@ url = "postgres://postgres:postgres@postgres:5432/session_store"
 playback_base_url = "http://mediamtx:9996"
 ```
 
-### Vue UI (`services/vue-ui/config.toml`)
+### Vue UI (variables de entorno)
 
-```toml
-[server]
-port = 3000
+Crear un `.env` (o variables del contenedor):
 
-[backend]
-session_store_url = "http://session-store:8080"
-mediamtx_url = "http://mediamtx:9996"
+```env
+VITE_SESSION_STORE_BASE_URL=http://session-store:8080
+VITE_MEDIAMTX_BASE_URL=http://mediamtx:9996
+VITE_WEBRTC_BASE_URL=http://mediamtx:8889
+VITE_EDGE_AGENT_BASE_URL=http://edge-agent:7080
+VITE_LIVE_STREAM_PATH=cam-local-live
 ```
 
 ## 🛠️ Desarrollo
@@ -198,9 +201,9 @@ tpfinal-v3/
 │   │   ├── src/
 │   │   └── Dockerfile
 │   ├── vue-ui/
-│   │   ├── config.toml        # ← Configuración
-│   │   ├── server.js
-│   │   └── public/
+│   │   ├── src/               # Código de la app Vite
+│   │   ├── dist/              # Build de producción (en contenedor)
+│   │   └── Dockerfile
 │   └── mediamtx/
 │       └── mediamtx.yml       # Configuración MediaMTX
 ├── scripts/
@@ -218,7 +221,7 @@ tpfinal-v3/
 - **FSM inteligente** - Grabación automática por detecciones
 - **Worker AI escalable** - Protocolo TCP con control de backpressure
 - **Streaming NV12** - Procesamiento eficiente sin re-encoding
-- **Streaming en vivo** - Flujo WebRTC (WHEP) con auto-conexión y estado del edge-agent visible desde la UI (`/live`)
+- **Streaming en vivo** - Flujo WebRTC (WHEP) con auto-conexión y estado/control del agente desde la UI (`/live`, `/control`)
 - **Playback on-demand** - MediaMTX API para recuperar grabaciones
 - **UI responsive** - Exploración temporal de sesiones
 - **PostgreSQL** - Metadatos de sesiones y detecciones
@@ -256,14 +259,14 @@ Exportar el modelo ONNX por defecto:
 
 ```bash
 python services/worker-ai/scripts/export_yolo11s_to_onnx.py
-# El modelo queda en data/models/yolo11s.onnx
+# El modelo queda en services/worker-ai/models/yolo11s.onnx (en contenedor: /models/yolo11s.onnx)
 ```
 
 ## Troubleshooting
 
 **Edge-agent no arranca**: Verificar que existe `/dev/video0` o configurar RTSP
 
-**Worker-ai timeout**: Verificar que existe el modelo en `/models/yolo11s.onnx`
+**Worker-ai timeout**: Verificar que existe el modelo en `/models/yolo11s.onnx` dentro del contenedor (mapeado desde `services/worker-ai/models`)
 
 **No se reproducen videos**: Verificar que MediaMTX tiene acceso a `/recordings`
 

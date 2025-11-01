@@ -12,6 +12,13 @@ bind_port = 7001
 # Timeout de inactividad en segundos (cierra conexión si no hay actividad)
 idle_timeout_sec = 60
 
+# Configuración del modelo y la inferencia
+[model]
+conf_threshold = 0.5
+nms_iou = 0.6
+class_catalog_path = "/models/class_catalog.json"
+classes = []
+
 ## Se eliminan secciones de modelo/bootstrap (no usadas en worker_new)
 
 # Configuración de visualización (debugging)

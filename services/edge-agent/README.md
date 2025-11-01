@@ -130,11 +130,11 @@ shm_size_mb = 50
 [ai]
 worker_host = "localhost"  # Cambiar a "worker-ai" cuando el agente corra en Docker
 worker_port = 7001
-model_name = "/models/yolo11s.onnx"
+model_name = "/models/yolo11s-custom.onnx"
 umbral = 0.5
 width = 640
 height = 640
-classes_filter = "person"  # Clases COCO, separadas por comas
+classes_filter = "backpack,bottle,cup,person,shoes"  # Clases del catálogo, separadas por comas
 fps_idle = 5
 fps_active = 12
 
@@ -161,8 +161,11 @@ base_url = "http://localhost:8080"
 - `width/height` deben ser pares para I420
 - I420 frame bytes ≈ `W*H*1.5`
 - SHM recomendado: `~50*frameBytes` en MB
-- `classes_filter`: Clases COCO válidas (80 clases disponibles, ver config.toml)
-- `status.port`: Puerto HTTP (por defecto 7080) para exponer `/status` y permitir que la UI consulte el estado del agente
+- `classes_filter`: Debe coincidir con los nombres definidos en `class_catalog.json`. Puede sobreescribirse en caliente con `runtime-overrides.json` (creado por el manager) o mediante la variable `EDGE_AGENT_CLASSES_FILTER` cuando se ejecuta el runtime sin supervisor.
+- `status.port`: Puerto HTTP (por defecto 7080) donde escucha el manager. El runtime interno expone `/status` en `status.port + 1` (7081 por defecto).
+- Overrides rápidos:
+  - `EDGE_AGENT_STATUS_PORT`: redefine el puerto que usa el runtime cuando corre standalone
+  - `EDGE_AGENT_CHILD_STATUS_PORT`: redefine el puerto que el manager reserva para el runtime (fallback `status.port + 1`)
 - **Hostnames según entorno**:
   - **Docker Compose**: usar nombres de servicios (`mediamtx`, `session-store`, `worker-ai`)
   - **Desarrollo local**: usar `localhost` o la IP del servicio externo
@@ -176,7 +179,8 @@ Local (dev):
 ```bash
 cd services/edge-agent
 npm install
-npm run dev
+npm run dev          # Manager + runtime con recarga (ts-node-dev)
+npm run dev:agent    # Ejecuta el runtime clásico directamente (sin supervisor)
 ```
 
 Producción (local):
@@ -193,6 +197,19 @@ Docker Compose (stack completo):
 docker compose up -d postgres mediamtx session-store
 docker compose --profile edge up --build edge-agent
 ```
+
+### Manager HTTP API
+
+- `GET http://localhost:7080/status` → snapshot combinado (`manager` + `agent`)
+- `POST http://localhost:7080/control/start` → inicia el runtime (202)
+- `POST http://localhost:7080/control/stop` → detiene el runtime (202)
+- `GET http://localhost:7080/config/classes` → override actual, clases efectivas y defaults
+- `PUT http://localhost:7080/config/classes` → `{ "classes": ["person", "car"] }` guarda override
+- `GET http://localhost:7080/config/classes/catalog` → catálogo de clases expuesto en la UI
+
+El manager persiste el override en `runtime-overrides.json` (en el root del servicio) y lo inyecta como variable al runtime durante el arranque.
+
+**Nota:** Por defecto el supervisor _no_ inicia el agente automáticamente (`EDGE_AGENT_AUTOSTART=false`). Usá la pantalla *Control* o `POST /control/start` para lanzarlo; definí `EDGE_AGENT_AUTOSTART=true` si querés la semántica anterior.
 
 Ver stream:
 

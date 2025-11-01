@@ -73,7 +73,7 @@ services:
   #     TZ: UTC
   #   volumes:
   #     - ./services/worker-ai/data/tracks:/data/tracks  # Tracks persistidos
-  #     - ./data/models:/models:ro
+  #     - ./services/worker-ai/models:/models:ro        # Modelos ONNX
   #     - /etc/timezone:/etc/timezone:ro
   #     - /etc/localtime:/etc/localtime:ro
   #   healthcheck:

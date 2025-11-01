@@ -13,7 +13,12 @@ logger = setup_logger("pipeline.model_manager")
 class ModelManager:
     """Administra instancias de modelos YOLO11 con pooling"""
 
-    def __init__(self, conf_threshold: float = 0.5, nms_iou: float = 0.6):
+    def __init__(
+        self,
+        conf_threshold: float = 0.5,
+        nms_iou: float = 0.6,
+        class_names: Optional[List[str]] = None,
+    ):
         """
         Args:
             conf_threshold: Umbral de confianza por defecto
@@ -21,6 +26,7 @@ class ModelManager:
         """
         self.conf_threshold = conf_threshold
         self.nms_iou = nms_iou
+        self.class_names = class_names
         self._models: Dict[str, YOLO11Model] = {}
         self._loading_tasks: Dict[str, asyncio.Task] = {}
 
@@ -64,7 +70,9 @@ class ModelManager:
     async def _load_model(self, model_path: str) -> YOLO11Model:
         """Carga el modelo en un thread separado"""
         try:
-            model = await asyncio.to_thread(YOLO11Model, model_path)
+            model = await asyncio.to_thread(
+                YOLO11Model, model_path, self.class_names
+            )
             logger.info(f"Modelo cargado exitosamente: {model_path}")
             return model
         except Exception as e:

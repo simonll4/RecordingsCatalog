@@ -25,6 +25,11 @@ const router = createRouter({
       name: 'live',
       component: () => import('../views/Live.vue'),
     },
+    {
+      path: '/control',
+      name: 'control',
+      component: () => import('../views/Control.vue'),
+    },
   ],
   scrollBehavior() {
     return { top: 0 }

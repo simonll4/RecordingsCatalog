@@ -92,7 +92,7 @@ python scripts/export_yolo_to_onnx.py --weights yolo11s.pt --imgsz 640 --nms
 python scripts/export_yolo_to_onnx.py \
     --weights yolo11s.pt \
     --nms \
-    --output ../../data/models/yolo11n_nms.onnx
+    --output ../models/yolo11n_nms.onnx
 ```
 
 ---
@@ -216,7 +216,7 @@ python scripts/export_yolo_to_onnx.py --help
 
 Después de exportar un modelo:
 
-- [ ] Copiar a `data/models/`
+- [ ] Copiar a `services/worker-ai/models/`
 - [ ] Actualizar `config.local.toml` (si cambió el nombre)
 - [ ] Ejecutar `python scripts/inspect_model.py` para verificar formato
 - [ ] Reiniciar worker

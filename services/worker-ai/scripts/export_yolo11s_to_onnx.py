@@ -2,7 +2,7 @@
 """
 Descarga y exporta automáticamente el modelo YOLO11-S a formato ONNX con NMS integrado.
 
-El archivo final queda listo para el worker en `../data/models/yolo11s.onnx`.
+El archivo final queda listo para el worker en `../models/yolo11s.onnx`.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from ultralytics import YOLO
 
 def parse_args() -> argparse.Namespace:
     default_output = (
-        Path(__file__).resolve().parents[1] / "data" / "models" / "yolo11s.onnx"
+        Path(__file__).resolve().parents[1] / "models" / "yolo11s.onnx"
     )
 
     parser = argparse.ArgumentParser(

@@ -94,7 +94,7 @@ worker-ai:
     - BIND_PORT=7001
     - IDLE_TIMEOUT_SEC=60
   volumes:
-    - ./data/models:/models:ro
+    - ./services/worker-ai/models:/models:ro
   healthcheck:
     test: ["CMD", "python3", "healthcheck.py"]
 ```
@@ -119,7 +119,7 @@ edge-agent:
 ✅ **Documentación:**
 - `services/worker-ai/README.md`: Arquitectura, API, troubleshooting
 - `docs/AI_WORKER_MIGRATION.md`: Guía de migración
-- `data/models/README.md`: Cómo obtener modelos ONNX
+- `services/worker-ai/models/` : Modelos ONNX del worker
 
 ## 🎯 Criterios de Aceptación
 
@@ -252,7 +252,7 @@ tpfinal-v3/
 ### Worker no arranca
 ```bash
 docker-compose logs worker-ai
-docker-compose exec worker-ai ls -lh /models/
+docker compose exec worker-ai ls -lh /models/
 ```
 
 ### Agent no conecta

@@ -8,13 +8,16 @@ import { RouterLink, RouterView } from 'vue-router'
     <header class="app-header">
       <RouterLink to="/" class="brand">Media Tracker</RouterLink>
       <nav class="app-nav">
-        <RouterLink to="/" class="app-nav__link" exact-active-class="app-nav__link--active">
-          Grabaciones
-        </RouterLink>
-        <RouterLink to="/live" class="app-nav__link" active-class="app-nav__link--active">
-          En vivo
-        </RouterLink>
-      </nav>
+      <RouterLink to="/" class="app-nav__link" exact-active-class="app-nav__link--active">
+        Grabaciones
+      </RouterLink>
+      <RouterLink to="/live" class="app-nav__link" active-class="app-nav__link--active">
+        En vivo
+      </RouterLink>
+      <RouterLink to="/control" class="app-nav__link" active-class="app-nav__link--active">
+        Control
+      </RouterLink>
+    </nav>
     </header>
     <main class="app-main">
       <RouterView />

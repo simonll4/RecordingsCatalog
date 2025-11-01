@@ -3,7 +3,7 @@
 ## Prerrequisitos
 - Python 3.10+
 - Mamba/Conda (recomendado)
-- Modelo YOLO11 en formato ONNX (`data/models/yolo11s.onnx` o similar)
+- Modelo YOLO11 en formato ONNX (`services/worker-ai/models/yolo11s.onnx` o similar; montado como `/models` en Docker)
 
 ## Instalación (entorno)
 ```bash
@@ -14,7 +14,7 @@ mamba activate worker-ai
 ## Exportar modelo (si no lo tienes)
 ```bash
 python scripts/export_yolo11s_to_onnx.py
-ls -lh ../../data/models/yolo11s.onnx
+ls -lh ./models/yolo11s.onnx
 ```
 
 ## Configuración

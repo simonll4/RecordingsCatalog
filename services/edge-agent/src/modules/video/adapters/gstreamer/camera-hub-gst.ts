@@ -206,25 +206,61 @@ export class CameraHubGst implements CameraHub {
    * Detiene el hub de forma ordenada
    */
   async stop(): Promise<void> {
-    if (!this.proc) return;
+    const proc = this.proc;
+    if (!proc) return;
 
     logger.info("Stopping camera hub", { module: "camera-hub-gst" });
     this.stoppedManually = true;
 
-    killProcess(this.proc, "SIGINT");
+    // Detener timers de ready para evitar que sigan marcando eventos durante el shutdown
+    this.cleanupReadyWait();
 
-    // Timeout de seguridad
-    setTimeout(() => {
-      if (this.proc) {
-        logger.warn("Process didn't respond to SIGINT, using SIGKILL", {
+    await new Promise<void>((resolve) => {
+      // Si el proceso ya terminó, resolver inmediatamente
+      if (proc.exitCode !== null || proc.signalCode !== null) {
+        resolve();
+        return;
+      }
+
+      const cleanupTimers = () => {
+        if (killTimer) clearTimeout(killTimer);
+        if (failSafe) clearTimeout(failSafe);
+      };
+
+      const onExit = () => {
+        cleanupTimers();
+        resolve();
+      };
+
+      proc.once("exit", onExit);
+
+      // Enviar SIGINT para un shutdown ordenado
+      killProcess(proc, "SIGINT");
+
+      // Escalamiento a SIGKILL si en 1.5s no respondió
+      const killTimer = setTimeout(() => {
+        if (proc.exitCode === null && proc.signalCode === null) {
+          logger.warn("Process didn't respond to SIGINT, using SIGKILL", {
+            module: "camera-hub-gst",
+          });
+          killProcess(proc, "SIGKILL");
+        }
+      }, 1500);
+
+      // Failsafe para no quedar colgados si ni SIGKILL resulta
+      const failSafe = setTimeout(() => {
+        logger.error("Timeout waiting for camera hub process to exit", {
           module: "camera-hub-gst",
         });
-        killProcess(this.proc, "SIGKILL");
-      }
-      this.cleanupSocket();
-    }, 1500);
+        proc.removeListener("exit", onExit);
+        cleanupTimers();
+        resolve();
+      }, 5000);
+    });
 
+    // Limpiar estado y socket después de que el proceso terminó
     this.cleanup();
+    this.cleanupSocket();
   }
 
   // ==================== PRIVATE ====================
@@ -296,20 +332,21 @@ export class CameraHubGst implements CameraHub {
   }
 
   private handleExit(code: number | null, signal: string | null) {
-    if (this.stoppedManually) {
-      this.stoppedManually = false;
-      this.cleanupSocket();
-      return;
-    }
+    const wasManual = this.stoppedManually;
+    this.stoppedManually = false;
 
-    // Si proc fue limpiado, fallback está manejando el restart
-    if (!this.proc) {
-      logger.info("Exit handled by fallback", { module: "camera-hub-gst" });
-      return;
-    }
-
-    // Auto-restart con backoff
     this.cleanup();
+
+    if (wasManual) {
+      logger.info("Camera hub exited", {
+        module: "camera-hub-gst",
+        code,
+        signal,
+      });
+      return;
+    }
+
+    // Auto-restart con backoff cuando el proceso cae inesperadamente
     this.cleanupSocket();
 
     const delay = Math.min(2000 * Math.pow(1.5, this.restartAttempts++), 15000);

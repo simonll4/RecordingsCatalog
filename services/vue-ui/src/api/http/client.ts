@@ -36,6 +36,7 @@ export interface RequestOptions {
   params?: Record<string, string | number | boolean | undefined>
   timeout?: number
   signal?: AbortSignal
+  expectedStatuses?: number[]
 }
 
 /**
@@ -100,7 +101,10 @@ export class HttpClient {
       signal: options?.signal,
     })
 
-    if (!response.ok) {
+    const expected = options?.expectedStatuses
+    const acceptedStatuses = expected?.length ? expected : [200]
+
+    if (!acceptedStatuses.includes(response.status)) {
       const body = await parseErrorBody(response)
       throw new HttpError(
         response.status,
@@ -111,6 +115,61 @@ export class HttpClient {
 
     const payload = await response.json()
     return schema.parse(payload)
+  }
+
+  private async sendJson<T>(
+    method: 'POST' | 'PUT',
+    path: string,
+    body: unknown,
+    schema: z.ZodSchema<T>,
+    options?: RequestOptions
+  ): Promise<T> {
+    const url = buildUrl(this.config.baseURL, path, options?.params)
+
+    const response = await fetch(url.toString(), {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...this.config.headers,
+        ...options?.headers,
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: options?.signal,
+    })
+
+    const expected = options?.expectedStatuses
+    const acceptedStatuses = expected?.length ? expected : [200, 201, 202]
+
+    if (!acceptedStatuses.includes(response.status)) {
+      const errorBody = await parseErrorBody(response)
+      throw new HttpError(
+        response.status,
+        errorBody,
+        `Request failed (${response.status}): ${typeof errorBody === 'string' ? errorBody : JSON.stringify(errorBody)}`
+      )
+    }
+
+    const text = await response.text()
+    const payload = text ? JSON.parse(text) : null
+    return schema.parse(payload)
+  }
+
+  async postJson<T>(
+    path: string,
+    body: unknown,
+    schema: z.ZodSchema<T>,
+    options?: RequestOptions
+  ): Promise<T> {
+    return this.sendJson('POST', path, body, schema, options)
+  }
+
+  async putJson<T>(
+    path: string,
+    body: unknown,
+    schema: z.ZodSchema<T>,
+    options?: RequestOptions
+  ): Promise<T> {
+    return this.sendJson('PUT', path, body, schema, options)
   }
 
   /**

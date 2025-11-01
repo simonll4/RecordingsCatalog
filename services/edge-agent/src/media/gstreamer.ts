@@ -192,7 +192,7 @@ export function buildIngest(source: SourceConfig): string[] {
     `socket-path=${socketPath}`,
     `shm-size=${shmSizeBytes}`,
     "wait-for-connection=false",
-    "sync=true",
+    "sync=false",
   ];
 }
 

@@ -8,7 +8,7 @@
         </p>
       </div>
       <div class="status-badges">
-        <span class="status" :class="agentStatusClass">{{ agentStatusText }}</span>
+        <span class="status" :class="serviceStatusClass">{{ agentStatusText }}</span>
         <span class="status" :class="streamStatusClass">{{ streamStatusText }}</span>
       </div>
     </header>
@@ -60,15 +60,15 @@
         <div><span>Packets perdidos</span><strong>{{ stats.packetsLost ?? 0 }}</strong></div>
       </div>
 
-      <div v-if="agentStatus" class="agent-insights">
-        <div><span>Heartbeat</span><strong>{{ formatRelativeTime(agentStatus.heartbeatTs) }}</strong></div>
-        <div><span>Última detección</span><strong>{{ formatRelativeTime(agentStatus.detections.lastDetectionTs) }}</strong></div>
-        <div><span>Detecciones totales</span><strong>{{ agentStatus.detections.total }}</strong></div>
-        <div><span>Sesión activa</span><strong>{{ agentStatus.session.active ? 'Sí' : 'No' }}</strong></div>
-        <div><span>Sesión actual</span><strong>{{ agentStatus.session.currentSessionId ?? agentStatus.session.lastSessionId ?? '—' }}</strong></div>
-        <div><span>Grabación</span><strong>{{ agentStatus.streams.record.running ? 'Transmisión' : 'En espera' }}</strong></div>
-        <div><span>Live stream</span><strong>{{ agentStatus.streams.live.running ? 'Encendido' : 'Apagado' }}</strong></div>
-        <div><span>Actualizado</span><strong>{{ formatDateTime(agentStatus.timestamp) }}</strong></div>
+      <div v-if="runtimeStatus" class="agent-insights">
+        <div><span>Heartbeat</span><strong>{{ formatRelativeTime(runtimeStatus.heartbeatTs) }}</strong></div>
+        <div><span>Última detección</span><strong>{{ formatRelativeTime(runtimeStatus.detections.lastDetectionTs) }}</strong></div>
+        <div><span>Detecciones totales</span><strong>{{ runtimeStatus.detections.total }}</strong></div>
+        <div><span>Sesión activa</span><strong>{{ runtimeStatus.session.active ? 'Sí' : 'No' }}</strong></div>
+        <div><span>Sesión actual</span><strong>{{ runtimeStatus.session.currentSessionId ?? runtimeStatus.session.lastSessionId ?? '—' }}</strong></div>
+        <div><span>Grabación</span><strong>{{ runtimeStatus.streams.record.running ? 'Transmisión' : 'En espera' }}</strong></div>
+        <div><span>Live stream</span><strong>{{ runtimeStatus.streams.live.running ? 'Encendido' : 'Apagado' }}</strong></div>
+        <div><span>Actualizado</span><strong>{{ formatDateTime(runtimeStatus.timestamp) }}</strong></div>
       </div>
     </footer>
   </section>
@@ -79,14 +79,18 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { edgeAgentService } from '@/api/services'
 import { BASE_URLS } from '@/api/http'
 import { LIVE_STREAM_CONFIG } from '@/constants'
-import type { EdgeAgentStatus } from '@/api/schemas/status.schemas'
+import type {
+  EdgeAgentStatusEnvelope,
+  EdgeAgentRuntimeStatus,
+  EdgeAgentManagerSnapshot,
+} from '@/api/schemas/status.schemas'
 
 type IntervalHandle = ReturnType<typeof setInterval> | null
 
 const videoElement = ref<HTMLVideoElement | null>(null)
 const peerConnection = ref<RTCPeerConnection | null>(null)
 
-const agentStatus = ref<EdgeAgentStatus | null>(null)
+const statusEnvelope = ref<EdgeAgentStatusEnvelope | null>(null)
 const agentStatusError = ref<string | null>(null)
 
 const isConnected = ref(false)
@@ -99,9 +103,21 @@ const baseWhepUrl = BASE_URLS.WEBRTC.replace(/\/$/, '')
 const streamPath = LIVE_STREAM_CONFIG.PATH.replace(/^\/+/, '')
 const whepUrl = computed(() => `${baseWhepUrl}/${streamPath}/whep`)
 
-const agentOnline = computed(() => agentStatus.value !== null)
+const managerStatus = computed<EdgeAgentManagerSnapshot | null>(
+  () => statusEnvelope.value?.manager ?? null
+)
 
-const agentStatusState = computed(() => (agentOnline.value ? 'online' : 'offline'))
+const runtimeStatus = computed<EdgeAgentRuntimeStatus | null>(
+  () => statusEnvelope.value?.agent ?? null
+)
+
+const serviceState = computed<EdgeAgentManagerSnapshot['state']>(() => {
+  return managerStatus.value?.state ?? 'idle'
+})
+
+const agentOnline = computed(
+  () => serviceState.value === 'running' && runtimeStatus.value !== null
+)
 
 const streamStatusState = computed(() => {
   if (!agentOnline.value) return 'offline'
@@ -111,9 +127,11 @@ const streamStatusState = computed(() => {
   return 'idle'
 })
 
-const agentStatusClass = computed(() => ({
-  'status--connected': agentStatusState.value === 'online',
-  'status--offline': agentStatusState.value === 'offline',
+const serviceStatusClass = computed(() => ({
+  'status--connected': serviceState.value === 'running',
+  'status--loading': serviceState.value === 'starting' || serviceState.value === 'stopping',
+  'status--error': serviceState.value === 'error',
+  'status--offline': serviceState.value === 'idle',
 }))
 
 const streamStatusClass = computed(() => ({
@@ -123,9 +141,20 @@ const streamStatusClass = computed(() => ({
   'status--offline': streamStatusState.value === 'offline',
 }))
 
-const agentStatusText = computed(() =>
-  agentOnline.value ? 'Edge agent en línea' : 'Edge agent sin conexión'
-)
+const agentStatusText = computed(() => {
+  switch (serviceState.value) {
+    case 'running':
+      return 'Servicio en ejecución'
+    case 'starting':
+      return 'Iniciando servicio…'
+    case 'stopping':
+      return 'Deteniendo servicio…'
+    case 'error':
+      return 'Error en servicio'
+    default:
+      return 'Servicio detenido'
+  }
+})
 
 const streamStatusText = computed(() => {
   switch (streamStatusState.value) {
@@ -236,14 +265,14 @@ const fetchAgentStatus = async () => {
 
   try {
     const status = await edgeAgentService.getStatus()
-    agentStatus.value = status
+    statusEnvelope.value = status
     agentStatusError.value = null
 
-    if (!isConnected.value && !isLoading.value) {
+    if (!isConnected.value && !isLoading.value && agentOnline.value) {
       void startStream()
     }
   } catch (err) {
-    agentStatus.value = null
+    statusEnvelope.value = null
     agentStatusError.value = err instanceof Error ? err.message : 'Edge agent no disponible'
 
     if (isConnected.value || isLoading.value) {

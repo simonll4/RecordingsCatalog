@@ -13,8 +13,9 @@ Follow these steps to bring the stack online on a development machine. For produ
 
 ```bash
 # From the repository root
-python services/worker-ai/scripts/export_yolo11s_to_onnx.py
-# Result: data/models/yolo11s.onnx
+# Ejemplo (si necesitás regenerar el modelo base):
+# python services/worker-ai/scripts/export_yolo11s_to_onnx.py
+# Resultado esperado para producción: `services/worker-ai/models/yolo11s-custom.onnx`
 
 mkdir -p data/recordings data/tracks data/frames
 ```
@@ -63,8 +64,9 @@ docker compose down                   # Stop everything
 
 - Recordings catalogue: `http://localhost:3000/`
 - Live status and stream: `http://localhost:3000/live`
+- Agent control panel: `http://localhost:3000/control`
 
-If you expose the UI on another host, update `services/vue-ui/config.toml` to point to the correct backend URLs.
+If you expose the UI on another host, set `VITE_*` env vars for the Vue UI container to point to the correct backends (see `services/vue-ui/README.md`).
 
 ## 6. Local Development (Optional)
 

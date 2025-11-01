@@ -143,9 +143,9 @@ Cada subcomando llama internamente al script numerado correspondiente, por lo qu
 ## 🔌 Integración con worker-ai
 
 ```bash
-cp models/yolo11s_camera.onnx ../data/models/
+cp models/yolo11s_camera.onnx ../models/
 # Actualiza configuración del worker:
-# model_path = "data/models/yolo11s_camera.onnx"
+# model_path = "models/yolo11s_camera.onnx"
 ```
 
 ## 📚 Más recursos

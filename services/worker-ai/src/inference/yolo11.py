@@ -11,8 +11,8 @@ from ..core.logger import setup_logger
 logger = setup_logger("inference")
 
 
-# YOLO11 COCO classes
-COCO_CLASSES = [
+# YOLO11 default COCO classes (fallback when no catalog is provided)
+DEFAULT_CLASS_NAMES = [
     "person",
     "bicycle",
     "car",
@@ -119,12 +119,28 @@ class Detection:
 class YOLO11Model:
     """Modelo YOLO11 con ONNX Runtime"""
 
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str, class_names: Optional[List[str]] = None):
         """
         Args:
             model_path: Ruta al modelo ONNX
         """
         self.model_path = model_path
+
+        if class_names:
+            sanitized = [name.strip() for name in class_names if str(name).strip()]
+            self.class_names = sanitized if sanitized else DEFAULT_CLASS_NAMES
+        else:
+            self.class_names = DEFAULT_CLASS_NAMES
+
+        if class_names:
+            logger.info(
+                "Catálogo de clases cargado (%d clases)", len(self.class_names)
+            )
+        else:
+            logger.info(
+                "Catálogo de clases no provisto, usando fallback COCO (%d clases)",
+                len(self.class_names),
+            )
 
         # Crear sesión ONNX
         providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
@@ -170,6 +186,12 @@ class YOLO11Model:
         logger.info(f"Input shape: {self.input_shape}")
         logger.info(f"Output shape: {self.output_shape}")
         logger.info(f"NMS integrado: {self.has_integrated_nms}")
+
+    def _class_name(self, class_id: int) -> str:
+        """Obtiene el nombre de clase seguro para el ID dado"""
+        if 0 <= class_id < len(self.class_names):
+            return self.class_names[class_id]
+        return f"class_{class_id}"
 
     def preprocess(
         self, image: np.ndarray
@@ -276,11 +298,7 @@ class YOLO11Model:
             y2_norm = y2 / orig_h
 
             # Nombre de clase
-            class_name = (
-                COCO_CLASSES[class_id]
-                if class_id < len(COCO_CLASSES)
-                else f"class_{class_id}"
-            )
+            class_name = self._class_name(class_id)
 
             detection = Detection(
                 class_id=class_id,
@@ -362,7 +380,7 @@ class YOLO11Model:
         if classes_filter is not None and len(classes_filter) > 0:
             # Elegir la mejor clase dentro del conjunto permitido
             allowed = np.array(classes_filter, dtype=int)
-            # Sanitizar índices fuera de rango (por si el modelo no es COCO-80)
+            # Sanitizar índices fuera de rango (por si el catálogo no cubre ese ID)
             valid_mask = (allowed >= 0) & (allowed < num_classes)
             if not np.all(valid_mask):
                 try:
@@ -474,8 +492,8 @@ class YOLO11Model:
         detections = []
         for i in range(len(xyxy_norm)):
             cid = int(class_ids_kept[i])
-            # Si el modelo no es COCO-80, asignar nombre genérico
-            cname = COCO_CLASSES[cid] if cid < len(COCO_CLASSES) else f"class_{cid}"
+            # Si el catálogo no cubre el ID, usar un nombre genérico
+            cname = self._class_name(cid)
             det = Detection(
                 class_id=cid,
                 class_name=cname,

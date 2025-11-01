@@ -76,10 +76,10 @@
  *
  * Fields:
  *
- * - cls: Object class name (e.g., "person", "car", "dog")
- *   - From model's class labels (COCO dataset for YOLO)
+ * - cls: Object class name (e.g., "person", "bottle", "shoes")
+ *   - From the model's class catalog (custom fine-tuned dataset)
  *   - Used for filtering relevant vs irrelevant detections
- *   - Example COCO classes: person, car, truck, dog, cat, etc.
+ *   - Example classes: backpack, bottle, cup, person, shoes
  *
  * - conf: Detection confidence score (0.0 to 1.0)
  *   - Model's certainty that object is present

@@ -70,6 +70,7 @@ services/worker-ai/data/
 # Edge Agent generated files
 services/edge-agent/src/proto/ai_pb.js
 services/edge-agent/src/proto/ai_pb.d.ts
+services/edge-agent/runtime-overrides.json
 
 # Temporary files
 *.tmp
@@ -84,5 +85,7 @@ services/worker-ai/finetuning/dataset/
 services/worker-ai/finetuning/frames/
 services/worker-ai/finetuning/recordings/
 services/worker-ai/finetuning/label-studio/data/
+services/worker-ai/finetuning/runs/
+services/worker-ai/finetuning/models/
 
 notas.txt

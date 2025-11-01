@@ -11,7 +11,7 @@ from ..pipeline.tracking_service import TrackingService
 from ..pipeline.session_service import SessionService
 from ..pipeline.processor import FrameProcessor
 from ..visualization.viewer import Visualizer
-from ..inference.yolo11 import COCO_CLASSES
+from ..inference.yolo11 import DEFAULT_CLASS_NAMES
 from .connection import ConnectionHandler
 
 logger = setup_logger("server")
@@ -30,9 +30,26 @@ class WorkerServer:
         # Inicializar componentes del pipeline
         self.decoder = FrameDecoder()
 
+        catalog = config.base_config.model.class_catalog
+        if catalog:
+            self.class_catalog = catalog
+        else:
+            self.class_catalog = DEFAULT_CLASS_NAMES
+            logger.warning(
+                "Catálogo de clases no definido en config; usando fallback por defecto (%d clases)",
+                len(self.class_catalog),
+            )
+
+        logger.info(
+            "Catálogo de clases activo (%d): %s",
+            len(self.class_catalog),
+            ", ".join(self.class_catalog),
+        )
+
         self.model_manager = ModelManager(
             conf_threshold=config.base_config.model.conf_threshold,
             nms_iou=config.base_config.model.nms_iou,
+            class_names=self.class_catalog,
         )
 
         self.tracking_service = TrackingService(
@@ -49,13 +66,30 @@ class WorkerServer:
         # Filtro de clases
         class_filter_ids = None
         if config.base_config.model.classes:
-            class_name_to_id = {name: i for i, name in enumerate(COCO_CLASSES)}
-            class_filter_ids = [
-                class_name_to_id[name]
-                for name in config.base_config.model.classes
-                if name in class_name_to_id
-            ]
-            logger.info(f"Filtro de clases activo: {config.base_config.model.classes}")
+            class_name_to_id = {
+                name.lower(): i for i, name in enumerate(self.class_catalog)
+            }
+            resolved_ids = []
+            unknown_classes = []
+            for raw_name in config.base_config.model.classes:
+                key = raw_name.lower()
+                class_id = class_name_to_id.get(key)
+                if class_id is None:
+                    unknown_classes.append(raw_name)
+                    continue
+                resolved_ids.append(class_id)
+
+            if resolved_ids:
+                class_filter_ids = resolved_ids
+                logger.info(
+                    "Filtro de clases activo desde config: %s",
+                    [self.class_catalog[idx] for idx in class_filter_ids],
+                )
+            if unknown_classes:
+                logger.warning(
+                    "Clases desconocidas en filtro de config: %s",
+                    unknown_classes,
+                )
 
         # Procesador de pipeline (uno compartido por todas las conexiones)
         # Nota: Cada conexión tendrá su propio processor para mantener estado independiente
@@ -117,7 +151,14 @@ class WorkerServer:
         processor = self._create_processor()
         visualizer = self._get_visualizer()
 
-        handler = ConnectionHandler(reader, writer, self.config, processor, visualizer)
+        handler = ConnectionHandler(
+            reader,
+            writer,
+            self.config,
+            processor,
+            visualizer,
+            self.class_catalog,
+        )
 
         await handler.handle()
 

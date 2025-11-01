@@ -143,11 +143,11 @@ Ejemplos de uso:
             output_path = output_dest
         
         print("\n🎯 PRÓXIMOS PASOS:")
-        print(f"\n1. Copiar modelo a data/models/:")
-        print(f"   cp {output_path} data/models/")
+        print(f"\n1. Copiar modelo a services/worker-ai/models (si fuese necesario):")
+        print(f"   cp {output_path} ../models/")
         
-        print("\n2. Actualizar config.local.toml:")
-        print(f"   model_name = \"/path/to/{output_path.name}\"")
+        print("\n2. Edge-agent → config.toml:")
+        print(f"   [ai] model_name = \"/models/{output_path.name}\"")
         
         print("\n3. Reiniciar worker:")
         print("   ./run.sh")

@@ -60,6 +60,23 @@ function loadTomlConfig(): any {
 
 const tomlConfig = loadTomlConfig();
 
+const normalizeList = (value: string | undefined | null) =>
+  typeof value === "string"
+    ? value
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+    : [];
+
+const envStatusPort = process.env.EDGE_AGENT_STATUS_PORT;
+const statusPortOverride =
+  typeof envStatusPort === "string" && envStatusPort.trim().length > 0
+    ? Number.parseInt(envStatusPort.trim(), 10)
+    : undefined;
+
+const envClassesFilter = process.env.EDGE_AGENT_CLASSES_FILTER;
+const classesFilterOverride = normalizeList(envClassesFilter);
+
 /**
  * CONFIG Singleton - Application Configuration
  *
@@ -85,10 +102,10 @@ export const CONFIG: AppConfig = {
     umbral: tomlConfig.ai.umbral,
     width: tomlConfig.ai.width,
     height: tomlConfig.ai.height,
-    classesFilter: tomlConfig.ai.classes_filter
-      .split(",")
-      .map((s: string) => s.trim())
-      .filter((s: string) => s.length > 0),
+    classesFilter:
+      classesFilterOverride.length > 0
+        ? classesFilterOverride
+        : normalizeList(tomlConfig.ai.classes_filter),
     fps: {
       idle: tomlConfig.ai.fps_idle,
       active: tomlConfig.ai.fps_active,
@@ -123,7 +140,9 @@ export const CONFIG: AppConfig = {
 
   status: {
     port:
-      typeof tomlConfig.status?.port === "number"
+      typeof statusPortOverride === "number" && !Number.isNaN(statusPortOverride)
+        ? statusPortOverride
+        : typeof tomlConfig.status?.port === "number"
         ? tomlConfig.status.port
         : 7080,
   },

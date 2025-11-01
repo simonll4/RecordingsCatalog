@@ -72,7 +72,7 @@ sed -n '1,120p' README.md          # Documentación resumida
 ## 🔌 Integración con worker-ai
 
 ```bash
-cp models/yolo11s_camera.onnx ../data/models/
+cp models/yolo11s_camera.onnx ../models/
 # Actualizar model_path en la config del worker y reiniciar servicio.
 ```
 

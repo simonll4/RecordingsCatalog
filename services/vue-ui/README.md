@@ -32,6 +32,7 @@ src/
 - ✅ **Centralized Config**: All URLs and settings in one place
 - ✅ **Reusable Utils**: Common operations extracted to utilities
 - ✅ **Vue 3 Composables**: Modern reactive patterns
+- ✅ **Edge Agent Control**: Control view to start/stop the agent and manage class filters
 - ✅ **Backward Compatible**: Existing code continues to work
 
 ## 🚀 Quick Start
@@ -89,7 +90,7 @@ VITE_MEDIAMTX_BASE_URL=http://localhost:9996
 # WebRTC (WHEP) base URL para live streaming
 VITE_WEBRTC_BASE_URL=http://localhost:8889
 
-# Edge Agent status API
+# Edge Agent manager API (control + status)
 VITE_EDGE_AGENT_BASE_URL=http://localhost:7080
 
 # Path del stream en vivo expuesto por MediaMTX
@@ -101,6 +102,12 @@ VITE_EXTRA_SECONDS=5
 ```
 
 If not specified, the application will auto-detect URLs based on the current hostname.
+
+## 🖥️ Views
+
+- `/` Catálogo de grabaciones (Session Store)
+- `/live` WebRTC live player (MediaMTX WHEP)
+- `/control` Panel para controlar el Edge Agent (usa la API del manager en `VITE_EDGE_AGENT_BASE_URL`)
 
 ## 💻 Usage Examples
 

@@ -139,11 +139,11 @@ export type SourceConfig = {
  *   - Common: 640×480, 640×640 (YOLO default)
  *   - Higher = better accuracy, slower processing
  *
- * classesFilter: Relevant object classes
- *   - Array of COCO class names
- *   - Only these classes trigger recording
- *   - Example: ["person", "car", "dog"]
- *   - Full COCO list: person, bicycle, car, motorbike, etc.
+* classesFilter: Relevant object classes
+*   - Array of class names present in the model catalog
+*   - Only these classes trigger recording
+*   - Example: ["backpack", "person", "shoes"]
+*   - El catálogo proviene del worker-ai (class_catalog.json)
  *
  * fps.idle: Processing rate when IDLE
  *   - Low rate to save CPU/GPU
@@ -373,8 +373,9 @@ export type BusConfig = {
 /**
  * Status Configuration - HTTP status server
  *
- * Controls the embedded HTTP endpoint used by UI/monitoring systems to
- * query the current state of the edge agent (e.g., live stream availability).
+ * Controls the HTTP status endpoint exposed by the runtime (child process).
+ * The manager exposes its own API on CONFIG.status.port and forwards a
+ * combined snapshot on /status for external UIs (e.g., the Vue app).
  */
 export type StatusConfig = {
   port: number;

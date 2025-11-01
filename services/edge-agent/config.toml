@@ -44,20 +44,21 @@ postroll_ms = 5000
 
 # Configuración del modelo de IA (YOLO)
 [ai]
-# Ruta al modelo ONNX
-# DESARROLLO LOCAL: path absoluto en el host donde corre el worker
-model_name = "/home/simonll4/Desktop/final-scripting/tpfinal-v3/data/models/yolo11s.onnx"
-# PRODUCCIÓN (Docker): descomentar la siguiente línea
-# model_name = "/models/yolo11s.onnx"
+# Ruta al modelo ONNX que carga el worker-ai
+# Docker/Producción: el contenedor del worker monta /models → services/worker-ai/models
+model_name = "./models/yolo11s-custom.onnx"
+# Desarrollo local (si el worker corre fuera de Docker):
+# usar una ruta ABSOLUTA válida en el host hacia services/worker-ai/models/yolo11s.onnx
+# por ejemplo: 
+# model_name = "/home/usuario/proyecto/services/worker-ai/models/yolo11s.onnx"
 # Umbral de confianza para las detecciones
 umbral = 0.5
 # Resolución de entrada del modelo
 width = 640
 height = 640
-# Clases disponibles (no usado actualmente - worker-ai define las clases)
-# class_names = "bottle"
 # Clases a detectar (filtro, separadas por comas)
-classes_filter = "bottle,person"
+# Deben coincidir con services/worker-ai/models/class_catalog.json
+classes_filter = "backpack,bottle,cup,person,shoes"
 # FPS de procesamiento en estado IDLE
 fps_idle = 5
 # FPS de procesamiento en estado ACTIVE

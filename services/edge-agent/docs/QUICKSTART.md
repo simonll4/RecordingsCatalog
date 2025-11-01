@@ -21,6 +21,7 @@ Claves mínimas:
 ```
 cd services/edge-agent
 npm install
+# Levanta el manager (API) + runtime en dev
 npm run dev
 ```
 
@@ -31,10 +32,11 @@ npm run build
 npm start
 ```
 
+La UI no se sirve desde el manager; usá el servicio `vue-ui` en `http://localhost:3000`.
+
 ## Docker (imagen local)
 El Dockerfile instala GStreamer y dependencias. Ajustar `config.toml` según entorno (hostnames de servicios).
 
 ## Verificación rápida
 - Logs en `info` muestran: cámara lista, orquestador listo, conexión AI, transiciones FSM.
 - Stream disponible: `rtsp://{mediamtx.host}:{port}/{path}` cuando ACTIVE/CLOSING.
-

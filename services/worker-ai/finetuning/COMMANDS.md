@@ -240,10 +240,10 @@ for i in 0 1 2; do echo "Clase $i: $(grep -h "^$i " dataset/labels/train/*.txt |
 ls -lt runs/*/weights/best.pt | head -1
 
 # Copiar modelo al worker
-cp models/yolo11s_finetuned.onnx ../data/models/
+cp models/yolo11s_finetuned.onnx ../models/
 
 # Backup de modelo anterior
-cp ../data/models/yolo11s.onnx ../data/models/yolo11s_backup_$(date +%Y%m%d).onnx
+cp ../models/yolo11s.onnx ../models/yolo11s_backup_$(date +%Y%m%d).onnx
 ```
 
 ## Ayuda

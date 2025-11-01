@@ -16,9 +16,10 @@ idle_timeout_sec = 60
 [model]
 conf_threshold = 0.5
 nms_iou = 0.6
-# Clases a detectar (COCO classes). Dejar vacío [] para detectar todas las clases
-# El modelo tiene las 80 clases COCO pero con NMS integrado
-classes = ["bottle","person"]
+# Catálogo de clases (ruta relativa o absoluta)
+class_catalog_path = "models/class_catalog.json"
+# Filtro de clases por defecto (vacío → todas las clases del catálogo)
+classes = []
 
 # Configuración del tracker
 [tracker]

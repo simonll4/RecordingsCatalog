@@ -21,7 +21,7 @@ This project delivers a containerised video capture and analysis stack for smart
 - **session-store** (Node.js): Stores session metadata, serves NDJSON tracks, and exposes REST APIs used by the UI.
 - **mediamtx**: Acts as the RTSP/WebRTC server, keeps recordings on disk, and notifies the backend through hooks.
 - **postgres**: Persists session metadata for search and filtering.
-- **vue-ui**: Presents past sessions, playback, and live status in the browser.
+- **vue-ui**: Presents past sessions, playback, and agent control (start/stop + class filters) in the browser.
 
 ## Data Flow Summary
 
@@ -34,7 +34,7 @@ This project delivers a containerised video capture and analysis stack for smart
 ## Key Directories
 
 ```
-data/models/      # ONNX models consumed by worker-ai
+services/worker-ai/models/  # ONNX models consumed by worker-ai
 data/recordings/  # MP4 segments created by MediaMTX
 data/tracks/      # JSON tracks generated per session
 services/         # Source code for each service
@@ -48,9 +48,9 @@ docs/             # This documentation set
 | edge-agent     | `services/edge-agent/config.toml`  | Camera source, FSM timers, AI worker address  |
 | worker-ai      | `services/worker-ai/config.toml`   | Model path, tracker options, visualisation    |
 | session-store  | `services/session-store/config.toml` | Database URL and paths for frames/tracks    |
-| vue-ui         | `services/vue-ui/config.toml`      | Backend URLs consumed by the frontend         |
+| vue-ui         | `.env` (VITE_*)                    | Backend URLs consumed by the frontend         |
 
-All services rely on TOML files committed in the repo; environment variables are optional and only needed for overrides.
+Core services use TOML files committed in the repo. The Vue UI uses environment variables (`VITE_*`) to locate backends.
 
 ## Typical Use Cases
 

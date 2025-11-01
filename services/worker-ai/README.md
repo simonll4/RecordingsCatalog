@@ -48,7 +48,8 @@ mamba activate worker-ai
 python scripts/export_yolo11s_to_onnx.py
 
 # Verificar que el modelo está disponible
-ls -lh ../../data/models/yolo11s.onnx
+ls -lh ./models/yolo11s.onnx  # (host)
+docker compose exec worker-ai ls -lh /models/  # (en contenedor)
 
 # Ejecutar
 python worker.py
