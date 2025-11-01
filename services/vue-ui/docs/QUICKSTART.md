@@ -28,5 +28,4 @@ npm run preview
 
 ## Rutas
 - `/` catálogo de sesiones
-- `/live` reproductor en vivo (WHEP)
-- `/control` panel de control del Edge Agent (start/stop + clases)
+- `/control` vista unificada (WHEP en vivo + panel del Edge Agent)

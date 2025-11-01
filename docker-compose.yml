@@ -106,10 +106,10 @@ services:
       - /etc/localtime:/etc/localtime:ro
     profiles: [edge]
 
-  vue-ui:
+  ui-vue:
     build:
       context: ./services/vue-ui
-    container_name: tpfinalv3-vue-ui
+    container_name: tpfinalv3-ui-vue
     restart: unless-stopped
     depends_on:
       session-store:

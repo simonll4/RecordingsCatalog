@@ -1,13 +1,13 @@
-# Recording & Annotation Flow (vue-ui)
+# Recording & Annotation Flow (ui-vue)
 
-Este documento explica cómo la interfaz `vue-ui` obtiene la información de sesiones, descarga las grabaciones desde MediaMTX y superpone las anotaciones de tracking generadas por el `worker-ai`.
+Este documento explica cómo la interfaz `ui-vue` obtiene la información de sesiones, descarga las grabaciones desde MediaMTX y superpone las anotaciones de tracking generadas por el `worker-ai`.
 
 ---
 
 ## 1. Descubrimiento de sesiones
 
-1. Al iniciar `vue-ui`, el store `useSessionsStore` llama a `listSessions()` (`src/api/sessions.ts`).
-2. `listSessions()` consulta al `session-store` (`services/session-store`) vía:
+1. Al iniciar `ui-vue`, el store `useSessionsStore` llama a `sessionService.listSessions()` (ver `src/api/services/session.service.ts`).
+2. El servicio consulta al `session-store` (`services/session-store`) vía:
    - `/sessions/range` (por defecto) o `/sessions?mode=all`, según filtros seleccionados.
 3. El `session-store` responde con sesiones que incluyen `session_id`, `device_id`, `start_ts`, `end_ts`, `path`, etc.
 4. `Home.vue` muestra la lista; al hacer clic se navega a `/session/:sessionId`.
@@ -59,7 +59,8 @@ Cuando se monta `Session.vue`:
 | `services/vue-ui/src/components/TrackLegend.vue`       | Controles de overlay (filtros, toggles).                                    |
 | `services/vue-ui/src/stores/useSessions.ts`            | Estado del listado de sesiones.                                             |
 | `services/vue-ui/src/stores/useTracks.ts`              | Cache de metadatos, segmentos y filtros de anotaciones.                     |
-| `services/vue-ui/src/api/sessions.ts`                  | Fetchers al `session-store` y MediaMTX (vía servicios).                     |
+| `services/vue-ui/src/api/services/session.service.ts`  | Operaciones de sesiones contra el `session-store`.                          |
+| `services/vue-ui/src/api/services/playback.service.ts` | Genera URLs para reproducir sesiones desde MediaMTX.                         |
 | `services/session-store/src/routes/session.routes.ts`  | API para sesiones, meta/index y segmentos NDJSON.                           |
 | `services/worker-ai/src/session/manager.py`            | Genera `meta.json`, `index.json` y `tracks/seg-xxxx.jsonl`.                 |
 | `services/mediamtx`                                    | Sirve grabaciones (`/get?path=...`).                                        |
@@ -71,6 +72,6 @@ Cuando se monta `Session.vue`:
 1. El `worker-ai` debe escribir en `data/tracks/<session_id>/`.
 2. El `session-store` debe montar `./data/tracks:/data/tracks`.
 3. MediaMTX debe exponer el endpoint `/get`.
-4. `vue-ui` debe tener configuradas las URLs base correctas (`VITE_SESSION_STORE_BASE_URL`, `VITE_MEDIAMTX_BASE_URL` si se personalizan).
+4. `ui-vue` debe tener configuradas las URLs base correctas (`VITE_SESSION_STORE_BASE_URL`, `VITE_MEDIAMTX_BASE_URL` si se personalizan).
 
 Con esos pasos, la UI puede mostrar el video y las anotaciones sin necesidad de proxies adicionales ni lógica duplicada.

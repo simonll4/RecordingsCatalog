@@ -3,7 +3,7 @@
     <header class="control-header">
       <div>
         <h1>Control del Edge Agent</h1>
-        <p class="subtitle">Gestioná el ciclo de vida del servicio y ajustá las clases a detectar.</p>
+  <p class="subtitle">Monitoreá el stream en vivo, gestioná el ciclo de vida del servicio y ajustá las clases a detectar.</p>
       </div>
       <div class="control-header__actions">
         <button class="btn btn-secondary" @click="refreshStatus" :disabled="isStatusLoading">
@@ -13,6 +13,10 @@
     </header>
 
     <section class="control-grid">
+      <div class="live-panel">
+        <WebRtcPlayer />
+      </div>
+
       <article class="card">
         <header class="card-header">
           <div>
@@ -189,6 +193,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import WebRtcPlayer from '@/components/live/WebRtcPlayer.vue'
 import { edgeAgentService } from '@/api/services'
 import { HttpError } from '@/api/http'
 import type {
@@ -513,6 +518,14 @@ onUnmounted(() => {
 .control-grid {
   display: grid;
   gap: 1.5rem;
+}
+
+.live-panel {
+  grid-column: 1 / -1;
+}
+
+.live-panel :deep(.webrtc-player) {
+  height: 100%;
 }
 
 @media (min-width: 1024px) {

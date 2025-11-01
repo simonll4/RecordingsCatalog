@@ -1,11 +1,22 @@
 /**
- * Sessions API - Compatibility Layer
- * This file maintains backward compatibility by re-exporting from sessions-legacy
- * Gradually migrate to use the new modular services from api/services
+ * Sessions API
+ * Retained as a thin shim so existing imports keep working while the
+ * application standardises on the new service module structure.
  */
 
-// Re-export everything from legacy for backward compatibility
-export * from './sessions-legacy'
+export {
+  sessionService,
+  playbackService,
+  type ListSessionsParams,
+  type ListSessionsResponse,
+  type PlaybackInfo,
+  type PlaybackUrlResult,
+} from './services'
 
-// Also export new services for gradual migration
-export { sessionService, playbackService } from './services'
+export type {
+  SessionSummary,
+  TrackMeta,
+  TrackIndex,
+} from './schemas/session.schemas'
+
+export { HttpError } from './http'

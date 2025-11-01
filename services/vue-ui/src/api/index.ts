@@ -12,5 +12,3 @@ export { HttpError, HttpClient, type HttpClientConfig, type RequestOptions } fro
 // Export schemas and types
 export * from './schemas/session.schemas'
 
-// Export legacy compatibility (for gradual migration)
-export * as SessionsLegacy from './sessions-legacy'

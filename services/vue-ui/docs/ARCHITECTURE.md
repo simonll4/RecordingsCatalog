@@ -32,8 +32,7 @@ src/
 │   │   ├── session.service.ts    # Operaciones de sesiones
 │   │   ├── playback.service.ts   # Generación de URLs de playback
 │   │   └── index.ts
-│   ├── sessions-legacy.ts # Capa de compatibilidad (deprecated)
-│   ├── sessions.ts        # Export principal para backward compatibility
+│   ├── sessions.ts        # Shim de compatibilidad: re-exporta servicios y tipos actuales
 │   └── index.ts           # API pública del módulo
 │
 ├── constants/             # Constantes y configuración

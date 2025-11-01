@@ -23,7 +23,7 @@ const router = createRouter({
     {
       path: '/live',
       name: 'live',
-      component: () => import('../views/Live.vue'),
+      redirect: { name: 'control' },
     },
     {
       path: '/control',

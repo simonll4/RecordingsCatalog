@@ -11,11 +11,8 @@ import { RouterLink, RouterView } from 'vue-router'
       <RouterLink to="/" class="app-nav__link" exact-active-class="app-nav__link--active">
         Grabaciones
       </RouterLink>
-      <RouterLink to="/live" class="app-nav__link" active-class="app-nav__link--active">
-        En vivo
-      </RouterLink>
       <RouterLink to="/control" class="app-nav__link" active-class="app-nav__link--active">
-        Control
+        En vivo & Control
       </RouterLink>
     </nav>
     </header>

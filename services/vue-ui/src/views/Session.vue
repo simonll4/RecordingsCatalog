@@ -7,11 +7,11 @@
  * - Observa cambios en `playerStore.currentTime` (vía Player) para cargar
  *   segmentos bajo demanda (esto se hace desde Player/Tracks store).
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import Player from '../components/Player.vue'
 import TrackLegend from '../components/TrackLegend.vue'
-import { fetchSession, buildPlaybackUrl, probePlaybackUrl } from '../api/sessions'
+import { playbackService, sessionService } from '@/api'
 import { usePlayerStore } from '../stores/usePlayer'
 import { useSessionsStore } from '../stores/useSessions'
 import { useTracksStore } from '../stores/useTracks'
@@ -53,13 +53,13 @@ const loadSessionData = async (sessionId: string) => {
     await tracksStore.resetForSession(sessionId)
     // Cargar meta, index y datos de sesión en paralelo
     const [session] = await Promise.all([
-      fetchSession(sessionId),
+      sessionService.getSession(sessionId),
       tracksStore.loadMeta(sessionId),
       tracksStore.loadIndex(sessionId),
     ])
 
     // Intentar construir URL localmente usando media_start_ts
-    let clip = buildPlaybackUrl(session)
+    let clip = playbackService.buildSessionPlaybackUrl(session)
     let finalClip: typeof clip
 
     // Si no se pudo construir (sesión abierta o datos incompletos), error
@@ -68,8 +68,7 @@ const loadSessionData = async (sessionId: string) => {
     } else if (clip.anchorSource === 'fallback_offset') {
       // Si usamos fallback (sin media_start_ts), validar que la URL existe
       console.warn('[loadSessionData] No media_start_ts found, probing playback URL...')
-      const probeResult = await probePlaybackUrl(
-        import.meta.env.VITE_MEDIAMTX_BASE_URL || 'http://localhost:9996',
+      const probeResult = await playbackService.probePlaybackUrl(
         session.path ?? session.device_id,
         new Date(clip.start),
         clip.duration,

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { SessionSummary } from '../api/sessions'
+import type { SessionSummary } from '@/api'
 
 /**
  * Lista de sesiones en forma de tarjetas.

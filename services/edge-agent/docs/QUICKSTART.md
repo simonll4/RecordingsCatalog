@@ -32,7 +32,7 @@ npm run build
 npm start
 ```
 
-La UI no se sirve desde el manager; usá el servicio `vue-ui` en `http://localhost:3000`.
+La UI no se sirve desde el manager; usá el servicio `ui-vue` en `http://localhost:3000`.
 
 ## Docker (imagen local)
 El Dockerfile instala GStreamer y dependencias. Ajustar `config.toml` según entorno (hostnames de servicios).

@@ -17,18 +17,17 @@ Sistema edge de detección y grabación automática de eventos mediante IA, con 
 └────────┘ └─────────┘ └────┬─────┘ └────────────┘
                             │
                       ┌─────▼──────┐
-                      │   vue-ui   │
+                      │   ui-vue   │
                       └────────────┘
 ```
 
 ### Servicios
 
-- **edge-agent**: Captura video, ejecuta detección IA y controla grabaciones mediante FSM
-- **manager (dentro de edge-agent)**: expone API para estado/control (`/status`, `/control/*`, `/config/classes*`)
-- **worker-ai**: Worker de inferencia YOLO (ONNX Runtime) con protocolo TCP custom
+- **edge-agent**: Captura video, ejecuta detección IA y controla grabaciones mediante FSM. Expone una API HTTP en `:7080` para estado y control.
+- **worker-ai**: Worker de inferencia YOLO (ONNX Runtime) con protocolo TCP custom (puede correrse en contenedor o en el host)
 - **mediamtx**: Servidor RTSP/WebRTC para streaming en vivo e ingesta de grabaciones
 - **session-store**: API REST para gestión de sesiones y detecciones + PostgreSQL
-- **vue-ui**: Interfaz web para explorar grabaciones, ver live y controlar el agente
+- **ui-vue**: Interfaz web para explorar grabaciones, ver live y controlar el agente
 - **postgres**: Base de datos para metadatos de sesiones
 
 ##  Despliegue Rápido
@@ -49,14 +48,15 @@ docker compose up -d
 docker compose --profile edge up -d
 ```
 
+- El servicio `worker-ai` puede correr en el host (útil para depurar) o habilitarse descomentándolo en `docker-compose.yml`.
+
 ### Acceder a la UI
 
 ```
 http://localhost:3000
 ```
 - Explorador de sesiones grabadas: `/`
-- Streaming en vivo (WebRTC): `/live`
-- Control del agente (start/stop + clases): `/control`
+- En vivo + control del agente (WebRTC + panel): `/control`
 
 ##  Configuración
 
@@ -132,7 +132,7 @@ url = "postgres://postgres:postgres@postgres:5432/session_store"
 playback_base_url = "http://mediamtx:9996"
 ```
 
-### Vue UI (variables de entorno)
+### ui-vue (variables de entorno)
 
 Crear un `.env` (o variables del contenedor):
 
@@ -200,7 +200,7 @@ tpfinal-v3/
 │   │   ├── config.toml        # ← Configuración
 │   │   ├── src/
 │   │   └── Dockerfile
-│   ├── vue-ui/
+│   ├── vue-ui/                # Código del servicio ui-vue (Vue + Vite)
 │   │   ├── src/               # Código de la app Vite
 │   │   ├── dist/              # Build de producción (en contenedor)
 │   │   └── Dockerfile
@@ -221,7 +221,7 @@ tpfinal-v3/
 - **FSM inteligente** - Grabación automática por detecciones
 - **Worker AI escalable** - Protocolo TCP con control de backpressure
 - **Streaming NV12** - Procesamiento eficiente sin re-encoding
-- **Streaming en vivo** - Flujo WebRTC (WHEP) con auto-conexión y estado/control del agente desde la UI (`/live`, `/control`)
+- **Streaming en vivo** - Flujo WebRTC (WHEP) con auto-conexión y estado/control del agente desde la vista unificada (`/control`)
 - **Playback on-demand** - MediaMTX API para recuperar grabaciones
 - **UI responsive** - Exploración temporal de sesiones
 - **PostgreSQL** - Metadatos de sesiones y detecciones

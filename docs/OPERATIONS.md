@@ -43,7 +43,7 @@ This guide covers the day-to-day commands and quick checks to keep the system he
 | Agent cannot reach camera | `docker compose logs edge-agent` | Verify RTSP URL, network reachability, or USB device mapping |
 | Worker times out | Ensure `services/worker-ai/models/yolo11s-custom.onnx` existe (montado como `/models/yolo11s-custom.onnx` en el contenedor) junto con `class_catalog.json` | Re-exportá el modelo o ajustá `[ai].model_name` en el edge-agent para apuntar al nuevo archivo |
 | No sessions in UI | Check `session-store` logs for errors; confirm PostgreSQL is up | Restart `session-store`, verify database connection string |
-| Live view blank | Confirm MediaMTX is running and the agent reports ACTIVE state | Refresh `/live`, or restart the agent profile |
+| Live view blank | Confirm MediaMTX is running and the agent reports ACTIVE state | Refresh `/control`, or restart the agent profile |
 
 ## Rolling Updates
 

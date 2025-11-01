@@ -106,8 +106,7 @@ If not specified, the application will auto-detect URLs based on the current hos
 ## 🖥️ Views
 
 - `/` Catálogo de grabaciones (Session Store)
-- `/live` WebRTC live player (MediaMTX WHEP)
-- `/control` Panel para controlar el Edge Agent (usa la API del manager en `VITE_EDGE_AGENT_BASE_URL`)
+- `/control` Vista unificada: reproductor WHEP + panel del Edge Agent (usa la API del manager en `VITE_EDGE_AGENT_BASE_URL`)
 
 ## 💻 Usage Examples
 

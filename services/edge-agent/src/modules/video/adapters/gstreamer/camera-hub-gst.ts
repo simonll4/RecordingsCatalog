@@ -79,9 +79,11 @@ export class CameraHubGst implements CameraHub {
   // GStreamer child process
   private proc?: ChildProcess;
 
-  // Ready promise resolution callbacks
-  private readyResolve?: () => void;
-  private readyReject?: (err: Error) => void;
+  // Ready promise resolution callbacks (support multiple waiters)
+  private readyWaiters: Array<{
+    resolve: () => void;
+    reject: (err: Error) => void;
+  }> = [];
 
   // Ready state flags
   private isReady = false; // Final ready state (sawPlaying AND sawSocket)
@@ -112,15 +114,27 @@ export class CameraHubGst implements CameraHub {
   async ready(timeoutMs: number = 5000): Promise<void> {
     if (this.isReady) return Promise.resolve();
 
-    return Promise.race([
-      new Promise<void>((resolve, reject) => {
-        this.readyResolve = resolve;
-        this.readyReject = reject;
-      }),
-      new Promise<void>((_, reject) =>
-        setTimeout(() => reject(new Error("Camera ready timeout")), timeoutMs)
-      ),
-    ]);
+    return new Promise<void>((resolve, reject) => {
+      const onTimeout = () => {
+        this.removeReadyWaiter(waiter);
+        reject(new Error("Camera ready timeout"));
+      };
+
+      const timeout = setTimeout(onTimeout, timeoutMs);
+
+      const waiter = {
+        resolve: () => {
+          clearTimeout(timeout);
+          resolve();
+        },
+        reject: (err: Error) => {
+          clearTimeout(timeout);
+          reject(err);
+        },
+      };
+
+      this.readyWaiters.push(waiter);
+    });
   }
 
   /**
@@ -189,15 +203,13 @@ export class CameraHubGst implements CameraHub {
     // Ready timeout: must become ready within 3s or fail
     // This matches the specification timeout requirement
     this.readyTimeout = setTimeout(() => {
-      if (!this.isReady && this.readyReject) {
+      if (!this.isReady) {
         logger.error("Camera hub ready timeout (3s)", {
           module: "camera-hub-gst",
           sawPlaying: this.sawPlaying,
           sawSocket: this.sawSocket,
         });
-        this.readyReject(new Error("Camera hub ready timeout (3s)"));
-        this.readyReject = undefined;
-        this.readyResolve = undefined;
+        this.rejectAllReadyWaiters(new Error("Camera hub ready timeout (3s)"));
       }
     }, 3000);
   }
@@ -368,8 +380,7 @@ export class CameraHubGst implements CameraHub {
       this.isReady = true;
       this.restartAttempts = 0;
       logger.info("Camera hub ready", { module: "camera-hub-gst" });
-      this.readyResolve?.();
-      this.readyReject = undefined; // Limpiar reject
+      this.resolveAllReadyWaiters();
       this.cleanupReadyWait();
     }
   }
@@ -415,6 +426,10 @@ export class CameraHubGst implements CameraHub {
     this.isReady = false;
     this.sawPlaying = false;
     this.sawSocket = false;
+    // Reject any pending waiters to avoid hangs during restart
+    if (this.readyWaiters.length > 0) {
+      this.rejectAllReadyWaiters(new Error("Camera hub restarted"));
+    }
   }
 
   private cleanupSocket() {
@@ -422,5 +437,32 @@ export class CameraHubGst implements CameraHub {
       fs.unlinkSync(CONFIG.source.socketPath);
       logger.debug("Cleaned up SHM socket", { module: "camera-hub-gst" });
     } catch {}
+  }
+
+  private resolveAllReadyWaiters() {
+    const waiters = [...this.readyWaiters];
+    this.readyWaiters = [];
+    for (const waiter of waiters) {
+      try {
+        waiter.resolve();
+      } catch {}
+    }
+  }
+
+  private rejectAllReadyWaiters(err: Error) {
+    const waiters = [...this.readyWaiters];
+    this.readyWaiters = [];
+    for (const waiter of waiters) {
+      try {
+        waiter.reject(err);
+      } catch {}
+    }
+  }
+
+  private removeReadyWaiter(waiter: {
+    resolve: () => void;
+    reject: (err: Error) => void;
+  }) {
+    this.readyWaiters = this.readyWaiters.filter((w) => w !== waiter);
   }
 }

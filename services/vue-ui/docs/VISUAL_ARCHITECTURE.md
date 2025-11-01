@@ -122,7 +122,7 @@ Diagramas visuales de la arquitectura refactorizada.
       ├──────────────────────────┬─────────────────────┐
       │                          │                     │
 ┌─────▼──────┐          ┌────────▼─────┐    ┌────────▼─────┐
-│ fetchSession│          │ loadMeta()   │    │ loadIndex()  │
+│ getSession()│          │ loadMeta()   │    │ loadIndex()  │
 └─────┬──────┘          └────────┬─────┘    └────────┬─────┘
       │                          │                    │
       │ sessionService           │ sessionService     │ sessionService
@@ -131,8 +131,9 @@ Diagramas visuales de la arquitectura refactorizada.
       └──────────────────────────┴────────────────────┘
                                  │
                     ┌────────────▼───────────┐
-                    │ buildPlaybackUrl()     │
-                    │   (PlaybackService)    │
+                    │ playbackService        │
+                    │   .buildSessionPlayback│
+                    │   Url()                │
                     └────────────┬───────────┘
                                  │
                     ┌────────────▼────────────┐

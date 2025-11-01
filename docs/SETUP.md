@@ -23,12 +23,14 @@ mkdir -p data/recordings data/tracks data/frames
 ## 3. Start the Stack
 
 ```bash
-# Base services (database, backend, worker, UI, media server)
+# Base services (database, session-store, UI, media server)
 docker compose up -d
 
 # Optional: start the edge agent profile (requires camera access)
 docker compose --profile edge up -d edge-agent
 ```
+
+> ℹ️ El `worker-ai` se expone en `docker-compose.yml` pero está comentado. Podés ejecutarlo en el host para depurar o habilitar el contenedor descomentando la sección correspondiente.
 
 Useful commands:
 
@@ -63,10 +65,9 @@ docker compose down                   # Stop everything
 ## 5. Frontend Access
 
 - Recordings catalogue: `http://localhost:3000/`
-- Live status and stream: `http://localhost:3000/live`
-- Agent control panel: `http://localhost:3000/control`
+- Live stream + control panel: `http://localhost:3000/control`
 
-If you expose the UI on another host, set `VITE_*` env vars for the Vue UI container to point to the correct backends (see `services/vue-ui/README.md`).
+If you expose the UI on another host, set `VITE_*` env vars for the ui-vue container to point to the correct backends (see `services/vue-ui/README.md`).
 
 ## 6. Local Development (Optional)
 

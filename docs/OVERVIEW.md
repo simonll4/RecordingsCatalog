@@ -12,7 +12,7 @@ This project delivers a containerised video capture and analysis stack for smart
       │                  │                 │
       ▼                  ▼                 ▼
 ┌────────────┐     ┌────────────┐     ┌─────────────┐
-│ mediamtx   │ --> │ postgres   │ --> │ vue-ui      │
+│ mediamtx   │ --> │ postgres   │ --> │ ui-vue      │
 └────────────┘     └────────────┘     └─────────────┘
 ```
 
@@ -21,7 +21,7 @@ This project delivers a containerised video capture and analysis stack for smart
 - **session-store** (Node.js): Stores session metadata, serves NDJSON tracks, and exposes REST APIs used by the UI.
 - **mediamtx**: Acts as the RTSP/WebRTC server, keeps recordings on disk, and notifies the backend through hooks.
 - **postgres**: Persists session metadata for search and filtering.
-- **vue-ui**: Presents past sessions, playback, and agent control (start/stop + class filters) in the browser.
+- **ui-vue**: Presents past sessions, playback, and agent control (start/stop + class filters) in the browser.
 
 ## Data Flow Summary
 
@@ -48,12 +48,12 @@ docs/             # This documentation set
 | edge-agent     | `services/edge-agent/config.toml`  | Camera source, FSM timers, AI worker address  |
 | worker-ai      | `services/worker-ai/config.toml`   | Model path, tracker options, visualisation    |
 | session-store  | `services/session-store/config.toml` | Database URL and paths for frames/tracks    |
-| vue-ui         | `.env` (VITE_*)                    | Backend URLs consumed by the frontend         |
+| ui-vue         | `.env` (VITE_*)                    | Backend URLs consumed by the frontend         |
 
-Core services use TOML files committed in the repo. The Vue UI uses environment variables (`VITE_*`) to locate backends.
+Core services use TOML files committed in the repo. The ui-vue frontend uses environment variables (`VITE_*`) to locate backends.
 
 ## Typical Use Cases
 
 - **Security recording**: Automatically record only when people are detected, backing sessions with metadata for quick search.
-- **Live monitoring**: View live streams and agent health in the browser via the `/live` view.
+- **Live monitoring**: View live streams and agent health from the unified `/control` view.
 - **Data export**: Access tracks and segments in `data/` for offline analysis or integration with other systems.
