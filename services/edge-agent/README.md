@@ -202,6 +202,9 @@ docker compose --profile edge up --build edge-agent
 
 - `GET http://localhost:7080/status` → snapshot combinado (`manager` + `agent`)
 - `POST http://localhost:7080/control/start` → inicia el runtime (202)
+  - Parámetros opcionales: `wait` (child|heartbeat|detection|session), `timeoutMs` (default: 7000)
+  - Con `wait=heartbeat`: confirma procesamiento de frames antes de responder (200 si listo, 202 si timeout)
+  - Ejemplo: `POST /control/start?wait=heartbeat&timeoutMs=7000`
 - `POST http://localhost:7080/control/stop` → detiene el runtime (202)
 - `GET http://localhost:7080/config/classes` → override actual, clases efectivas y defaults
 - `PUT http://localhost:7080/config/classes` → `{ "classes": ["person", "car"] }` guarda override
@@ -210,6 +213,14 @@ docker compose --profile edge up --build edge-agent
 El manager persiste el override en `runtime-overrides.json` (en el root del servicio) y lo inyecta como variable al runtime durante el arranque.
 
 **Nota:** Por defecto el supervisor _no_ inicia el agente automáticamente (`EDGE_AGENT_AUTOSTART=false`). Usá la pantalla *Control* o `POST /control/start` para lanzarlo; definí `EDGE_AGENT_AUTOSTART=true` si querés la semántica anterior.
+
+**Feedback E2E**: La UI puede usar `wait=heartbeat&minFrames=5` en el inicio para confirmar que el Worker está **efectivamente procesando frames continuos** antes de mostrar el estado al usuario. El Manager esperará hasta que el Agent reporte que procesó al menos N frames (contador `framesProcessed >= minFrames`) o hasta que expire el timeout, permitiendo validar el flujo completo:
+
+```
+Worker procesa frames → ai.detection (x N) → Agent incrementa framesProcessed → Manager confirma readiness → UI muestra feedback
+```
+
+Este mecanismo asegura que el indicador de carga no desaparezca hasta que los frames realmente se estén procesando de forma sostenida (visible en los logs del worker con múltiples frames id=X, id=Y, ...).
 
 Ver stream:
 

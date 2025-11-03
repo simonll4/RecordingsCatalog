@@ -109,6 +109,8 @@ export class AIClientTcp {
   private state: ClientState = "DISCONNECTED";
   private feeder?: AIFeeder;
   private streamId?: string; // Constant stream_id per connection
+  private initOkTimer?: NodeJS.Timeout;
+  private readonly initOkTimeoutMs = 5000;
 
   // Reconnection
   private reconnectAttempts = 0;
@@ -186,6 +188,7 @@ export class AIClientTcp {
           logger.info("[DEBUG] Init message sent", {
             module: "ai-client-tcp",
           });
+          this.startInitOkWatchdog();
         }
 
         resolve();
@@ -220,6 +223,7 @@ export class AIClientTcp {
     if (this.state === "SHUTDOWN") return;
     this.state = "SHUTDOWN";
     this.stopHeartbeat();
+    this.clearInitOkWatchdog();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = undefined;
@@ -400,6 +404,7 @@ export class AIClientTcp {
       chosen: initOk.chosen,
       maxFrameBytes: initOk.maxFrameBytes,
     });
+    this.clearInitOkWatchdog();
     this.state = "READY";
     metrics.inc("ai_init_ok_total");
     if (this.feeder) {
@@ -467,6 +472,7 @@ export class AIClientTcp {
     
     this.state = "DISCONNECTED";
     this.stopHeartbeat();
+  this.clearInitOkWatchdog();
     this.streamId = undefined;
     
     // Reset feeder state on disconnect
@@ -475,11 +481,7 @@ export class AIClientTcp {
       logger.info("Resetting feeder state due to disconnect", {
         module: "ai-client-tcp",
       });
-      // Note: We don't call feeder.stop() because capture should keep running
-      // We just need to reset the initialization flag
-      (this.feeder as any).isInitialized = false;
-      (this.feeder as any).maxFrameBytes = 0;
-      (this.feeder as any).streamId = undefined;
+      this.feeder.handleDisconnect();
     }
     
     if (this.socket) {
@@ -508,6 +510,31 @@ export class AIClientTcp {
         });
       });
     }, delay);
+  }
+
+  private startInitOkWatchdog(): void {
+    this.clearInitOkWatchdog();
+    this.initOkTimer = setTimeout(() => {
+      this.initOkTimer = undefined;
+      if (this.state === "READY" || this.state === "SHUTDOWN") {
+        return;
+      }
+
+      logger.warn("InitOk timeout reached, forcing reconnect", {
+        module: "ai-client-tcp",
+        timeoutMs: this.initOkTimeoutMs,
+        state: this.state,
+      });
+      metrics.inc("ai_init_ok_timeout_total");
+      this.handleDisconnect();
+    }, this.initOkTimeoutMs);
+  }
+
+  private clearInitOkWatchdog(): void {
+    if (this.initOkTimer) {
+      clearTimeout(this.initOkTimer);
+      this.initOkTimer = undefined;
+    }
   }
 
   private startHeartbeat(): void {

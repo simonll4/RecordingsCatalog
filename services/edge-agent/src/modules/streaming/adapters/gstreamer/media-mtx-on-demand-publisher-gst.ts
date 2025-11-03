@@ -256,6 +256,7 @@ export class MediaMtxOnDemandPublisherGst implements Publisher {
           label: this.label,
         });
         killProcess(proc, "SIGKILL");
+        this.state = "idle";
         resolve();
       }, graceMs);
 

@@ -74,6 +74,7 @@ const statusPortOverride =
     ? Number.parseInt(envStatusPort.trim(), 10)
     : undefined;
 
+// Optional runtime override: comma-separated classes list for quick testing
 const envClassesFilter = process.env.EDGE_AGENT_CLASSES_FILTER;
 const classesFilterOverride = normalizeList(envClassesFilter);
 
@@ -139,6 +140,7 @@ export const CONFIG: AppConfig = {
   },
 
   status: {
+    // status.port can be overridden by EDGE_AGENT_STATUS_PORT when running standalone
     port:
       typeof statusPortOverride === "number" && !Number.isNaN(statusPortOverride)
         ? statusPortOverride

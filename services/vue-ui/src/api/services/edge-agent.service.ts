@@ -17,6 +17,17 @@ import { z } from 'zod'
  * Edge Agent Service
  * Provides status/health information for the live streaming agent.
  */
+
+/**
+ * Wait condition for start() readiness check
+ */
+export type EdgeAgentWaitCondition = 'child' | 'heartbeat' | 'detection' | 'session'
+
+export type EdgeAgentStartOptions = {
+  wait?: EdgeAgentWaitCondition
+  timeoutMs?: number
+}
+
 export const edgeAgentService = {
   /**
    * Fetch current status snapshot.
@@ -68,14 +79,39 @@ export const edgeAgentService = {
 
   /**
    * Request agent start.
+   * 
+   * @param options - Optional wait configuration for readiness check
+   *   - wait: Condition to wait for before resolving ('child' | 'heartbeat' | 'detection' | 'session')
+   *   - timeoutMs: Maximum wait time in milliseconds (default: 7000)
+   * 
+   * @returns Manager snapshot
+   * 
+   * @example
+   * // Start and wait for heartbeat confirmation (frames processing)
+   * await edgeAgentService.start({ wait: 'heartbeat', timeoutMs: 7000 })
+   * 
+   * @example
+   * // Start without waiting (backward compatible)
+   * await edgeAgentService.start()
    */
-  async start(): Promise<EdgeAgentManagerSnapshot> {
+  async start(options?: EdgeAgentStartOptions): Promise<EdgeAgentManagerSnapshot> {
+    const params: Record<string, string> = {}
+    if (options?.wait) {
+      params.wait = options.wait
+    }
+    if (options?.timeoutMs !== undefined) {
+      params.timeoutMs = String(options.timeoutMs)
+    }
+
     try {
       const response = await edgeAgentClient.postJson(
         '/control/start',
         {},
         edgeAgentManagerResponseSchema,
-        { expectedStatuses: [200, 202] }
+        {
+          expectedStatuses: [200, 202],
+          params,
+        }
       )
       return response.manager
     } catch (err) {

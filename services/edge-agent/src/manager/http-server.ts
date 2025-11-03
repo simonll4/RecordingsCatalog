@@ -7,7 +7,7 @@
  * Endpoints:
  * - GET  /               → Info + manager snapshot
  * - GET  /status         → { manager, agent } envelope
- * - POST /control/start  → Start child runtime (idempotent)
+ * - POST /control/start  → Start child runtime (idempotent, optional wait for readiness)
  * - POST /control/stop   → Stop child runtime (idempotent)
  * - GET  /config/classes → { overrides, effective, defaults }
  * - PUT  /config/classes → Update class overrides (persists)
@@ -25,6 +25,97 @@ type ServerOptions = {
 };
 
 const log = logger.child({ module: "manager-http" });
+
+/**
+ * Wait Condition for Readiness
+ *
+ * - child: Child process started and responded on /status (state: running)
+ * - heartbeat: Agent shows AI activity (heartbeat after start)
+ * - detection: At least one detection registered (detections.total > 0)
+ * - session: FSM opened a recording session
+ */
+type WaitCondition = "child" | "heartbeat" | "detection" | "session";
+
+type WaitOptions = {
+  condition: WaitCondition;
+  timeoutMs: number;
+};
+
+/**
+ * Wait for Readiness
+ *
+ * Polls supervisor.getSnapshot() and supervisor.getAgentStatus() until
+ * the specified condition is met or timeout expires.
+ *
+ * @param supervisor - Agent supervisor instance
+ * @param opts - Wait condition and timeout
+ * @returns true if ready, false if timeout
+ */
+async function waitForReady(
+  supervisor: AgentSupervisor,
+  opts: WaitOptions
+): Promise<boolean> {
+  const { condition, timeoutMs } = opts;
+  const deadline = Date.now() + timeoutMs;
+  const checkIntervalMs = 250;
+  const startTs = supervisor.getLastStartTs();
+
+  log.info("Waiting for readiness", {
+    condition,
+    timeoutMs,
+    startTs: startTs ? new Date(startTs).toISOString() : null,
+  });
+
+  while (Date.now() < deadline) {
+    const state = supervisor.getState();
+    const agentStatus = supervisor.getAgentStatus();
+
+    if (condition === "child") {
+      if (state === "running") {
+        log.info("Readiness met: child running", { condition });
+        return true;
+      }
+    } else if (condition === "heartbeat") {
+      if (
+        agentStatus?.heartbeatTs &&
+        startTs &&
+        new Date(agentStatus.heartbeatTs).getTime() > startTs
+      ) {
+        log.info("Readiness met: heartbeat detected", {
+          condition,
+          heartbeatTs: agentStatus.heartbeatTs,
+        });
+        return true;
+      }
+    } else if (condition === "detection") {
+      const total = agentStatus?.detections.total ?? 0;
+      const lastDetectionTs = agentStatus?.detections.lastDetectionTs
+        ? new Date(agentStatus.detections.lastDetectionTs).getTime()
+        : 0;
+      if (total > 0 && startTs && lastDetectionTs > startTs) {
+        log.info("Readiness met: detection registered", {
+          condition,
+          total,
+          lastDetectionTs: agentStatus?.detections.lastDetectionTs,
+        });
+        return true;
+      }
+    } else if (condition === "session") {
+      if (agentStatus?.session.active === true) {
+        log.info("Readiness met: session active", {
+          condition,
+          sessionId: agentStatus.session.currentSessionId ?? undefined,
+        });
+        return true;
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, checkIntervalMs));
+  }
+
+  log.warn("Readiness timeout", { condition, timeoutMs });
+  return false;
+}
 
 function sendJson(res: ServerResponse, status: number, payload: unknown) {
   const body = JSON.stringify(payload);
@@ -107,13 +198,103 @@ export async function startManagerServer({
         return;
       }
 
-      if (req.method === "POST" && req.url === "/control/start") {
+      if (req.method === "POST" && req.url?.startsWith("/control/start")) {
+        log.info("Start requested", {
+          path: req.url,
+          remote: req.socket.remoteAddress,
+        });
+
+        // Parse query params and body for optional wait behavior
+        const url = new URL(req.url, `http://${req.headers.host}`);
+        const waitParam = url.searchParams.get("wait") as WaitCondition | null;
+        const timeoutParam = url.searchParams.get("timeoutMs");
+
+        let body: { wait?: WaitCondition; timeoutMs?: number } = {};
+        if (
+          req.headers["content-type"]?.includes("application/json") &&
+          req.headers["content-length"] &&
+          parseInt(req.headers["content-length"], 10) > 0
+        ) {
+          try {
+            body = await parseJson<{ wait?: WaitCondition; timeoutMs?: number }>(req);
+          } catch (err) {
+            const error = err as Error;
+            sendJson(res, 400, { error: error.message || "Invalid JSON payload" });
+            return;
+          }
+        }
+
+        const waitCondition =
+          body.wait ?? waitParam ?? (null as WaitCondition | null);
+        const timeoutMs =
+          body.timeoutMs ?? (timeoutParam ? parseInt(timeoutParam, 10) : null) ?? 7000;
+
         await supervisor.start();
+
+        if (waitCondition) {
+          const validConditions: WaitCondition[] = [
+            "child",
+            "heartbeat",
+            "detection",
+            "session",
+          ];
+          if (!validConditions.includes(waitCondition)) {
+            sendJson(res, 400, {
+              error: `Invalid wait condition: ${waitCondition}. Valid: ${validConditions.join(", ")}`,
+            });
+            return;
+          }
+
+          log.info("Waiting for readiness", {
+            condition: waitCondition,
+            timeoutMs,
+          });
+
+          const ready = await waitForReady(supervisor, {
+            condition: waitCondition,
+            timeoutMs,
+          });
+
+          const snapshot = supervisor.getSnapshot();
+          const agentStatus = supervisor.getAgentStatus();
+
+          if (ready) {
+            log.info("Start completed with readiness confirmation", {
+              condition: waitCondition,
+            });
+            sendJson(res, 200, {
+              manager: snapshot,
+              agent: agentStatus,
+              ready: true,
+              waitedFor: waitCondition,
+            });
+            return;
+          } else {
+            log.warn("Start completed but readiness timeout", {
+              condition: waitCondition,
+              timeoutMs,
+            });
+            sendJson(res, 202, {
+              manager: snapshot,
+              agent: agentStatus,
+              ready: false,
+              waitedFor: waitCondition,
+              timeoutMs,
+            });
+            return;
+          }
+        }
+
+        // No wait requested, respond immediately (backward compatible)
         sendJson(res, 202, { manager: supervisor.getSnapshot() });
         return;
       }
 
       if (req.method === "POST" && req.url === "/control/stop") {
+        log.info("Stop requested", {
+          path: req.url,
+          remote: req.socket.remoteAddress,
+        });
         await supervisor.stop();
         sendJson(res, 202, { manager: supervisor.getSnapshot() });
         return;

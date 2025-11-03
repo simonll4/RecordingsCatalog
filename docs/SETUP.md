@@ -32,6 +32,13 @@ docker compose --profile edge up -d edge-agent
 
 > ℹ️ El `worker-ai` se expone en `docker-compose.yml` pero está comentado. Podés ejecutarlo en el host para depurar o habilitar el contenedor descomentando la sección correspondiente.
 
+> Overrides rápidos del Edge Agent (en desarrollo):
+>
+> - `EDGE_AGENT_CLASSES_FILTER="person,car"` para probar filtros de clases sin editar TOML
+> - `EDGE_AGENT_STATUS_PORT=7080` para ajustar el puerto del servidor de estado
+>
+> Estos overrides aplican solo al runtime del agente; el resto de los servicios usan TOML como fuente de verdad.
+
 Useful commands:
 
 ```bash

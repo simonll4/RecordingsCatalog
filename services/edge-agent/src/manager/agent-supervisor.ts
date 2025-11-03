@@ -56,6 +56,10 @@ export class AgentSupervisor {
     return this.state;
   }
 
+  getLastStartTs(): number | null {
+    return this.lastStartTs;
+  }
+
   getSnapshot(): ManagerSnapshot {
     return {
       state: this.state,

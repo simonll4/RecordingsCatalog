@@ -239,25 +239,58 @@ export class NV12CaptureGst {
    *   5. Send SIGKILL if still running
    */
   async stop(): Promise<void> {
-    if (!this.proc) return;
+    const proc = this.proc;
+    if (!proc) return;
 
     logger.info("Stopping NV12 capture", { module: "nv12-capture-gst" });
     this.stoppedManually = true;
     this._isRunning = false;
 
-    this.proc.stdout?.removeAllListeners();
-    this.proc.stderr?.removeAllListeners();
-    this.proc.removeAllListeners();
+    proc.stdout?.removeAllListeners();
+    proc.stderr?.removeAllListeners();
+    proc.removeAllListeners();
+
+    this.proc = undefined;
+
+    const exitPromise = new Promise<void>((resolve) => {
+      proc.once("exit", () => resolve());
+    });
+
+    let termTimer: NodeJS.Timeout | undefined;
+    let killTimer: NodeJS.Timeout | undefined;
 
     try {
-      this.proc.kill("SIGINT");
+      proc.kill("SIGINT");
     } catch {}
 
-    await new Promise((res) => setTimeout(res, 200));
+    termTimer = setTimeout(() => {
+      if (proc.exitCode === null && proc.signalCode === null) {
+        logger.warn("Capture process still running after SIGINT, sending SIGTERM", {
+          module: "nv12-capture-gst",
+        });
+        try {
+          proc.kill("SIGTERM");
+        } catch {}
+      }
+    }, 1000);
+
+    killTimer = setTimeout(() => {
+      if (proc.exitCode === null && proc.signalCode === null) {
+        logger.error("Capture process unresponsive, forcing SIGKILL", {
+          module: "nv12-capture-gst",
+        });
+        try {
+          proc.kill("SIGKILL");
+        } catch {}
+      }
+    }, 5000);
 
     try {
-      this.proc?.kill("SIGKILL");
-    } catch {}
+      await exitPromise;
+    } finally {
+      if (termTimer) clearTimeout(termTimer);
+      if (killTimer) clearTimeout(killTimer);
+    }
 
     this.acc = Buffer.alloc(0);
   }

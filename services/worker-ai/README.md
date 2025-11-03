@@ -178,8 +178,6 @@ docker run -p 7001:7001 -v $(pwd)/data:/data worker-ai
 ### Documentación Técnica
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) - Arquitectura detallada
 - [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) - Guía de testing
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - Arquitectura detallada
-- [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) - Guía de testing
 
 ## 🛠️ Scripts Útiles
 

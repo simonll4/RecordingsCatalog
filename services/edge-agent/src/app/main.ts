@@ -57,6 +57,17 @@ import { AgentStatusService, startStatusServer } from "./status.js";
 // === Shared ===
 import { logger } from "../shared/logging.js";
 
+/**
+ * Bootstraps the Edge Agent runtime.
+ *
+ * Contract:
+ * - Reads CONFIG (already validated)
+ * - Wires modules (Bus, Video, AI, Store, FSM)
+ * - Starts status HTTP server and orchestrates lifecycle
+ * - Handles transient failures with bounded retries and backoff
+ *
+ * Returns when process receives termination signal; otherwise runs forever.
+ */
 async function main() {
   logger.setLevel(CONFIG.logLevel);
 
@@ -137,12 +148,17 @@ async function main() {
 
   // Configure AI Feeder with model parameters and flow control policy
   aiFeeder.init({
-    model: CONFIG.ai.modelName, // YOLO model name (e.g., "yolov8n")
+  // Path or identifier of the ONNX model to load in the worker. When running the
+  // worker inside Docker, this must be a container path (e.g. /models/*.onnx).
+  // When the worker runs on the host, use an absolute host path.
+  model: CONFIG.ai.modelName,
     width: CONFIG.ai.width, // Frame width for inference
     height: CONFIG.ai.height, // Frame height for inference
     maxInflight: 4, // Max frames in-flight (sliding window size)
-    classesFilter: CONFIG.ai.classesFilter, // Clases relevantes configuradas
-    confidenceThreshold: CONFIG.ai.umbral, // Minimum confidence for detections
+  // Selected classes and confidence threshold. Can be overridden at runtime with
+  // EDGE_AGENT_CLASSES_FILTER env var when running standalone.
+  classesFilter: CONFIG.ai.classesFilter,
+  confidenceThreshold: CONFIG.ai.umbral,
     policy: "LATEST_WINS", // Drop old pending frames when window is full
     preferredFormat: "NV12", // Pixel format for AI worker
   });
@@ -156,11 +172,292 @@ async function main() {
   // ============================================================
   // Wire up event handlers for session lifecycle and AI results
 
-  // Synchronization flags to prevent race conditions during startup
-  // orchestratorReady: Ensures FSM is subscribed to bus before AI starts publishing events
-  // feederStarted: Prevents double-start on AI reconnection
+  // Synchronization flag to prevent race conditions during startup
+  // orchestratorReady: Ensures FSM is subscribed to bus before enabling frame forwarding
   let orchestratorReady = false;
-  let feederStarted = false;
+  let frameMonitorTimer: NodeJS.Timeout | null = null;
+  let frameMonitorAttempts = 0;
+  let frameMonitorHadStall = false;
+  let frameMonitorExhaustedLogged = false;
+  let frameMonitorStartedAt = 0;
+  const FRAME_MONITOR_INTERVAL_MS = 500;
+  const FRAME_STALL_THRESHOLD_MS = 1200;
+  const FRAME_MONITOR_MAX_ATTEMPTS = 2;
+  const FRAME_MONITOR_GRACE_MS = 500;
+  const FRAME_MONITOR_FIRST_FRAME_MS = 1500;
+  let cameraRestarting = false;
+  let liveRestarting = false;
+  let liveRestartAfterFirstFrame = false;
+
+  // Forwarding safety net: if orchestratorReady signal races with InitOk, make sure we open the gate anyway
+  const FORWARDING_SAFETY_TIMEOUT_MS = 3000;
+  let forwardingSafetyTimer: NodeJS.Timeout | null = null;
+
+  const clearForwardingSafetyTimer = () => {
+    if (forwardingSafetyTimer) {
+      clearTimeout(forwardingSafetyTimer);
+      forwardingSafetyTimer = null;
+    }
+  };
+
+  const scheduleForwardingSafety = (trigger: string) => {
+    clearForwardingSafetyTimer();
+    forwardingSafetyTimer = setTimeout(() => {
+      forwardingSafetyTimer = null;
+      if (aiFeeder.isForwardingEnabled()) {
+        return;
+      }
+
+      const captureRunningNow = nv12Capture.isRunning();
+
+      logger.warn("Forwarding safety timeout reached, forcing enable", {
+        module: "main",
+        trigger,
+        orchestratorReady,
+        captureRunning: captureRunningNow,
+      });
+
+      aiFeeder.setForwardingEnabled(true);
+    }, FORWARDING_SAFETY_TIMEOUT_MS);
+  };
+
+  const enableForwardingWhenOrchestratorReady = (source: string) => {
+    if (aiFeeder.isForwardingEnabled()) {
+      clearForwardingSafetyTimer();
+      return;
+    }
+
+    if (!orchestratorReady) {
+      logger.debug("Orchestrator not ready yet, delaying forwarding", {
+        module: "main",
+        source,
+      });
+      setTimeout(() => enableForwardingWhenOrchestratorReady(source), 100);
+      return;
+    }
+
+    logger.info("Enabling frame forwarding", {
+      module: "main",
+      source,
+      captureRunning: nv12Capture.isRunning(),
+    });
+    aiFeeder.setForwardingEnabled(true);
+    clearForwardingSafetyTimer();
+  };
+
+  // Force a full stop/start cycle on the live publisher so the UI stream recovers after capture hiccups.
+  const restartLivePublisher = async (reason: string): Promise<void> => {
+    if (liveRestarting) {
+      logger.warn("Live publisher restart already in progress", {
+        module: "main",
+        reason,
+      });
+      return;
+    }
+
+    liveRestarting = true;
+
+    try {
+      logger.warn("Restarting live publisher", {
+        module: "main",
+        reason,
+      });
+
+      statusService.setLiveStreamRunning(false);
+
+      try {
+        await livePublisher.stop(1000);
+      } catch (error) {
+        logger.error("Live publisher stop before restart failed", {
+          module: "main",
+          reason,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      await livePublisher.start();
+      statusService.setLiveStreamRunning(true);
+
+      logger.info("Live publisher restart complete", {
+        module: "main",
+        reason,
+      });
+    } catch (error) {
+      logger.error("Live publisher restart failed", {
+        module: "main",
+        reason,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      liveRestarting = false;
+    }
+  };
+
+  const restartCameraHub = async (reason: string): Promise<void> => {
+    if (cameraRestarting) {
+      logger.warn("Camera hub restart already in progress", {
+        module: "main",
+        reason,
+      });
+      return;
+    }
+
+    cameraRestarting = true;
+
+    try {
+      logger.warn("Restarting camera hub due to stalled frames", {
+        module: "main",
+        reason,
+      });
+
+      await camera.stop();
+
+      logger.info("Camera hub stopped, starting again", {
+        module: "main",
+        reason,
+      });
+
+      await camera.start();
+
+      logger.info("Waiting for camera hub ready after restart", {
+        module: "main",
+        reason,
+      });
+
+      await camera.ready();
+
+      logger.info("Camera hub restart complete", {
+        module: "main",
+        reason,
+      });
+
+      await restartLivePublisher(`${reason}-camera`);
+
+      if (nv12Capture.isRunning()) {
+        void aiFeeder.restartCapture(`${reason}-camera-restart`);
+      }
+    } catch (error) {
+      logger.error("Camera hub restart failed", {
+        module: "main",
+        reason,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      cameraRestarting = false;
+    }
+  };
+
+  let frameMonitorWaitingFirstFrameLogged = false;
+
+  const stopFrameMonitor = () => {
+    if (frameMonitorTimer) {
+      clearInterval(frameMonitorTimer);
+      frameMonitorTimer = null;
+    }
+    frameMonitorAttempts = 0;
+    frameMonitorHadStall = false;
+    frameMonitorExhaustedLogged = false;
+    frameMonitorStartedAt = 0;
+    frameMonitorWaitingFirstFrameLogged = false;
+    liveRestartAfterFirstFrame = false;
+  };
+
+  const startFrameMonitor = (source: string) => {
+    stopFrameMonitor();
+    frameMonitorStartedAt = Date.now();
+    frameMonitorTimer = setInterval(() => {
+      const stats = aiFeeder.getDiagnostics();
+      const now = Date.now();
+      const sinceStart = frameMonitorStartedAt
+        ? now - frameMonitorStartedAt
+        : 0;
+      const withinStallGrace = sinceStart < FRAME_MONITOR_GRACE_MS;
+      const captureDown = !stats.captureRunning;
+      const noFramesYet = stats.framesReceived === 0;
+      const lastFrameAgeMs = Math.max(0, now - stats.lastFrameTs);
+      const waitingFirstFrame = noFramesYet;
+      const withinFirstFrameGrace =
+        waitingFirstFrame && sinceStart < FRAME_MONITOR_FIRST_FRAME_MS;
+
+      if (!liveRestartAfterFirstFrame && stats.framesReceived > 0) {
+        liveRestartAfterFirstFrame = true;
+        void restartLivePublisher(`${source}-first-frame`);
+      }
+
+      if (waitingFirstFrame && withinFirstFrameGrace) {
+        if (!frameMonitorWaitingFirstFrameLogged) {
+          frameMonitorWaitingFirstFrameLogged = true;
+          logger.info("Frame monitor waiting for first frame", {
+            module: "main",
+            source,
+            elapsedMs: sinceStart,
+          });
+        }
+        return;
+      }
+
+      frameMonitorWaitingFirstFrameLogged = false;
+
+      const stalled =
+        captureDown ||
+        (!withinStallGrace &&
+          (waitingFirstFrame
+            ? !withinFirstFrameGrace
+            : lastFrameAgeMs > FRAME_STALL_THRESHOLD_MS));
+
+      if (stalled) {
+        frameMonitorHadStall = true;
+        if (frameMonitorAttempts < FRAME_MONITOR_MAX_ATTEMPTS) {
+          frameMonitorAttempts += 1;
+          frameMonitorExhaustedLogged = false;
+          logger.warn("Frame monitor detected stalled capture", {
+            module: "main",
+            source,
+            attempt: frameMonitorAttempts,
+            captureRunning: stats.captureRunning,
+            framesReceived: stats.framesReceived,
+            lastFrameAgeMs,
+            withinStallGrace,
+            waitingFirstFrame,
+            withinFirstFrameGrace,
+            monitorElapsedMs: sinceStart,
+          });
+          void aiFeeder.restartCapture(`${source}-monitor-restart-${frameMonitorAttempts}`);
+        } else if (!frameMonitorExhaustedLogged) {
+          frameMonitorExhaustedLogged = true;
+          logger.error("Frame monitor exhausted restart attempts", {
+            module: "main",
+            source,
+            captureRunning: stats.captureRunning,
+            framesReceived: stats.framesReceived,
+            lastFrameAgeMs,
+            withinStallGrace,
+            waitingFirstFrame,
+            withinFirstFrameGrace,
+            monitorElapsedMs: sinceStart,
+          });
+          frameMonitorAttempts = 0;
+          frameMonitorStartedAt = Date.now();
+          frameMonitorWaitingFirstFrameLogged = false;
+          void restartCameraHub(`${source}-monitor-exhausted`);
+        }
+        return;
+      }
+
+      if (frameMonitorHadStall) {
+        logger.info("Frame flow recovered", {
+          module: "main",
+          source,
+          framesReceived: stats.framesReceived,
+          lastFrameAgeMs,
+        });
+      }
+
+      frameMonitorHadStall = false;
+      frameMonitorAttempts = 0;
+      frameMonitorExhaustedLogged = false;
+    }, FRAME_MONITOR_INTERVAL_MS);
+  };
 
   const parseEventTimestamp = (value: unknown): Date => {
     if (typeof value === "string") {
@@ -210,82 +507,31 @@ async function main() {
      * - On reconnection after worker crash/restart
      *
      * Flow Control:
-     * - Only starts frame capture once (feederStarted flag)
-     * - Waits for orchestrator initialization (orchestratorReady flag)
-     * - This prevents publishing events before FSM is subscribed to bus
+     * - Keeps NV12 capture running so SHM never loses consumers
+     * - Enables frame forwarding only after orchestrator initialization
+     * - Re-enables forwarding automatically after reconnections
      */
     onReady: () => {
+      const captureRunning = nv12Capture.isRunning();
+      const forwardingEnabled = aiFeeder.isForwardingEnabled();
+
       logger.info("AI connection ready (InitOk received)", {
         module: "main",
-        feederStarted,
+        captureRunning,
+        forwardingEnabled,
         orchestratorReady,
       });
 
-      // On reconnection, verify capture is actually running
-      // After degradation or crash, capture may have stopped
-      if (feederStarted) {
-        const captureRunning = nv12Capture.isRunning();
-        logger.info("AI reconnected - checking capture state", {
+      if (!captureRunning) {
+        logger.warn("NV12 capture not running, re-priming", {
           module: "main",
-          captureRunning,
         });
-
-        // Si la captura se detuvo (ej: tras degradación), relanzar
-        if (!captureRunning && orchestratorReady) {
-          logger.warn("Capture not running, restarting after reconnection", {
-            module: "main",
-          });
-          void aiFeeder.start();
-        } else if (!captureRunning) {
-          // Captura caída pero orchestrator no listo - esperar a que esté listo
-          logger.warn("Capture not running, waiting for orchestrator before restart", {
-            module: "main",
-          });
-          
-          const restartWhenReady = () => {
-            if (orchestratorReady) {
-              logger.info("Orchestrator now ready, restarting capture", {
-                module: "main",
-              });
-              void aiFeeder.start();
-            } else {
-              logger.debug("Still waiting for orchestrator...", {
-                module: "main",
-              });
-              setTimeout(restartWhenReady, 100);
-            }
-          };
-          restartWhenReady();
-        } else {
-          logger.info("Capture already running, continuing", {
-            module: "main",
-          });
-        }
-        return;
+        void aiFeeder.start();
       }
 
-      logger.info("First connection - waiting for orchestrator", {
-        module: "main",
-      });
-
-      // Polling loop: Wait for orchestrator to initialize before starting frame flow
-      // This is critical to prevent race conditions where events are published
-      // before the FSM has subscribed to the bus
-      const startWhenReady = () => {
-        if (orchestratorReady) {
-          logger.info("Orchestrator ready, starting frame capture", {
-            module: "main",
-          });
-          void aiFeeder.start();
-          feederStarted = true;
-        } else {
-          logger.debug("Waiting for orchestrator initialization...", {
-            module: "main",
-          });
-          setTimeout(startWhenReady, 100);
-        }
-      };
-      startWhenReady();
+      scheduleForwardingSafety("ai-feeder-onReady");
+      enableForwardingWhenOrchestratorReady("ai-feeder-onReady");
+      startFrameMonitor("ai-feeder-onReady");
     },
 
     /**
@@ -488,6 +734,7 @@ async function main() {
      */
     onError: (err) => {
       logger.error("AI error", { module: "main", error: err.message });
+      stopFrameMonitor();
     },
   });
 
@@ -590,6 +837,11 @@ async function main() {
   logger.info("Waiting for camera hub ready", { module: "main" });
   await camera.ready();
 
+  logger.info("Priming AI feeder capture before AI handshake", {
+    module: "main",
+  });
+  await aiFeeder.start();
+
   logger.info("Starting continuous live publisher", {
     module: "main",
     streamPath: CONFIG.mediamtx.livePath,
@@ -606,6 +858,13 @@ async function main() {
   // Signal that orchestrator is ready (allows AI feeder to start)
   // This unblocks the polling loop in onReady callback
   orchestratorReady = true;
+  if (!aiFeeder.isForwardingEnabled()) {
+    logger.debug("Orchestrator ready signal received, checking forwarding gate", {
+      module: "main",
+    });
+    scheduleForwardingSafety("orchestrator-ready");
+    enableForwardingWhenOrchestratorReady("orchestrator-ready");
+  }
 
   logger.info("=== Edge Agent Ready ===", { module: "main" });
 
@@ -620,16 +879,26 @@ async function main() {
   // 3. AI Client: Close TCP connection gracefully
   // 4. Camera Hub: Stop GStreamer pipeline, cleanup SHM
   //
-  // Timeout: 2 seconds max (prevents hanging on unresponsive modules)
+  // Timeout: 10 seconds max (prevents hanging on unresponsive modules)
+
+  const SHUTDOWN_TIMEOUT_MS = 10000;
+  const SHUTDOWN_TIMEOUT_SECS = Math.round(SHUTDOWN_TIMEOUT_MS / 1000);
 
   const shutdown = async () => {
     logger.info("Shutdown signal received", { module: "main" });
+    stopFrameMonitor();
+    clearForwardingSafetyTimer();
 
     // Force exit if graceful shutdown takes too long
     const timeout = setTimeout(() => {
-      logger.error("Shutdown timeout (2s), forcing exit", { module: "main" });
+      logger.error(
+        `Shutdown timeout (${SHUTDOWN_TIMEOUT_SECS}s), forcing exit`,
+        {
+          module: "main",
+        }
+      );
       process.exit(1);
-    }, 2000);
+    }, SHUTDOWN_TIMEOUT_MS);
 
     try {
       // Stop modules in reverse dependency order

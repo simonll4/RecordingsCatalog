@@ -70,7 +70,9 @@
         <p v-else-if="!managerAvailable" class="help-text help-text--error">
           Supervisor no disponible. Ejecutá <code>npm run dev:manager</code> o actualizá el contenedor.
         </p>
-        <p v-else class="help-text">Las acciones actúan sobre el proceso edge-agent dentro del contenedor.</p>
+        <p v-else class="help-text">
+          Las acciones actúan sobre el proceso edge-agent. Verificá la conexión del stream WebRTC arriba para confirmar que el servicio está procesando frames.
+        </p>
       </article>
 
       <article class="card">
@@ -196,6 +198,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import WebRtcPlayer from '@/components/live/WebRtcPlayer.vue'
 import { edgeAgentService } from '@/api/services'
 import { HttpError } from '@/api/http'
+import { useWebRtcState } from '@/composables'
 import type {
   EdgeAgentClassesConfig,
   EdgeAgentManagerSnapshot,
@@ -208,6 +211,9 @@ type Feedback = {
   type: 'success' | 'error'
   message: string
 }
+
+// WebRTC state for coordinated loading feedback
+const { isWebRtcConnected, isWebRtcLoading } = useWebRtcState()
 
 const status = ref<EdgeAgentStatusEnvelope | null>(null)
 const statusError = ref<string | null>(null)
@@ -229,16 +235,45 @@ const runtimeStatus = computed<EdgeAgentRuntimeStatus | null>(() => status.value
 
 const serviceState = computed(() => managerStatus.value?.state ?? 'idle')
 
-const serviceStatusClass = computed(() => ({
-  'status--connected': serviceState.value === 'running',
-  'status--loading': serviceState.value === 'starting' || serviceState.value === 'stopping',
-  'status--error': serviceState.value === 'error',
-  'status--offline': serviceState.value === 'idle',
-}))
+const serviceStatusClass = computed(() => {
+  // Only show "connected" (green) when WebRTC is actually connected
+  if (serviceState.value === 'running' && isWebRtcConnected.value) {
+    return { 'status--connected': true }
+  }
+  
+  // Show "loading" (yellow) when starting, stopping, or waiting for WebRTC
+  if (serviceState.value === 'starting' || serviceState.value === 'stopping') {
+    return { 'status--loading': true }
+  }
+  
+  if (serviceState.value === 'running' && !isWebRtcConnected.value) {
+    // If WebRTC is actively trying to connect, show loading
+    if (isWebRtcLoading.value) {
+      return { 'status--loading': true }
+    }
+    // If service is running but WebRTC hasn't started connecting yet, show loading
+    return { 'status--loading': true }
+  }
+  
+  // Show error state
+  if (serviceState.value === 'error') {
+    return { 'status--error': true }
+  }
+  
+  // Default: offline
+  return { 'status--offline': true }
+})
 
 const serviceStateLabel = computed(() => {
   switch (serviceState.value) {
     case 'running':
+      // Show appropriate loading message if WebRTC is not connected yet
+      if (!isWebRtcConnected.value) {
+        if (isWebRtcLoading.value) {
+          return 'Conectando al stream…'
+        }
+        return 'Esperando conexión…'
+      }
       return 'Servicio en ejecución'
     case 'starting':
       return 'Iniciando servicio…'
@@ -347,13 +382,12 @@ const startAgent = async () => {
     return
   }
   isMutating.value = true
+  statusError.value = null
   classesFeedback.value = null
+
   try {
-    const manager = await edgeAgentService.start()
-    status.value = {
-      manager,
-      agent: status.value?.agent ?? null,
-    }
+    // Simple start without wait - let WebRTC player indicate readiness
+    await edgeAgentService.start()
     await refreshStatus()
   } catch (err) {
     statusError.value = err instanceof Error ? err.message : 'No se pudo iniciar el servicio'
@@ -522,10 +556,6 @@ onUnmounted(() => {
 
 .live-panel {
   grid-column: 1 / -1;
-}
-
-.live-panel :deep(.webrtc-player) {
-  height: 100%;
 }
 
 @media (min-width: 1024px) {
@@ -746,11 +776,24 @@ onUnmounted(() => {
   border: none;
   cursor: pointer;
   transition: opacity 0.2s ease, transform 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.btn-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  flex-shrink: 0;
 }
 
 .btn-primary {

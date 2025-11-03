@@ -11,6 +11,9 @@
  *    - Builds Init message with capabilities (model, size, format)
  *    - Processes InitOk response with worker limits (max_frame_bytes, window)
  *    - Delegates to handshake.ts for protocol-specific logic
+      initialized: this.isInitialized,
+      hasConfig: !!this.config,
+      hasSendFn: !!this.sendFrameFn,
  *
  * 2. Frame Submission
  *    - Subscribes to NV12Capture for incoming frames
@@ -225,9 +228,16 @@ export class AIFeeder {
   private framesSentCount = 0;
   private lastFrameLog = Date.now();
   private resultsReceivedCount = 0;
+  private lastFrameTs = 0;
+
+  // Forwarding gate (guarded until orchestrator ready)
+  private forwardingEnabled = false;
+  private lastForwardingLog = 0;
 
   // Liveness flag
   private _isStarted = false;
+  private captureHandler?: OnNV12FrameFn;
+  private restartingCapture = false;
 
   // Offset para convertir timestamp monotónico (process.hrtime) a UTC
   private utcOffsetNs: bigint | null = null;
@@ -556,6 +566,8 @@ export class AIFeeder {
       this.handleFrame(data, meta);
     };
 
+    this.captureHandler = onFrame;
+    this.lastFrameTs = Date.now();
     await this.capture.start(onFrame);
     this._isStarted = true;
 
@@ -569,6 +581,8 @@ export class AIFeeder {
     await this.capture.stop();
     this._isStarted = false;
     this.pendingFrame = undefined;
+    this.forwardingEnabled = false;
+    this.captureHandler = undefined;
     logger.info("AI Feeder stopped", { module: "ai-feeder" });
   }
 
@@ -596,10 +610,44 @@ export class AIFeeder {
     this.capture.setMode(mode);
   }
 
+  setForwardingEnabled(enabled: boolean): void {
+    if (this.forwardingEnabled === enabled) {
+      return;
+    }
+
+    this.forwardingEnabled = enabled;
+
+    if (enabled) {
+      logger.info("Frame forwarding enabled", { module: "ai-feeder" });
+      this.tryFlushPending();
+    } else {
+      logger.warn("Frame forwarding paused", { module: "ai-feeder" });
+      this.pendingFrame = undefined;
+    }
+  }
+
+  isForwardingEnabled(): boolean {
+    return this.forwardingEnabled;
+  }
+
+  handleDisconnect(): void {
+    this.isInitialized = false;
+    this.maxFrameBytes = 0;
+    this.chosenCodec = pb.ai.Codec.CODEC_NONE;
+    this.streamId = undefined;
+    this.windowManager.reset();
+    this.pendingFrame = undefined;
+    this.forwardingEnabled = false;
+    this.sentFrames.clear();
+    this.utcOffsetNs = null;
+    this.lastForwardingLog = 0;
+  }
+
   // ==================== PRIVATE ====================
 
   private handleFrame(data: Buffer, meta: NV12FrameMeta): void {
     this.framesReceivedCount++;
+    this.lastFrameTs = Date.now();
 
     // DEBUG: Log EVERY frame reception for debugging
     logger.info("[FRAME_IN] Frame received from capture", {
@@ -620,6 +668,19 @@ export class AIFeeder {
         initialized: this.isInitialized,
         hasConfig: !!this.config,
       });
+      return;
+    }
+
+    if (!this.forwardingEnabled) {
+      this.pendingFrame = undefined;
+      const now = Date.now();
+      if (now - this.lastForwardingLog > 2000) {
+        logger.info("[FRAME_DROP] Forwarding disabled, waiting for orchestrator", {
+          module: "ai-feeder",
+          frameNum: this.framesReceivedCount,
+        });
+        this.lastForwardingLog = now;
+      }
       return;
     }
 
@@ -657,6 +718,70 @@ export class AIFeeder {
         frameNum: this.framesReceivedCount,
         windowState: this.windowManager.getState(),
       });
+    }
+  }
+
+  getDiagnostics(): {
+    framesReceived: number;
+    framesSent: number;
+    forwardingEnabled: boolean;
+    captureRunning: boolean;
+    lastFrameTs: number;
+  } {
+    return {
+      framesReceived: this.framesReceivedCount,
+      framesSent: this.framesSentCount,
+      forwardingEnabled: this.forwardingEnabled,
+      captureRunning: this.capture.isRunning(),
+      lastFrameTs: this.lastFrameTs,
+    };
+  }
+
+  async restartCapture(reason: string): Promise<void> {
+    if (this.restartingCapture) {
+      logger.warn("Capture restart already in progress", {
+        module: "ai-feeder",
+        reason,
+      });
+      return;
+    }
+
+    if (!this.captureHandler) {
+      logger.warn("Cannot restart capture: handler not set", {
+        module: "ai-feeder",
+        reason,
+      });
+      return;
+    }
+
+    this.restartingCapture = true;
+
+    try {
+      logger.warn("Restarting NV12 capture", {
+        module: "ai-feeder",
+        reason,
+      });
+
+      await this.capture.stop();
+      this._isStarted = false;
+      this.pendingFrame = undefined;
+
+      this.lastFrameTs = Date.now();
+      await this.capture.start(this.captureHandler);
+      this._isStarted = true;
+
+      logger.info("NV12 capture restarted", {
+        module: "ai-feeder",
+        reason,
+      });
+    } catch (error) {
+      logger.error("Failed to restart capture", {
+        module: "ai-feeder",
+        reason,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      this.restartingCapture = false;
     }
   }
 
@@ -835,6 +960,10 @@ export class AIFeeder {
   }
 
   private tryFlushPending(): void {
+    if (!this.forwardingEnabled) {
+      return;
+    }
+
     if (this.pendingFrame && this.canSend()) {
       const { data, meta } = this.pendingFrame;
       this.pendingFrame = undefined;

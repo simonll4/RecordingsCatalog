@@ -116,7 +116,7 @@ bind_port = 7001
 
 [bootstrap]
 enabled = false  # true para pre-cargar modelo
-model_path = "/models/yolo11s.onnx"
+model_path = "/models/yolo11s-custom.onnx"  # En Docker, el modelo se monta como /models/*.onnx
 
 [visualization]
 enabled = false  # true para ver detecciones (desarrollo)
@@ -128,8 +128,11 @@ enabled = false  # true para ver detecciones (desarrollo)
 [database]
 url = "postgres://postgres:postgres@postgres:5432/session_store"
 
-[mediamtx]
-playback_base_url = "http://mediamtx:9996"
+[frames]
+storage_path = "/data/frames"
+
+[tracks]
+storage_path = "/data/tracks"
 ```
 
 ### ui-vue (variables de entorno)
@@ -142,6 +145,8 @@ VITE_MEDIAMTX_BASE_URL=http://mediamtx:9996
 VITE_WEBRTC_BASE_URL=http://mediamtx:8889
 VITE_EDGE_AGENT_BASE_URL=http://edge-agent:7080
 VITE_LIVE_STREAM_PATH=cam-local-live
+
+Sugerencia: al desarrollar fuera de Docker, apuntá estas URLs a `http://localhost:*` según corresponda.
 ```
 
 ## 🛠️ Desarrollo
@@ -184,7 +189,7 @@ docker compose --profile edge up -d
 tpfinal-v3/
 ├── docker-compose.yml          # Orquestación de servicios
 ├── data/
-│   ├── models/                # Modelos ONNX (yolo11s.onnx)
+│   ├── models/                # Modelos ONNX (yolo11s-custom.onnx)
 │   ├── recordings/            # Grabaciones RTSP
 │   └── frames/                # Frames de detecciones
 ├── services/
@@ -217,7 +222,7 @@ tpfinal-v3/
 
 ## Características
 
-- **Configuración TOML centralizada** - Sin variables de entorno
+- **Configuración TOML centralizada** - La mayoría de servicios usan TOML; el edge-agent admite overrides de entorno para acelerar el desarrollo
 - **FSM inteligente** - Grabación automática por detecciones
 - **Worker AI escalable** - Protocolo TCP con control de backpressure
 - **Streaming NV12** - Procesamiento eficiente sin re-encoding
@@ -259,7 +264,13 @@ Exportar el modelo ONNX por defecto:
 
 ```bash
 python services/worker-ai/scripts/export_yolo11s_to_onnx.py
-# El modelo queda en services/worker-ai/models/yolo11s.onnx (en contenedor: /models/yolo11s.onnx)
+# El modelo queda en services/worker-ai/models/yolo11s-custom.onnx (en contenedor: /models/yolo11s-custom.onnx)
+
+Importante: el `edge-agent` le informa al worker la ruta del modelo. Si el worker corre en Docker, usá rutas de contenedor (`/models/...`). Si corre en tu host, usá una ruta absoluta válida del host hacia `services/worker-ai/models`.
+
+Overrides rápidos del agente (útiles en desarrollo):
+- `EDGE_AGENT_CLASSES_FILTER="person,car"` para forzar clases sin tocar `config.toml`
+- `EDGE_AGENT_STATUS_PORT=7080` para ajustar el puerto del servidor de estado
 ```
 
 ## Troubleshooting

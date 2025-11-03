@@ -17,6 +17,24 @@ This guide covers the day-to-day commands and quick checks to keep the system he
   ```bash
   docker compose logs -f edge-agent
   ```
+  
+  The manager exposes a REST API for control and monitoring:
+  - `GET /status` → Combined manager + agent snapshot
+  - `POST /control/start` → Start runtime (optional wait for readiness)
+  - `POST /control/stop` → Stop runtime
+  
+  **Readiness checks**: You can request the manager to wait for specific conditions before responding to start:
+  - `wait=heartbeat` → Confirms worker is processing frames (validates framesProcessed >= minFrames)
+  - `wait=detection` → Waits for at least one detection
+  - `wait=session` → Waits for FSM to open a recording session
+  
+  The `heartbeat` condition ensures the worker has processed a minimum number of frames (default 3, configurable with `minFrames` parameter), guaranteeing sustained frame processing, not just initial connection.
+  
+  Example:
+  ```bash
+  curl -X POST "http://localhost:7080/control/start?wait=heartbeat&timeoutMs=15000&minFrames=5"
+  ```
+  
 - **MediaMTX hook activity**  
   ```bash
   docker compose logs -f mediamtx
@@ -41,7 +59,7 @@ This guide covers the day-to-day commands and quick checks to keep the system he
 | Issue | Checks | Fixes |
 |-------|--------|-------|
 | Agent cannot reach camera | `docker compose logs edge-agent` | Verify RTSP URL, network reachability, or USB device mapping |
-| Worker times out | Ensure `services/worker-ai/models/yolo11s-custom.onnx` existe (montado como `/models/yolo11s-custom.onnx` en el contenedor) junto con `class_catalog.json` | Re-exportá el modelo o ajustá `[ai].model_name` en el edge-agent para apuntar al nuevo archivo |
+| Worker times out | Verificá que `services/worker-ai/models/yolo11s-custom.onnx` exista (montado como `/models/yolo11s-custom.onnx` en el contenedor) | Re-exportá el modelo o ajustá `[ai].model_name` en el edge-agent para apuntar al archivo correcto |
 | No sessions in UI | Check `session-store` logs for errors; confirm PostgreSQL is up | Restart `session-store`, verify database connection string |
 | Live view blank | Confirm MediaMTX is running and the agent reports ACTIVE state | Refresh `/control`, or restart the agent profile |
 

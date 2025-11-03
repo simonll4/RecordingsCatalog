@@ -22,11 +22,18 @@
         controls
         class="webrtc-player__video"
       />
+      
+      <!-- Connection overlay -->
+      <div v-if="isLoading" class="webrtc-player__overlay">
+        <div class="spinner-large"></div>
+        <div class="overlay-content">
+          <p class="overlay-message">Conectando al stream en vivo…</p>
+          <p class="overlay-hint">Esperando frames del edge agent</p>
+        </div>
+      </div>
+      
       <div v-if="error" class="webrtc-player__error">
         <strong>Error:</strong> {{ error }}
-      </div>
-      <div v-else-if="isLoading" class="webrtc-player__loading">
-        Conectando con el servidor WebRTC…
       </div>
       <div v-else-if="!agentOnline" class="webrtc-player__info">
         Edge agent sin conexión. Reintentando automáticamente…
@@ -75,10 +82,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { edgeAgentService } from '@/api/services'
 import { BASE_URLS } from '@/api/http'
 import { LIVE_STREAM_CONFIG } from '@/constants'
+import { useWebRtcState } from '@/composables'
 import type {
   EdgeAgentStatusEnvelope,
   EdgeAgentRuntimeStatus,
@@ -86,6 +94,10 @@ import type {
 } from '@/api/schemas/status.schemas'
 
 type IntervalHandle = ReturnType<typeof setInterval> | null
+type TimeoutHandle = ReturnType<typeof setTimeout> | null
+
+// Shared WebRTC state for cross-component coordination
+const { setConnected, setLoading } = useWebRtcState()
 
 const videoElement = ref<HTMLVideoElement | null>(null)
 const peerConnection = ref<RTCPeerConnection | null>(null)
@@ -182,6 +194,7 @@ let statsInterval: IntervalHandle = null
 let statusInterval: IntervalHandle = null
 let lastVideoStats: { bytesReceived: number; timestamp: number } | null = null
 let isFetchingStatus = false
+let retryTimeout: TimeoutHandle = null
 
 const stopStatsCollection = () => {
   if (statsInterval) {
@@ -239,6 +252,23 @@ const stopStatusPolling = () => {
   }
 }
 
+const clearRetry = () => {
+  if (retryTimeout) {
+    clearTimeout(retryTimeout)
+    retryTimeout = null
+  }
+}
+
+const scheduleRetry = (delayMs: number) => {
+  clearRetry()
+  retryTimeout = setTimeout(() => {
+    retryTimeout = null
+    if (!isConnected.value && !isLoading.value && agentOnline.value) {
+      void startStream()
+    }
+  }, delayMs)
+}
+
 const waitForIceGatheringComplete = (pc: RTCPeerConnection): Promise<void> => {
   if (pc.iceGatheringState === 'complete') return Promise.resolve()
 
@@ -288,6 +318,7 @@ const startStream = async () => {
 
   error.value = null
   isLoading.value = true
+  clearRetry()
 
   try {
     peerConnection.value = new RTCPeerConnection({
@@ -346,7 +377,10 @@ const startStream = async () => {
   } catch (err) {
     console.error('[WebRTC] Error establishing connection', err)
     const message = err instanceof Error ? err.message : 'Error desconocido al iniciar WebRTC'
-    error.value = message
+    const isWhep404 = /404/.test(message)
+    error.value = isWhep404
+      ? 'Live todavía no disponible. Reintentando automáticamente…'
+      : message
     isConnected.value = false
     isLoading.value = false
     stopStatsCollection()
@@ -355,11 +389,16 @@ const startStream = async () => {
       peerConnection.value.close()
       peerConnection.value = null
     }
+
+    if (agentOnline.value && isWhep404) {
+      scheduleRetry(1500)
+    }
   }
 }
 
 const stopStream = () => {
   stopStatsCollection()
+  clearRetry()
 
   if (peerConnection.value) {
     try {
@@ -419,6 +458,15 @@ const formatDateTime = (iso: string | null | undefined): string => {
   return date.toLocaleString()
 }
 
+// Sync WebRTC state to shared composable for cross-component coordination
+watch(isConnected, (connected) => {
+  setConnected(connected)
+})
+
+watch(isLoading, (loading) => {
+  setLoading(loading)
+})
+
 onMounted(() => {
   void fetchAgentStatus()
   statusInterval = setInterval(() => {
@@ -429,6 +477,7 @@ onMounted(() => {
 onUnmounted(() => {
   stopStream()
   stopStatusPolling()
+  clearRetry()
 })
 
 defineExpose({ startStream, stopStream, whepUrl })
@@ -504,15 +553,63 @@ defineExpose({ startStream, stopStream, whepUrl })
   border-radius: 12px;
   overflow: hidden;
   background: #050607;
-  min-height: 320px;
+  width: 100%;
+  aspect-ratio: 16 / 9;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+/* Connection overlay */
+.webrtc-player__overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 6, 7, 0.85);
+  backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  z-index: 10;
+}
+
+.spinner-large {
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(99, 102, 241, 0.15);
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.overlay-content {
+  text-align: center;
+}
+
+.overlay-message {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #d4d6ff;
+  margin: 0 0 0.5rem 0;
+}
+
+.overlay-hint {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0;
+}
+
 .webrtc-player__video {
   width: 100%;
-  max-height: 520px;
+  height: 100%;
+  object-fit: contain;
   background: #000;
 }
 

@@ -85,8 +85,24 @@
  *   - Scales to multiple consumers without penalty
  */
 
+import { spawnSync } from "child_process";
 import { SourceConfig, MediaMTXConfig } from "../config/schema.js";
 import { EncoderConfig } from "./encoder.js";
+
+const SHMSINK_SUPPORTS_RECOVER_POLICY = (() => {
+  try {
+    const result = spawnSync("gst-inspect-1.0", ["shmsink"], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    if (result.status === 0 && typeof result.stdout === "string") {
+      return /recover-policy/i.test(result.stdout);
+    }
+  } catch {}
+
+  return false;
+})();
 
 /**
  * Build Ingest Pipeline - Always-On Camera Capture
@@ -152,6 +168,19 @@ export function buildIngest(source: SourceConfig): string[] {
   ];
 
   // RTSP camera (H.264)
+  const shmsinkArgs = [
+    "shmsink",
+    `socket-path=${socketPath}`,
+    `shm-size=${shmSizeBytes}`,
+    "wait-for-connection=true",
+  ];
+
+  if (SHMSINK_SUPPORTS_RECOVER_POLICY) {
+    shmsinkArgs.push("recover-policy=none");
+  }
+
+  shmsinkArgs.push("sync=false");
+
   return [
     ...base,
     "rtspsrc",
@@ -188,11 +217,7 @@ export function buildIngest(source: SourceConfig): string[] {
     "max-size-buffers=1",
     "leaky=downstream",
     "!",
-    "shmsink",
-    `socket-path=${socketPath}`,
-    `shm-size=${shmSizeBytes}`,
-    "wait-for-connection=false",
-    "sync=false",
+    ...shmsinkArgs,
   ];
 }
 
