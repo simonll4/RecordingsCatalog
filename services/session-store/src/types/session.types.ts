@@ -11,6 +11,7 @@ export interface SessionRecord {
   media_end_ts: string | null;
   recommended_start_offset_ms: number | null;
   reason: string | null;
+  detected_classes: string[];
   created_at: string;
   updated_at: string;
 }

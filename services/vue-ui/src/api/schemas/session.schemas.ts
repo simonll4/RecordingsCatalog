@@ -5,8 +5,8 @@
 
 import { z } from 'zod'
 
-// Session Summary Schema
-export const sessionSummarySchema = z.object({
+// Session Summary Base Schema (from API)
+const sessionSummaryBaseSchema = z.object({
   session_id: z.string(),
   device_id: z.string(),
   path: z.string().optional(),
@@ -19,14 +19,22 @@ export const sessionSummarySchema = z.object({
   media_end_ts: z.string().nullable().optional(),
   recommended_start_offset_ms: z.number().nullable().optional(),
   reason: z.string().nullable().optional(),
+  detected_classes: z.array(z.string()).optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
 })
+
+// Transform to ensure detected_classes is always an array
+export const sessionSummarySchema = sessionSummaryBaseSchema.transform((data) => ({
+  ...data,
+  detected_classes: data.detected_classes ?? [],
+}))
 
 // Session List Schemas
 export const rangeSessionsSchema = z.object({
   from: z.string(),
   to: z.string(),
+  classes: z.array(z.string()).optional(),
   sessions: z.array(sessionSummarySchema),
 })
 

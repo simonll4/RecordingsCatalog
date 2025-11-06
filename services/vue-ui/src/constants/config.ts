@@ -24,6 +24,9 @@ export const SEGMENT_CONFIG = {
   MAX_SEGMENTS_IN_MEMORY: 12,
   EVENT_WINDOW_SECONDS: 0.2,
   TRAIL_WINDOW_SECONDS: 2.0,
+  // Temporal interpolation
+  ENABLE_INTERPOLATION: true,
+  MAX_INTERPOLATION_GAP_SECONDS: 0.3,
 } as const
 
 // UI Configuration

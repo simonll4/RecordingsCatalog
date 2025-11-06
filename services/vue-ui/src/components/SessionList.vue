@@ -26,6 +26,15 @@ const formatter = new Intl.DateTimeFormat(undefined, {
   timeStyle: 'medium',
 })
 
+// Mapeo de clases a emojis/iconos
+const classIcons: Record<string, string> = {
+  'person': '👤',
+  'backpack': '🎒',
+  'bottle': '🍾',
+  'cup': '☕',
+  'shoes': '👟'
+}
+
 // Computed que agrega etiquetas legibles a cada sesión
 const formattedSessions = computed(() =>
   props.sessions.map((session) => ({
@@ -71,6 +80,21 @@ const formattedSessions = computed(() =>
             <dd>{{ session.endLabel }}</dd>
           </div>
         </dl>
+        
+        <!-- Mostrar clases detectadas -->
+        <div v-if="session.detected_classes && session.detected_classes.length > 0" class="detected-classes">
+          <span class="classes-label">Detectadas:</span>
+          <div class="class-tags">
+            <span 
+              v-for="className in session.detected_classes" 
+              :key="className"
+              class="class-tag"
+            >
+              <span class="tag-icon">{{ classIcons[className] || '📦' }}</span>
+              <span class="tag-name">{{ className }}</span>
+            </span>
+          </div>
+        </div>
       </article>
     </div>
   </div>
@@ -170,5 +194,47 @@ dd {
   margin: 0;
   font-size: 0.95rem;
   color: rgba(255, 255, 255, 0.9);
+}
+
+.detected-classes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.classes-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.class-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.class-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: rgba(77, 171, 247, 0.15);
+  border: 1px solid rgba(77, 171, 247, 0.3);
+  border-radius: 0.4rem;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  color: #4dabf7;
+}
+
+.tag-icon {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.tag-name {
+  text-transform: capitalize;
 }
 </style>

@@ -101,6 +101,35 @@ export class SessionRepository {
     return result.rows;
   }
 
+  async listByTimeRangeAndClasses(
+    from: Date, 
+    to: Date, 
+    classes: string[], 
+    limit = 200
+  ): Promise<SessionRecord[]> {
+    const result = await pool.query<SessionRecord>(
+      `SELECT * FROM sessions
+       WHERE start_ts < $2
+         AND (end_ts IS NULL OR end_ts >= $1)
+         AND detected_classes @> $3::text[]
+         AND array_length(detected_classes, 1) > 0
+       ORDER BY start_ts DESC
+       LIMIT $4`,
+      [from.toISOString(), to.toISOString(), classes, limit]
+    );
+    return result.rows;
+  }
+
+  async addDetectedClass(sessionId: string, className: string): Promise<void> {
+    await pool.query(
+      `UPDATE sessions
+       SET detected_classes = array_append(detected_classes, $2)
+       WHERE session_id = $1 
+         AND NOT ($2 = ANY(detected_classes))`,
+      [sessionId, className]
+    );
+  }
+
   async updateMediaConnectTs(sessionId: string, connectTs: string): Promise<void> {
     await pool.query(
       `UPDATE sessions

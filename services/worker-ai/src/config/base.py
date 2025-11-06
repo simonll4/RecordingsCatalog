@@ -35,6 +35,7 @@ class TrackerConfig:
     enabled: bool = True
     type: str = "botsort"
     config_path: str = "botsort.yaml"
+    use_kalman: bool = True
 
 
 @dataclass

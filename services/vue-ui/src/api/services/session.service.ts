@@ -27,6 +27,7 @@ export interface ListSessionsParams {
   limit?: number
   from?: string
   to?: string
+  classes?: string[]
 }
 
 /**
@@ -37,6 +38,7 @@ export interface ListSessionsResponse {
   sessions: SessionSummary[]
   from?: string
   to?: string
+  classes?: string[]
 }
 
 /**
@@ -59,7 +61,10 @@ export class SessionService {
       
       return {
         mode: 'all',
-        sessions: data.sessions,
+        sessions: data.sessions.map(s => ({
+          ...s,
+          detected_classes: s.detected_classes ?? []
+        })),
       }
     }
 
@@ -75,6 +80,9 @@ export class SessionService {
     if (params.limit) {
       queryParams[QUERY_PARAMS.LIMIT] = params.limit
     }
+    if (params.classes && params.classes.length > 0) {
+      queryParams['classes'] = params.classes.join(',')
+    }
     
     const data = await sessionStoreClient.getJson(
       SESSION_ENDPOINTS.LIST_RANGE,
@@ -84,9 +92,13 @@ export class SessionService {
     
     return {
       mode: 'range',
-      sessions: data.sessions,
+      sessions: data.sessions.map(s => ({
+        ...s,
+        detected_classes: s.detected_classes ?? []
+      })),
       from: data.from,
       to: data.to,
+      classes: data.classes,
     }
   }
 
@@ -94,10 +106,14 @@ export class SessionService {
    * Get session details
    */
   async getSession(sessionId: string): Promise<SessionSummary> {
-    return sessionStoreClient.getJson(
+    const session = await sessionStoreClient.getJson(
       SESSION_ENDPOINTS.DETAILS(sessionId),
       sessionSummarySchema
     )
+    return {
+      ...session,
+      detected_classes: session.detected_classes ?? []
+    }
   }
 
 

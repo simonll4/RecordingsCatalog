@@ -24,7 +24,7 @@
       />
       
       <!-- Connection overlay -->
-      <div v-if="isLoading" class="webrtc-player__overlay">
+      <div v-if="isLoading || serviceState === 'starting' || (agentOnline && !isConnected && !error)" class="webrtc-player__overlay">
         <div class="spinner-large"></div>
         <div class="overlay-content">
           <p class="overlay-message">Conectando al stream en vivo…</p>
@@ -32,9 +32,6 @@
         </div>
       </div>
       
-      <div v-if="error" class="webrtc-player__error">
-        <strong>Error:</strong> {{ error }}
-      </div>
       <div v-else-if="!agentOnline" class="webrtc-player__info">
         Edge agent sin conexión. Reintentando automáticamente…
         <span v-if="agentStatusError" class="muted">({{ agentStatusError }})</span>
@@ -42,13 +39,7 @@
     </div>
 
     <footer class="webrtc-player__footer">
-      <div class="actions">
-        <button class="btn btn-primary" @click="startStream" :disabled="isLoading || isConnected || !agentOnline">
-          Reconectar
-        </button>
-        <button class="btn btn-secondary" @click="stopStream" :disabled="(!isConnected && !isLoading)">
-          Detener
-        </button>
+      <div class="connection-info">
         <small class="whep-url">
           WHEP: <code>{{ whepUrl }}</code>
         </small>
@@ -132,9 +123,13 @@ const agentOnline = computed(
 )
 
 const streamStatusState = computed(() => {
+  // If service is starting, always show loading
+  if (serviceState.value === 'starting') return 'loading'
   if (!agentOnline.value) return 'offline'
   if (isLoading.value) return 'loading'
   if (isConnected.value) return 'connected'
+  // If agent is online but not connected yet, keep loading state
+  if (serviceState.value === 'running' && !isConnected.value && !error.value) return 'loading'
   if (error.value) return 'error'
   return 'idle'
 })
@@ -158,7 +153,7 @@ const agentStatusText = computed(() => {
     case 'running':
       return 'Servicio en ejecución'
     case 'starting':
-      return 'Iniciando servicio…'
+      return 'Iniciando servicio'
     case 'stopping':
       return 'Deteniendo servicio…'
     case 'error':
@@ -378,9 +373,12 @@ const startStream = async () => {
     console.error('[WebRTC] Error establishing connection', err)
     const message = err instanceof Error ? err.message : 'Error desconocido al iniciar WebRTC'
     const isWhep404 = /404/.test(message)
-    error.value = isWhep404
-      ? 'Live todavía no disponible. Reintentando automáticamente…'
-      : message
+    
+    // Don't show error message if we're going to retry automatically
+    if (!isWhep404 || !agentOnline.value) {
+      error.value = message
+    }
+    
     isConnected.value = false
     isLoading.value = false
     stopStatsCollection()
@@ -390,6 +388,7 @@ const startStream = async () => {
       peerConnection.value = null
     }
 
+    // Auto-retry if agent is online and stream not yet available
     if (agentOnline.value && isWhep404) {
       scheduleRetry(1500)
     }
@@ -411,7 +410,17 @@ const stopStream = () => {
   }
 
   if (videoElement.value) {
+    // Stop all tracks from the stream
+    const stream = videoElement.value.srcObject as MediaStream | null
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop())
+    }
+    
+    // Clear the video source
     videoElement.value.srcObject = null
+    
+    // Reset video element to clear the last frame
+    videoElement.value.load()
   }
 
   isConnected.value = false
@@ -465,6 +474,14 @@ watch(isConnected, (connected) => {
 
 watch(isLoading, (loading) => {
   setLoading(loading)
+})
+
+// Watch for agent going offline and cleanup the video
+watch(agentOnline, (online) => {
+  if (!online && (isConnected.value || isLoading.value)) {
+    console.log('[WebRTC] Agent went offline, cleaning up stream')
+    stopStream()
+  }
 })
 
 onMounted(() => {
@@ -554,6 +571,7 @@ defineExpose({ startStream, stopStream, whepUrl })
   overflow: hidden;
   background: #050607;
   width: 100%;
+  max-width: 100%;
   aspect-ratio: 16 / 9;
   display: flex;
   align-items: center;
@@ -638,36 +656,15 @@ defineExpose({ startStream, stopStream, whepUrl })
   gap: 1.2rem;
 }
 
-.actions {
+.connection-info {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
-}
-
-.btn {
-  border: none;
-  border-radius: 999px;
-  padding: 0.55rem 1.5rem;
-  cursor: pointer;
-  font-weight: 600;
-  transition: transform 0.15s ease, opacity 0.15s ease;
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-primary {
-  background: linear-gradient(135deg, #4f46e5, #6366f1);
-  color: #fff;
-}
-
-.btn-secondary {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  gap: 1rem;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .whep-url {

@@ -46,7 +46,15 @@ export class SessionService {
   /**
    * List sessions by time range
    */
-  async listSessionsByTimeRange(from: Date, to: Date, limit?: number): Promise<SessionRecord[]> {
+  async listSessionsByTimeRange(
+    from: Date, 
+    to: Date, 
+    classes?: string[], 
+    limit?: number
+  ): Promise<SessionRecord[]> {
+    if (classes && classes.length > 0) {
+      return this.sessionRepository.listByTimeRangeAndClasses(from, to, classes, limit);
+    }
     return this.sessionRepository.listByTimeRange(from, to, limit);
   }
 

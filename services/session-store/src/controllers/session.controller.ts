@@ -123,7 +123,7 @@ export class SessionController {
   async listSessionsByRange(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const limit = parsePositiveInt(req.query.limit) || 50;
-      const { from, to } = req.query;
+      const { from, to, classes } = req.query;
 
       const fromDate = parseIsoDate(from);
       const toDate = parseIsoDate(to);
@@ -132,12 +132,28 @@ export class SessionController {
         res.status(400).json({ error: 'from and to query parameters are required and must be valid ISO dates' });
         return;
       }
+
+      // Parse classes filter (comma-separated string or array)
+      let classFilter: string[] | undefined;
+      if (classes) {
+        if (typeof classes === 'string') {
+          classFilter = classes.split(',').map(c => c.trim()).filter(Boolean);
+        } else if (Array.isArray(classes)) {
+          classFilter = classes.map(c => String(c).trim()).filter(Boolean);
+        }
+      }
       
-      const sessions = await this.sessionService.listSessionsByTimeRange(fromDate, toDate, limit);
+      const sessions = await this.sessionService.listSessionsByTimeRange(
+        fromDate, 
+        toDate, 
+        classFilter,
+        limit
+      );
 
       res.json({ 
         from: fromDate,
         to: toDate,
+        classes: classFilter,
         sessions 
       });
     } catch (error) {

@@ -24,9 +24,23 @@ export async function ensureSchema(): Promise<void> {
         media_start_ts TIMESTAMPTZ,
         media_end_ts TIMESTAMPTZ,
         recommended_start_offset_ms INTEGER,
+        detected_classes TEXT[] DEFAULT '{}',
         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       )
+    `);
+    
+    // Add detected_classes column if it doesn't exist (migration)
+    await client.query(`
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'sessions' AND column_name = 'detected_classes'
+        ) THEN
+          ALTER TABLE sessions ADD COLUMN detected_classes TEXT[] DEFAULT '{}';
+        END IF;
+      END $$
     `);
 
     // Create detections table
@@ -79,6 +93,7 @@ export async function ensureSchema(): Promise<void> {
     // Create indexes
     await client.query('CREATE INDEX IF NOT EXISTS idx_sessions_path_open ON sessions(path) WHERE end_ts IS NULL');
     await client.query('CREATE INDEX IF NOT EXISTS idx_sessions_path_timestamps ON sessions(path, start_ts, end_ts)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_sessions_detected_classes ON sessions USING GIN(detected_classes)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_detections_session ON detections(session_id)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_detections_last_ts ON detections(last_ts)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_detections_cls ON detections(cls)');

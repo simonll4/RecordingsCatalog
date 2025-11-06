@@ -184,20 +184,65 @@ class SessionWriter:
         for track in tracks:
             self.classes_seen[track.class_id] = track.class_name
             x1, y1, x2, y2 = track.bbox
-            objs.append(
-                {
-                    "track_id": track.track_id,
-                    "cls": track.class_id,
-                    "cls_name": track.class_name,
-                    "conf": round(track.confidence, 4),
-                    "bbox_xyxy": [
-                        round(x1, 4),
-                        round(y1, 4),
-                        round(x2, 4),
-                        round(y2, 4),
-                    ],
+            
+            # Base object (v1 - backward compatible)
+            obj = {
+                "track_id": track.track_id,
+                "cls": track.class_id,
+                "cls_name": track.class_name,
+                "conf": round(track.confidence, 4),
+                "bbox_xyxy": [
+                    round(x1, 4),
+                    round(y1, 4),
+                    round(x2, 4),
+                    round(y2, 4),
+                ],
+            }
+            
+            # Extended metadata (v2 - optional)
+            # Solo agregar si hay datos de Kalman Filter
+            if track.kf is not None:
+                kf_state = {}
+                
+                # Bbox suavizado
+                if track.bbox_smooth:
+                    sx1, sy1, sx2, sy2 = track.bbox_smooth
+                    kf_state["bbox_smooth"] = [
+                        round(sx1, 4),
+                        round(sy1, 4),
+                        round(sx2, 4),
+                        round(sy2, 4),
+                    ]
+                
+                # Bbox predicho
+                if track.bbox_pred:
+                    px1, py1, px2, py2 = track.bbox_pred
+                    kf_state["bbox_pred"] = [
+                        round(px1, 4),
+                        round(py1, 4),
+                        round(px2, 4),
+                        round(py2, 4),
+                    ]
+                
+                # Velocidad
+                if track.velocity:
+                    vx, vy = track.velocity
+                    kf_state["velocity"] = [round(vx, 4), round(vy, 4)]
+                
+                if kf_state:
+                    obj["kf_state"] = kf_state
+            
+            # Track metadata
+            if track.age > 0 or track.hits > 0:
+                obj["track_meta"] = {
+                    "age": track.age,
+                    "hits": track.hits,
+                    "hit_streak": track.hit_streak,
+                    "time_since_update": track.time_since_update,
+                    "state": track.state,
                 }
-            )
+            
+            objs.append(obj)
 
         event = {
             "t_rel_s": round(t_rel_s, 3),

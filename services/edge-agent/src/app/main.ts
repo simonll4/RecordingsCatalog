@@ -617,6 +617,8 @@ async function main() {
       // - Relevant detections exist (matching configured classes)
       if (sessionManager.hasActiveSession() && hasStableTracks) {
         // Transform protobuf detections to ingest API format
+        // Worker sends bbox in XYXY format (normalized 0-1)
+        // Session-store expects center point + width/height (also normalized)
         const ingestDetections = stableTrackDetections.map((det: any) => {
           const trackId = det.trackId?.trim();
           const x1 = det.bbox?.x1 ?? 0;
@@ -624,15 +626,21 @@ async function main() {
           const x2 = det.bbox?.x2 ?? x1;
           const y2 = det.bbox?.y2 ?? y1;
 
+          // Convert from xyxy to center (x,y) + width/height
+          const width = Math.max(0, x2 - x1);
+          const height = Math.max(0, y2 - y1);
+          const centerX = x1 + width / 2;
+          const centerY = y1 + height / 2;
+
           return {
             trackId: trackId ?? "",
             cls: det.cls || "",
             conf: det.conf || 0,
             bbox: {
-              x: x1,
-              y: y1,
-              w: Math.max(0, x2 - x1),
-              h: Math.max(0, y2 - y1),
+              x: centerX,
+              y: centerY,
+              w: width,
+              h: height,
             },
           };
         });

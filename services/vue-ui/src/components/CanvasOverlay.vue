@@ -99,7 +99,6 @@ const drawFrame = () => {
 
   // Dibujar cajas y etiquetas si están habilitadas
   if (tracksStore.showBoxes) {
-    ctx.lineWidth = 2
     current.forEach((item) => {
       const [x1, y1, x2, y2] = item.bbox
       const boxWidth = (x2 - x1) * width
@@ -108,8 +107,19 @@ const drawFrame = () => {
       const px1 = x1 * width
       const py1 = y1 * height
       const color = colorForTrack(item.trackId)
+      
+      // Ajustar grosor y opacidad según confianza
+      // Confianza alta (>0.7) → grosor 3, opacidad 1.0
+      // Confianza media (0.4-0.7) → grosor 2, opacidad 0.8
+      // Confianza baja (<0.4) → grosor 1.5, opacidad 0.6
+      const lineWidth = item.conf > 0.7 ? 3 : item.conf > 0.4 ? 2 : 1.5
+      const opacity = item.conf > 0.7 ? 1.0 : item.conf > 0.4 ? 0.8 : 0.6
+      
+      ctx.lineWidth = lineWidth
+      ctx.globalAlpha = opacity
       ctx.strokeStyle = color
       ctx.strokeRect(px1, py1, boxWidth, boxHeight)
+      ctx.globalAlpha = 1.0  // Reset alpha
 
       if (tracksStore.showLabels) {
         const label = `#${item.trackId} ${item.clsName} ${(item.conf * 100).toFixed(0)}%`

@@ -12,18 +12,28 @@ logger = setup_logger("pipeline.tracking")
 class TrackingService:
     """Servicio que gestiona el tracker con control de sesiones"""
 
-    def __init__(self, config_path: str = "botsort.yaml", enabled: bool = True):
+    def __init__(
+        self,
+        config_path: str = "botsort.yaml",
+        enabled: bool = True,
+        use_kalman: bool = True,
+    ):
         """
         Args:
             config_path: Ruta al archivo de configuración del tracker
             enabled: Si el tracking está habilitado
+            use_kalman: Si se usa Kalman Filter para suavizado
         """
         self.enabled = enabled
         self.config_path = config_path
+        self.use_kalman = use_kalman
 
         if self.enabled:
-            self.tracker = BoTSORTTracker(config_path)
-            logger.info(f"Tracking habilitado con config: {config_path}")
+            self.tracker = BoTSORTTracker(config_path, use_kalman=use_kalman)
+            logger.info(
+                f"Tracking habilitado con config: {config_path} "
+                f"(Kalman: {'enabled' if use_kalman else 'disabled'})"
+            )
         else:
             self.tracker = None
             logger.info("Tracking deshabilitado")

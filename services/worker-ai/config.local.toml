@@ -29,6 +29,8 @@ enabled = true
 type = "botsort"
 # Ruta al archivo de configuración del tracker
 config_path = "botsort.yaml"
+# Habilitar Kalman Filter para suavizado de bounding boxes
+use_kalman = true
 
 # Configuración de persistencia de sesiones
 [sessions]

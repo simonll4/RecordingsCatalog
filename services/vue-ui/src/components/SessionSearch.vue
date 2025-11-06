@@ -1,15 +1,21 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import ClassFilter from './ClassFilter.vue'
 
 /**
- * Componente de búsqueda de sesiones por rango temporal.
- * Emite `search` con payload { from: ISOString, to: ISOString }.
+ * Componente de búsqueda de sesiones por rango temporal y clases detectadas.
+ * Emite `search` con payload { from: ISOString, to: ISOString, classes?: string[] }.
  * - Tiene botones de rango rápido (15m, 1h, 3h, 6h)
  * - Permite seleccionar manualmente Desde/Hasta con `datetime-local`
+ * - Filtro de clases detectadas (multi-select)
  * - Botón "Todas las sesiones" para traer sin filtros
  */
+
+// Catálogo de clases disponibles (las 5 clases del modelo)
+const AVAILABLE_CLASSES = ['backpack', 'bottle', 'cup', 'person', 'shoes']
+
 const emit = defineEmits<{
-  (e: 'search', payload: { from: string; to: string }): void
+  (e: 'search', payload: { from: string; to: string; classes?: string[] }): void
   (e: 'search-all'): void
 }>()
 
@@ -25,12 +31,17 @@ const formatInputValue = (date: Date) => {
 const now = new Date()
 const fromInput = ref(formatInputValue(new Date(now.getTime() - 60 * 60 * 1000)))
 const toInput = ref(formatInputValue(now))
+const selectedClasses = ref<string[]>([])
 
 /**
  * Emite el rango solicitado en formato ISO y actualiza los inputs locales.
  */
-const emitRange = (from: Date, to: Date) => {
-  emit('search', { from: from.toISOString(), to: to.toISOString() })
+const emitRange = (from: Date, to: Date, classes?: string[]) => {
+  emit('search', { 
+    from: from.toISOString(), 
+    to: to.toISOString(),
+    classes: classes && classes.length > 0 ? classes : undefined
+  })
   fromInput.value = formatInputValue(from)
   toInput.value = formatInputValue(to)
 }
@@ -41,7 +52,7 @@ const emitRange = (from: Date, to: Date) => {
 const applyQuickRange = (minutes: number) => {
   const to = new Date()
   const from = new Date(to.getTime() - minutes * 60 * 1000)
-  emitRange(from, to)
+  emitRange(from, to, selectedClasses.value)
 }
 
 /**
@@ -54,7 +65,21 @@ const submit = () => {
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from >= to) {
     return
   }
-  emitRange(from, to)
+  emitRange(from, to, selectedClasses.value)
+}
+
+/**
+ * Handler cuando cambia la selección de clases
+ */
+const handleClassFilterChange = (classes: string[]) => {
+  selectedClasses.value = classes
+  
+  // Auto-buscar cuando cambian las clases (usando el rango actual)
+  const from = new Date(fromInput.value)
+  const to = new Date(toInput.value)
+  if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime()) && from < to) {
+    emitRange(from, to, classes)
+  }
 }
 </script>
 
@@ -78,6 +103,12 @@ const submit = () => {
       </label>
       <button type="submit">Buscar</button>
     </form>
+    
+    <!-- Filtro de clases -->
+    <ClassFilter 
+      :available-classes="AVAILABLE_CLASSES"
+      @change="handleClassFilterChange"
+    />
   </div>
 </template>
 

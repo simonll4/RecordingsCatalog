@@ -55,6 +55,7 @@ class WorkerServer:
         self.tracking_service = TrackingService(
             config_path=config.base_config.tracker.config_path,
             enabled=config.base_config.tracker.enabled,
+            use_kalman=config.base_config.tracker.use_kalman,
         )
 
         self.session_service = SessionService(
@@ -122,6 +123,7 @@ class WorkerServer:
         tracking = TrackingService(
             config_path=self.config.base_config.tracker.config_path,
             enabled=self.config.base_config.tracker.enabled,
+            use_kalman=self.config.base_config.tracker.use_kalman,
         )
 
         session = SessionService(

@@ -12,7 +12,7 @@ import { defineStore } from 'pinia'
 import { wrap } from 'comlink'
 import { sessionService, HttpError } from '@/api'
 import { segmentCache } from './segmentCache'
-import { processBBox } from '@/utils'
+import { processBBox, interpolateTrack } from '@/utils'
 import { SEGMENT_CONFIG, UI_CONFIG } from '@/constants'
 import type { TrackEvent, TrackIndex, TrackMeta, RenderObject } from '../types/tracks'
 
@@ -312,7 +312,8 @@ export const useTracksStore = defineStore('tracks', () => {
     const tolerance = SEGMENT_CONFIG.EVENT_WINDOW_SECONDS
     const trailWindow = showTrails.value ? SEGMENT_CONFIG.TRAIL_WINDOW_SECONDS : 0
     
-    const results: RenderObject[] = []
+    // Collect ALL detections for each track within expanded window for interpolation
+    const trackAllDetections = new Map<number, RenderObject[]>()
     const trails = new Map<number, RenderObject[]>()
     
     const segDuration = index.value.segment_duration_s
@@ -333,9 +334,12 @@ export const useTracksStore = defineStore('tracks', () => {
         for (const obj of event.objs) {
           if (!filterObject(obj)) continue
           
+          // Usar bbox_smooth si está disponible (v2), sino bbox_xyxy (v1)
+          const rawBBox = obj.kf_state?.bbox_smooth ?? obj.bbox_xyxy
+          
           // Process bounding box
           const processedBBox = processBBox(
-            obj.bbox_xyxy,
+            rawBBox,
             meta.value?.video?.width,
             meta.value?.video?.height
           )
@@ -345,7 +349,8 @@ export const useTracksStore = defineStore('tracks', () => {
             console.debug('Dropping invalid bbox', {
               sessionId: sessionId.value,
               segmentIdx,
-              raw: obj.bbox_xyxy,
+              raw: rawBBox,
+              hasSmooth: !!obj.kf_state?.bbox_smooth,
               videoWidth: meta.value?.video?.width,
               videoHeight: meta.value?.video?.height,
             })
@@ -361,9 +366,11 @@ export const useTracksStore = defineStore('tracks', () => {
             time: eventTime,
           }
           
-          // Add to current if within tolerance
+          // Collect detections within tolerance window for interpolation
           if (Math.abs(eventTime - adjustedTime) <= tolerance) {
-            results.push(renderItem)
+            const list = trackAllDetections.get(renderItem.trackId) ?? []
+            list.push(renderItem)
+            trackAllDetections.set(renderItem.trackId, list)
           }
           
           // Add to trails if within trail window
@@ -378,6 +385,51 @@ export const useTracksStore = defineStore('tracks', () => {
           }
         }
       }
+    }
+    
+    // Process current objects: interpolate or use latest
+    const results: RenderObject[] = []
+    
+    for (const [trackId, detections] of trackAllDetections) {
+      if (detections.length === 0) continue
+      
+      // Sort detections by time
+      detections.sort((a, b) => a.time - b.time)
+      
+      let finalObject: RenderObject
+      
+      if (SEGMENT_CONFIG.ENABLE_INTERPOLATION && detections.length >= 2) {
+        // Try interpolation
+        const interpolated = interpolateTrack(
+          detections,
+          adjustedTime,
+          SEGMENT_CONFIG.MAX_INTERPOLATION_GAP_SECONDS
+        )
+        
+        if (interpolated) {
+          finalObject = interpolated
+        } else {
+          // Interpolation failed, use latest
+          finalObject = detections[detections.length - 1]!
+        }
+      } else {
+        // No interpolation or single detection
+        // Use the detection closest to adjusted time
+        let closest = detections[0]!
+        let minDist = Math.abs(detections[0]!.time - adjustedTime)
+        
+        for (const det of detections) {
+          const dist = Math.abs(det.time - adjustedTime)
+          if (dist < minDist) {
+            minDist = dist
+            closest = det
+          }
+        }
+        
+        finalObject = closest
+      }
+      
+      results.push(finalObject)
     }
     
     // Sort trails by time (ascending) for proper rendering

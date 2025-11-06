@@ -54,7 +54,10 @@ export class IngestService {
     const existingByTrackId = new Map(existingDetections.map(d => [d.track_id, d]));
 
     const sessionFrameDir = hasFrameBuffer ? getFramesDir(sessionId) : null;
-    const framesToWrite = new Set<string>();
+    const framesToWrite: Array<{ path: string; buffer: Buffer }> = [];
+
+    // Track new classes detected in this frame
+    const newClassesInFrame = new Set<string>();
 
     const updates: Array<{
       detection: IngestMetadata['detections'][number];
@@ -63,6 +66,9 @@ export class IngestService {
 
     // Process detections
     for (const detection of detections) {
+      // Track class for session summary
+      newClassesInFrame.add(detection.cls);
+
       const existingDetection = existingByTrackId.get(detection.trackId);
       const isNewDetection = !existingDetection;
       const hasBetterConfidence =
@@ -75,7 +81,8 @@ export class IngestService {
         if (hasFrameBuffer && sessionFrameDir) {
           const filename = this.buildTrackFrameFilename(detection.trackId);
           const framePath = path.join(sessionFrameDir, filename);
-          framesToWrite.add(framePath);
+          // Only add to write queue if we should update (better confidence or new)
+          framesToWrite.push({ path: framePath, buffer: frameBuffer as Buffer });
           frameUrl = `/frames/${sessionId}/${filename}`;
         }
 
@@ -83,11 +90,11 @@ export class IngestService {
       }
     }
 
-    if (framesToWrite.size > 0 && sessionFrameDir) {
+    if (framesToWrite.length > 0 && sessionFrameDir) {
       await fs.mkdir(sessionFrameDir, { recursive: true });
       await Promise.all(
-        Array.from(framesToWrite).map((framePath) =>
-          fs.writeFile(framePath, frameBuffer as Buffer)
+        framesToWrite.map(({ path, buffer }) =>
+          fs.writeFile(path, buffer)
         )
       );
       frameSaved = true;
@@ -111,6 +118,15 @@ export class IngestService {
         }
       } catch (error) {
         console.error('Failed to insert/update detection:', error);
+      }
+    }
+
+    // Update session with new detected classes (as a Set)
+    for (const className of newClassesInFrame) {
+      try {
+        await this.sessionRepository.addDetectedClass(sessionId, className);
+      } catch (error) {
+        console.error('Failed to add detected class to session:', error);
       }
     }
 
