@@ -19,10 +19,31 @@ export interface TrackMetadata {
 }
 
 /**
+ * Color attribute from attribute-enricher service
+ */
+export interface ColorAttribute {
+  name: string                      // Spanish name: "azul oscuro", "rojo brillante"
+  rgb: [number, number, number]     // RGB values [0-1]
+  hex?: string                      // Optional hex code
+  confidence?: number               // Analysis confidence
+  family?: string                   // Color family: "blue", "red", etc.
+}
+
+/**
+ * Detection attributes (enriched by attribute-enricher)
+ */
+export interface DetectionAttributes {
+  color?: ColorAttribute
+  error?: string
+  enrichment_failed?: boolean
+}
+
+/**
  * Objeto detectado en una frame (como viene en el NDJSON original).
  * 
  * V1: Campos base (siempre presentes)
  * V2: Campos extendidos opcionales (kf_state, track_meta)
+ * V3: Atributos enriquecidos (attributes)
  */
 export interface TrackObject {
   // V1 - Base fields (backward compatible)
@@ -35,6 +56,9 @@ export interface TrackObject {
   // V2 - Extended fields (optional)
   kf_state?: KalmanFilterState
   track_meta?: TrackMetadata
+  
+  // V3 - Enriched attributes (optional)
+  attributes?: DetectionAttributes
 }
 
 /** Evento de tracking en tiempo relativo dentro de un segmento */
@@ -95,6 +119,7 @@ export interface RenderObject {
   conf: number
   bbox: [number, number, number, number]
   time: number
+  attributes?: DetectionAttributes  // Enriched attributes
 }
 
 export interface RenderFrame {

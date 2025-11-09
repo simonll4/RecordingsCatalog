@@ -45,16 +45,31 @@ export class SessionService {
 
   /**
    * List sessions by time range
+   * Optionally filter by classes and/or color
    */
   async listSessionsByTimeRange(
     from: Date, 
     to: Date, 
     classes?: string[], 
+    color?: string,
     limit?: number
   ): Promise<SessionRecord[]> {
+    // Filter by both classes and color
+    if (classes && classes.length > 0 && color) {
+      return this.sessionRepository.listByTimeRangeClassesAndColor(from, to, classes, color, limit);
+    }
+    
+    // Filter by color only
+    if (color) {
+      return this.sessionRepository.listByTimeRangeAndColor(from, to, color, limit);
+    }
+    
+    // Filter by classes only
     if (classes && classes.length > 0) {
       return this.sessionRepository.listByTimeRangeAndClasses(from, to, classes, limit);
     }
+    
+    // No filters
     return this.sessionRepository.listByTimeRange(from, to, limit);
   }
 

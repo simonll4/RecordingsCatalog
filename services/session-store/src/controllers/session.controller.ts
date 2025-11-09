@@ -119,11 +119,12 @@ export class SessionController {
 
   /**
    * List sessions by time range
+   * Supports filtering by classes and/or color
    */
   async listSessionsByRange(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const limit = parsePositiveInt(req.query.limit) || 50;
-      const { from, to, classes } = req.query;
+      const { from, to, classes, color } = req.query;
 
       const fromDate = parseIsoDate(from);
       const toDate = parseIsoDate(to);
@@ -142,11 +143,18 @@ export class SessionController {
           classFilter = classes.map(c => String(c).trim()).filter(Boolean);
         }
       }
+
+      // Parse color filter (single string)
+      let colorFilter: string | undefined;
+      if (color && typeof color === 'string') {
+        colorFilter = color.trim();
+      }
       
       const sessions = await this.sessionService.listSessionsByTimeRange(
         fromDate, 
         toDate, 
         classFilter,
+        colorFilter,
         limit
       );
 
@@ -154,6 +162,7 @@ export class SessionController {
         from: fromDate,
         to: toDate,
         classes: classFilter,
+        color: colorFilter,
         sessions 
       });
     } catch (error) {

@@ -63,6 +63,31 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+  
+  attribute-enricher:
+    build:
+      context: ./services/attribute-enricher
+    container_name: tpfinalv3-attribute-enricher
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      session-store:
+        condition: service_started
+    environment:
+      TZ: UTC
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: session_store
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      POLL_INTERVAL_SEC: 5
+      BATCH_SIZE: 10
+      FRAMES_BASE_PATH: /data/frames
+    volumes:
+      - ./data/frames:/data/frames
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
 
   # worker-ai:
   #   build:

@@ -57,14 +57,14 @@ Env del contenedor (docker-compose):
 - `MEDIAMTX_HOOK_TOKEN` (opcional; si está, se envía como `X-Hook-Token`)
 
 Payloads enviados:
-- publish.sh (solo paths con hook configurado, p.ej. `cam-local`) → `POST {SESSION_STORE_URL}/hooks/mediamtx/publish`
+- `publish.sh` → se ejecuta cuando MediaMTX confirma que el publisher externo (edge-agent) dejó el stream listo en un path con `runOnReady`. Notifica al session-store para que marque el RTSP como disponible (graba timestamps y path). `POST {SESSION_STORE_URL}/hooks/mediamtx/publish`
 ```
 {
   "path": "<rtsp path>",
   "eventTs": "<UTC ISO>"
 }
 ```
-- segment_complete.sh → `POST {SESSION_STORE_URL}/hooks/mediamtx/record/segment/complete`
+- `segment_complete.sh` → corre cada vez que MediaMTX corta un segmento de grabación (configurado en `recordSegmentDuration`). Envía al session-store la ruta exacta del MP4 recién escrito para actualizar la línea de tiempo y habilitar descargas. `POST {SESSION_STORE_URL}/hooks/mediamtx/record/segment/complete`
 ```
 {
   "path": "<rtsp path>",
@@ -73,6 +73,11 @@ Payloads enviados:
   "segmentStartTs": "<UTC ISO derivado del nombre de archivo>"
 }
 ```
+
+¿Qué hace el session-store con estas notificaciones?
+- `publish`: registra que el path RTSP está activo, guarda el `eventTs` como `media_ready_ts` y lo asocia a la sesión actual para que la UI pueda habilitar el botón de live view o mostrar la URL correcta.
+- `record/segment/complete`: añade una entrada a la timeline de grabaciones (inicio/fin del segmento) y almacena el `segmentPath` para ofrecer descargas vía playback (`:9996`) y calcular offsets recomendados al reproducir una sesión.
+Sin estas señales, el session-store no sabría cuándo hay un stream utilizable ni cuándo existen nuevos segmentos MP4 para catálogo.
 
 ## Personalización
 - Duración y retención: ajustar `recordSegmentDuration` y `recordDeleteAfter`.

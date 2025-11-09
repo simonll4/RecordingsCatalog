@@ -5,31 +5,54 @@ This project delivers a containerised video capture and analysis stack for smart
 ## Architecture at a Glance
 
 ```
-┌────────────┐     ┌────────────┐     ┌─────────────┐
-│ edge-agent │ --> │ worker-ai  │ --> │ session-store│
-└─────┬──────┘     └─────┬──────┘     └─────┬───────┘
-      │                  │                 │
-      │                  │                 │
-      ▼                  ▼                 ▼
-┌────────────┐     ┌────────────┐     ┌─────────────┐
-│ mediamtx   │ --> │ postgres   │ --> │ ui-vue      │
-└────────────┘     └────────────┘     └─────────────┘
+             TCP + Protobuf
+        ┌─────────────────────┐
+        │      worker-ai      │
+        └────────▲────────────┘
+                 │
+┌──────────────┐ │   HTTP ingest/status    ┌────────────────────┐
+│  edge-agent  │─┼────────────────────────►│  session-store API │◄─────┐
+└──────┬───────┘ │                         └────────┬──────────┘      │
+       │         │                                  │                 │ REST (sessions, control)
+       │         │                                  │ SQL             │
+       │         │                                  ▼                 │
+       │         │                         ┌────────────────┐         │
+       │         │                         │   PostgreSQL    │         │
+       │         │                         └────────────────┘         │
+       │         │
+       │         │ hooks (HTTP)                 ▲                     │
+       ▼         └──────────────────────────────┘                     │
+┌──────────────┐         RTSP push + recording    │                   │
+│   mediamtx   │◄─────────────────────────────────┘                   │
+│ (RTSP/WHEP)  │                                                       │
+└──────┬──────┘                                                       │
+       │ WebRTC / playback REST                                       │
+       │                                                              │
+       └────────────────────────────────────────┬─────────────────────┘
+                                                │
+                                                ▼
+                                        ┌──────────────┐
+                                        │    ui-vue    │
+                                        │ (catalog +   │
+                                        │  control)    │
+                                        └──────────────┘
 ```
 
-- **edge-agent** (Node.js): Pulls video from the camera, manages the finite state machine that decides when to record, and uploads detections and frames to the backend.
-- **worker-ai** (Python): Runs YOLO11 inference and optional tracking over frames received from the agent.
-- **session-store** (Node.js): Stores session metadata, serves NDJSON tracks, and exposes REST APIs used by the UI.
-- **mediamtx**: Acts as the RTSP/WebRTC server, keeps recordings on disk, and notifies the backend through hooks.
-- **postgres**: Persists session metadata for search and filtering.
-- **ui-vue**: Presents past sessions, playback, and agent control (start/stop + class filters) in the browser.
+- **edge-agent** (Node.js): Captures video, drives the finite state machine that decides when to record, pushes RTSP to MediaMTX, and ingests detections + frames into the backend.
+- **worker-ai** (Python): Runs YOLO11 inference (with optional tracking) over frames received via the TCP protocol and returns detections to the agent.
+- **session-store** (Node.js + PostgreSQL): Persists session metadata and detections, serves track files and metadata, and receives hook callbacks from MediaMTX.
+- **mediamtx**: RTSP/WebRTC server that receives the agent stream, records MP4 segments under `data/recordings`, exposes playback endpoints, and notifies the session-store when new segments are ready.
+- **postgres**: Database backing the session-store for querying sessions, detections, and metadata.
+- **ui-vue**: Vue 3 SPA that consumes both the session-store (catalog/control API) and MediaMTX (playback/WebRTC) endpoints.
 
 ## Data Flow Summary
 
 1. The agent pulls frames from the camera (RTSP or V4L2) and pushes them through a shared memory hub.
 2. Selected frames are sent to `worker-ai`, which returns detections with bounding boxes.
 3. When the FSM enters an active state, the agent asks MediaMTX to start recording and opens a session in `session-store`.
-4. Detections, JPEG frames, and metadata are uploaded to `session-store`, while MediaMTX writes MP4 segments.
-5. Hooks from MediaMTX inform `session-store` when recordings are ready. The UI consumes both the metadata and the MP4 clips.
+4. Detections, JPEG frames, and metadata are uploaded to `session-store`, while MediaMTX writes MP4 segments under `data/recordings`.
+5. Hooks from MediaMTX inform `session-store` when recordings are ready and update media timestamps.
+6. The UI polls `session-store` for catalog data and pulls live/playback streams from MediaMTX (WHEP/HTTP playback).
 
 ## Key Directories
 

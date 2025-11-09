@@ -1,3 +1,24 @@
+export interface BoundingBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface ColorAttribute {
+  name: string;
+  rgb: [number, number, number];
+  hex?: string;
+  confidence?: number;
+  family?: string;
+}
+
+export interface DetectionAttributes {
+  color?: ColorAttribute;
+  error?: string;
+  enrichment_failed?: boolean;
+}
+
 export interface DetectionRecord {
   session_id: string;
   track_id: string;
@@ -11,13 +32,8 @@ export interface DetectionRecord {
   ingest_ts: string;
   created_at: string;
   updated_at: string;
-}
-
-export interface BoundingBox {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
+  attributes: DetectionAttributes | null;
+  enriched: boolean;
 }
 
 export interface DetectionInsertInput {

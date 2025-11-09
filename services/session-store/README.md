@@ -57,11 +57,14 @@ src/
 ### Sessions
 - `POST /sessions/open` - Abrir nueva sesión
 - `POST /sessions/close` - Cerrar sesión existente
-- `GET /sessions` - Listar sesiones
+- `GET /sessions` - Listar sesiones recientes (parámetro opcional `limit`)
+- `GET /sessions/range` - Listar sesiones por rango (`from`, `to`, `limit`, `classes[]=cls` o `classes=cls1,cls2`)
 - `GET /sessions/:sessionId` - Obtener detalles de sesión
 - `GET /sessions/:sessionId/tracks/meta.json` - Obtener metadatos de tracks
 - `GET /sessions/:sessionId/tracks/index.json` - Obtener índice de tracks
 - `GET /sessions/:sessionId/tracks/:segment` - Descargar segmento NDJSON
+
+`/sessions/range` acepta timestamps ISO8601 (`from`, `to`), parámetro opcional `limit` y filtros de clases (`classes=person,car` o `classes[]=person&classes[]=car`). Devuelve únicamente sesiones que intersectan el rango solicitado y, si se proveen clases, aquellas que contengan detecciones registradas en `detected_classes`.
 
 ### Ingest
 - `POST /ingest` - Ingestar frame con detecciones

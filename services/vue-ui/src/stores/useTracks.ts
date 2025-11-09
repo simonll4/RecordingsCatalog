@@ -116,12 +116,16 @@ export const useTracksStore = defineStore('tracks', () => {
    * Filter an object based on confidence and selected classes
    */
   const filterObject = (obj: TrackEvent['objs'][number]): boolean => {
+    // Filter by confidence
     if (obj.conf < confMin.value) {
       return false
     }
+    
+    // Filter by selected classes
     if (selectedClasses.value.size > 0 && !selectedClasses.value.has(obj.cls)) {
       return false
     }
+    
     return true
   }
   
@@ -364,6 +368,7 @@ export const useTracksStore = defineStore('tracks', () => {
             conf: obj.conf,
             bbox: processedBBox,
             time: eventTime,
+            attributes: obj.attributes,  // Include enriched attributes
           }
           
           // Collect detections within tolerance window for interpolation

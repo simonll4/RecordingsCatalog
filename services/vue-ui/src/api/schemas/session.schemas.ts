@@ -35,6 +35,7 @@ export const rangeSessionsSchema = z.object({
   from: z.string(),
   to: z.string(),
   classes: z.array(z.string()).optional(),
+  color: z.string().optional(),
   sessions: z.array(sessionSummarySchema),
 })
 

@@ -120,6 +120,61 @@ export class SessionRepository {
     return result.rows;
   }
 
+  /**
+   * List sessions by time range filtered by detected classes AND color
+   * Returns sessions that have detections with the specified color and classes
+   */
+  async listByTimeRangeClassesAndColor(
+    from: Date, 
+    to: Date, 
+    classes: string[], 
+    color: string,
+    limit = 200
+  ): Promise<SessionRecord[]> {
+    const result = await pool.query<SessionRecord>(
+      `SELECT DISTINCT s.* 
+       FROM sessions s
+       INNER JOIN detections d ON d.session_id = s.session_id
+       WHERE s.start_ts < $2
+         AND (s.end_ts IS NULL OR s.end_ts >= $1)
+         AND s.detected_classes @> $3::text[]
+         AND array_length(s.detected_classes, 1) > 0
+         AND d.enriched = true
+         AND d.attributes->>'color' IS NOT NULL
+         AND LOWER(d.attributes->'color'->>'name') LIKE LOWER($4)
+       ORDER BY s.start_ts DESC
+       LIMIT $5`,
+      [from.toISOString(), to.toISOString(), classes, `%${color}%`, limit]
+    );
+    return result.rows;
+  }
+
+  /**
+   * List sessions by time range filtered by color only
+   * Returns sessions that have at least one detection with the specified color
+   */
+  async listByTimeRangeAndColor(
+    from: Date, 
+    to: Date, 
+    color: string,
+    limit = 200
+  ): Promise<SessionRecord[]> {
+    const result = await pool.query<SessionRecord>(
+      `SELECT DISTINCT s.* 
+       FROM sessions s
+       INNER JOIN detections d ON d.session_id = s.session_id
+       WHERE s.start_ts < $2
+         AND (s.end_ts IS NULL OR s.end_ts >= $1)
+         AND d.enriched = true
+         AND d.attributes->>'color' IS NOT NULL
+         AND LOWER(d.attributes->'color'->>'name') LIKE LOWER($3)
+       ORDER BY s.start_ts DESC
+       LIMIT $4`,
+      [from.toISOString(), to.toISOString(), `%${color}%`, limit]
+    );
+    return result.rows;
+  }
+
   async addDetectedClass(sessionId: string, className: string): Promise<void> {
     await pool.query(
       `UPDATE sessions

@@ -110,6 +110,7 @@ const disabledMessage = computed(() => {
         </li>
       </ul>
     </div>
+
   </section>
 </template>
 
@@ -181,6 +182,14 @@ input[type='range'] {
   margin: 0;
   display: grid;
   gap: 0.4rem;
+}
+
+.color-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .hint {

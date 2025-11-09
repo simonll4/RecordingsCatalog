@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import ClassFilter from './ClassFilter.vue'
+import ColorFilter from './ColorFilter.vue'
 
 /**
- * Componente de búsqueda de sesiones por rango temporal y clases detectadas.
- * Emite `search` con payload { from: ISOString, to: ISOString, classes?: string[] }.
+ * Componente de búsqueda de sesiones por rango temporal, clases detectadas y color.
+ * Emite `search` con payload { from: ISOString, to: ISOString, classes?: string[], color?: string }.
  * - Tiene botones de rango rápido (15m, 1h, 3h, 6h)
  * - Permite seleccionar manualmente Desde/Hasta con `datetime-local`
  * - Filtro de clases detectadas (multi-select)
+ * - Filtro de color detectado (single-select)
  * - Botón "Todas las sesiones" para traer sin filtros
  */
 
@@ -15,7 +17,7 @@ import ClassFilter from './ClassFilter.vue'
 const AVAILABLE_CLASSES = ['backpack', 'bottle', 'cup', 'person', 'shoes']
 
 const emit = defineEmits<{
-  (e: 'search', payload: { from: string; to: string; classes?: string[] }): void
+  (e: 'search', payload: { from: string; to: string; classes?: string[]; color?: string }): void
   (e: 'search-all'): void
 }>()
 
@@ -32,15 +34,17 @@ const now = new Date()
 const fromInput = ref(formatInputValue(new Date(now.getTime() - 60 * 60 * 1000)))
 const toInput = ref(formatInputValue(now))
 const selectedClasses = ref<string[]>([])
+const selectedColor = ref<string | null>(null)
 
 /**
  * Emite el rango solicitado en formato ISO y actualiza los inputs locales.
  */
-const emitRange = (from: Date, to: Date, classes?: string[]) => {
+const emitRange = (from: Date, to: Date, classes?: string[], color?: string | null) => {
   emit('search', { 
     from: from.toISOString(), 
     to: to.toISOString(),
-    classes: classes && classes.length > 0 ? classes : undefined
+    classes: classes && classes.length > 0 ? classes : undefined,
+    color: color || undefined
   })
   fromInput.value = formatInputValue(from)
   toInput.value = formatInputValue(to)
@@ -52,7 +56,7 @@ const emitRange = (from: Date, to: Date, classes?: string[]) => {
 const applyQuickRange = (minutes: number) => {
   const to = new Date()
   const from = new Date(to.getTime() - minutes * 60 * 1000)
-  emitRange(from, to, selectedClasses.value)
+  emitRange(from, to, selectedClasses.value, selectedColor.value)
 }
 
 /**
@@ -65,7 +69,7 @@ const submit = () => {
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from >= to) {
     return
   }
-  emitRange(from, to, selectedClasses.value)
+  emitRange(from, to, selectedClasses.value, selectedColor.value)
 }
 
 /**
@@ -78,107 +82,283 @@ const handleClassFilterChange = (classes: string[]) => {
   const from = new Date(fromInput.value)
   const to = new Date(toInput.value)
   if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime()) && from < to) {
-    emitRange(from, to, classes)
+    emitRange(from, to, classes, selectedColor.value)
+  }
+}
+
+/**
+ * Handler cuando cambia la selección de color
+ */
+const handleColorFilterChange = (color: string | null) => {
+  selectedColor.value = color
+  
+  // Auto-buscar cuando cambia el color (usando el rango actual)
+  const from = new Date(fromInput.value)
+  const to = new Date(toInput.value)
+  if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime()) && from < to) {
+    emitRange(from, to, selectedClasses.value, color)
   }
 }
 </script>
 
 <template>
-  <div class="search">
-    <div class="quick">
-      <button type="button" @click="applyQuickRange(15)">15 min</button>
-      <button type="button" @click="applyQuickRange(60)">1 h</button>
-      <button type="button" @click="applyQuickRange(180)">3 h</button>
-      <button type="button" @click="applyQuickRange(360)">6 h</button>
-      <button type="button" class="btn-all" @click="emit('search-all')">Todas</button>
+  <div class="search-container">
+    <!-- Rango Temporal Compacto -->
+    <div class="time-filters">
+      <div class="quick-buttons">
+        <button type="button" class="time-btn" @click="applyQuickRange(15)">15m</button>
+        <button type="button" class="time-btn" @click="applyQuickRange(60)">1h</button>
+        <button type="button" class="time-btn" @click="applyQuickRange(180)">3h</button>
+        <button type="button" class="time-btn" @click="applyQuickRange(360)">6h</button>
+        <button type="button" class="time-btn all-btn" @click="emit('search-all')">Todas</button>
+      </div>
+      
+      <form class="custom-time" @submit.prevent="submit">
+        <div class="time-inputs">
+          <input v-model="fromInput" type="datetime-local" placeholder="Desde" />
+          <span class="separator">→</span>
+          <input v-model="toInput" type="datetime-local" placeholder="Hasta" />
+        </div>
+        <button type="submit" class="btn-search">Buscar</button>
+      </form>
     </div>
-    <form class="custom" @submit.prevent="submit">
-      <label>
-        Desde
-        <input v-model="fromInput" type="datetime-local" />
-      </label>
-      <label>
-        Hasta
-        <input v-model="toInput" type="datetime-local" />
-      </label>
-      <button type="submit">Buscar</button>
-    </form>
     
-    <!-- Filtro de clases -->
-    <ClassFilter 
-      :available-classes="AVAILABLE_CLASSES"
-      @change="handleClassFilterChange"
-    />
+    <!-- Filtros en Grid Compacto -->
+    <div class="filters-grid">
+      <!-- Filtro de Clases -->
+      <div class="filter-card">
+        <div class="filter-header">
+          <h3>🏷️ Tipo de objeto</h3>
+        </div>
+        <ClassFilter 
+          :available-classes="AVAILABLE_CLASSES"
+          @change="handleClassFilterChange"
+        />
+      </div>
+      
+      <!-- Filtro de Color -->
+      <div class="filter-card">
+        <div class="filter-header">
+          <h3>🎨 Color del objeto</h3>
+          <button 
+            v-if="selectedColor"
+            type="button" 
+            class="clear-filter" 
+            @click="handleColorFilterChange(null)"
+            title="Limpiar filtro de color"
+          >
+            ✕
+          </button>
+        </div>
+        <ColorFilter 
+          @change="handleColorFilterChange"
+        />
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.search {
+.search-container {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+/* === Rango Temporal === */
+.time-filters {
   background: rgba(255, 255, 255, 0.04);
-  padding: 0.75rem;
-  border-radius: 0.75rem;
-}
-
-.quick {
-  display: flex;
-  gap: 0.5rem;
-}
-
-button {
-  background: rgba(255, 255, 255, 0.1);
-  color: inherit;
-  border: none;
-  border-radius: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  cursor: pointer;
-  transition: background 0.2s ease-in-out;
-}
-
-button:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.btn-all {
-  background: rgba(77, 171, 247, 0.2);
-  border: 1px solid rgba(77, 171, 247, 0.5);
-  color: #4dabf7;
-  font-weight: 500;
-}
-
-.btn-all:hover {
-  background: rgba(77, 171, 247, 0.3);
-  border-color: rgba(77, 171, 247, 0.8);
-}
-
-.custom {
-  display: grid;
-  grid-template-columns: repeat(3, auto);
-  gap: 0.75rem;
-  align-items: end;
-}
-
-label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.75);
-}
-
-input {
-  background: rgba(12, 14, 18, 0.8);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 0.5rem;
-  padding: 0.4rem 0.6rem;
-  color: inherit;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
-@media (max-width: 640px) {
-  .custom {
+.quick-buttons {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.time-btn {
+  flex: 1;
+  min-width: 50px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+  padding: 0.45rem 0.75rem;
+  border-radius: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.time-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.all-btn {
+  background: rgba(77, 171, 247, 0.2);
+  border-color: rgba(77, 171, 247, 0.4);
+  color: #74c0fc;
+  font-weight: 600;
+}
+
+.all-btn:hover {
+  background: rgba(77, 171, 247, 0.3);
+  border-color: rgba(77, 171, 247, 0.6);
+}
+
+.custom-time {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.time-inputs {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.4rem;
+  padding: 0.4rem 0.6rem;
+}
+
+.time-inputs input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 0.8rem;
+  padding: 0;
+}
+
+.time-inputs input:focus {
+  outline: none;
+}
+
+.separator {
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: bold;
+  padding: 0 0.25rem;
+}
+
+.btn-search {
+  background: rgba(77, 171, 247, 0.25);
+  border: 1px solid rgba(77, 171, 247, 0.5);
+  color: #74c0fc;
+  padding: 0.5rem 1rem;
+  border-radius: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-search:hover {
+  background: rgba(77, 171, 247, 0.35);
+  border-color: rgba(77, 171, 247, 0.7);
+}
+
+/* === Grid de Filtros === */
+.filters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 0.75rem;
+}
+
+.filter-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.filter-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.filter-header h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.clear-filter {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.clear-filter:hover {
+  background: rgba(239, 68, 68, 0.3);
+  border-color: rgba(239, 68, 68, 0.6);
+}
+
+/* === Responsive === */
+@media (max-width: 768px) {
+  .filters-grid {
     grid-template-columns: 1fr;
+  }
+
+  .custom-time {
+    flex-direction: column;
+  }
+
+  .btn-search {
+    width: 100%;
+  }
+
+  .quick-buttons {
+    gap: 0.3rem;
+  }
+
+  .time-btn {
+    font-size: 0.8rem;
+    padding: 0.4rem 0.6rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .quick-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .all-btn {
+    grid-column: 1 / -1;
+  }
+
+  .time-inputs {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .separator {
+    display: none;
   }
 }
 </style>

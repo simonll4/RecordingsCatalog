@@ -28,6 +28,7 @@ export interface ListSessionsParams {
   from?: string
   to?: string
   classes?: string[]
+  color?: string
 }
 
 /**
@@ -39,6 +40,7 @@ export interface ListSessionsResponse {
   from?: string
   to?: string
   classes?: string[]
+  color?: string
 }
 
 /**
@@ -83,6 +85,9 @@ export class SessionService {
     if (params.classes && params.classes.length > 0) {
       queryParams['classes'] = params.classes.join(',')
     }
+    if (params.color) {
+      queryParams['color'] = params.color
+    }
     
     const data = await sessionStoreClient.getJson(
       SESSION_ENDPOINTS.LIST_RANGE,
@@ -99,6 +104,7 @@ export class SessionService {
       from: data.from,
       to: data.to,
       classes: data.classes,
+      color: data.color,
     }
   }
 

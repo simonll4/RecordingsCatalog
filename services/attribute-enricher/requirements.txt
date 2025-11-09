@@ -1,0 +1,12 @@
+# Database
+psycopg2-binary==2.9.9
+
+# Image processing
+numpy==1.26.4
+pillow==10.3.0
+opencv-python-headless==4.9.0.80
+
+# Utilities
+pyyaml==6.0.1
+python-dotenv==1.0.1
+

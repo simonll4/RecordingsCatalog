@@ -26,12 +26,13 @@ const loadDefaultSessions = async () => {
 }
 
 // Handler del evento `search` emitido por SessionSearch
-const handleSearch = async (range: { from: string; to: string; classes?: string[] }) => {
+const handleSearch = async (range: { from: string; to: string; classes?: string[]; color?: string }) => {
   await sessionsStore.loadSessions({
     mode: 'range',
     from: range.from,
     to: range.to,
     classes: range.classes,
+    color: range.color,
   })
 }
 

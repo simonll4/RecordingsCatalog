@@ -53,4 +53,63 @@ export class DetectionRepository {
     );
     return result.rows;
   }
+
+  async findEnrichedBySession(sessionId: string): Promise<DetectionRecord[]> {
+    const result = await pool.query<DetectionRecord>(
+      `SELECT * FROM detections
+       WHERE session_id = $1 AND enriched = TRUE
+       ORDER BY last_ts ASC`,
+      [sessionId]
+    );
+    return result.rows;
+  }
+
+  async findByColor(sessionId: string, colorPattern: string): Promise<DetectionRecord[]> {
+    const result = await pool.query<DetectionRecord>(
+      `SELECT * FROM detections
+       WHERE session_id = $1 
+       AND enriched = TRUE
+       AND attributes->'color'->>'name' ILIKE $2
+       ORDER BY last_ts ASC`,
+      [sessionId, `%${colorPattern}%`]
+    );
+    return result.rows;
+  }
+
+  async getEnrichmentStats(sessionId?: string): Promise<{
+    total: number;
+    enriched: number;
+    with_color: number;
+    failed: number;
+  }> {
+    const query = sessionId
+      ? `SELECT 
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE enriched = TRUE) as enriched,
+          COUNT(*) FILTER (WHERE attributes->'color' IS NOT NULL) as with_color,
+          COUNT(*) FILTER (WHERE attributes->>'enrichment_failed' = 'true') as failed
+         FROM detections
+         WHERE session_id = $1`
+      : `SELECT 
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE enriched = TRUE) as enriched,
+          COUNT(*) FILTER (WHERE attributes->'color' IS NOT NULL) as with_color,
+          COUNT(*) FILTER (WHERE attributes->>'enrichment_failed' = 'true') as failed
+         FROM detections`;
+    
+    const result = await pool.query<{
+      total: string;
+      enriched: string;
+      with_color: string;
+      failed: string;
+    }>(query, sessionId ? [sessionId] : []);
+    
+    const row = result.rows[0];
+    return {
+      total: parseInt(row?.total ?? '0'),
+      enriched: parseInt(row?.enriched ?? '0'),
+      with_color: parseInt(row?.with_color ?? '0'),
+      failed: parseInt(row?.failed ?? '0'),
+    };
+  }
 }

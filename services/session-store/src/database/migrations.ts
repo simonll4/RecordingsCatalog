@@ -61,6 +61,26 @@ export async function ensureSchema(): Promise<void> {
         PRIMARY KEY (session_id, track_id)
       )
     `);
+    
+    // Add attributes and enriched columns for attribute-enricher service
+    await client.query(`
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'detections' AND column_name = 'attributes'
+        ) THEN
+          ALTER TABLE detections ADD COLUMN attributes JSONB DEFAULT NULL;
+        END IF;
+        
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'detections' AND column_name = 'enriched'
+        ) THEN
+          ALTER TABLE detections ADD COLUMN enriched BOOLEAN DEFAULT FALSE NOT NULL;
+        END IF;
+      END $$
+    `);
 
     // Create update timestamp function
     await client.query(`
@@ -97,6 +117,10 @@ export async function ensureSchema(): Promise<void> {
     await client.query('CREATE INDEX IF NOT EXISTS idx_detections_session ON detections(session_id)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_detections_last_ts ON detections(last_ts)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_detections_cls ON detections(cls)');
+    
+    // Create indexes for attribute enrichment
+    await client.query('CREATE INDEX IF NOT EXISTS idx_detections_enriched ON detections(enriched) WHERE enriched = FALSE');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_detections_attributes ON detections USING GIN(attributes)');
 
     await client.query('COMMIT');
   } catch (error) {
