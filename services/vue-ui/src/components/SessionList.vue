@@ -26,15 +26,6 @@ const formatter = new Intl.DateTimeFormat(undefined, {
   timeStyle: 'medium',
 })
 
-// Mapeo de clases a emojis/iconos
-const classIcons: Record<string, string> = {
-  'person': '👤',
-  'backpack': '🎒',
-  'bottle': '🍾',
-  'cup': '☕',
-  'shoes': '👟'
-}
-
 // Computed que agrega etiquetas legibles a cada sesión
 const formattedSessions = computed(() =>
   props.sessions.map((session) => ({
@@ -47,7 +38,7 @@ const formattedSessions = computed(() =>
 
 <template>
   <div class="session-list">
-    <p v-if="error" class="error">⚠️ {{ error }}</p>
+    <p v-if="error" class="error">{{ error }}</p>
     <p v-else-if="loading" class="loading">Cargando sesiones…</p>
     <template v-else-if="formattedSessions.length === 0">
       <p class="empty">No se encontraron sesiones en el rango seleccionado.</p>
@@ -90,7 +81,6 @@ const formattedSessions = computed(() =>
               :key="className"
               class="class-tag"
             >
-              <span class="tag-icon">{{ classIcons[className] || '📦' }}</span>
               <span class="tag-name">{{ className }}</span>
             </span>
           </div>
@@ -220,18 +210,13 @@ dd {
 .class-tag {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  justify-content: center;
   background: rgba(77, 171, 247, 0.15);
   border: 1px solid rgba(77, 171, 247, 0.3);
   border-radius: 0.4rem;
-  padding: 0.2rem 0.5rem;
+  padding: 0.3rem 0.6rem;
   font-size: 0.75rem;
   color: #4dabf7;
-}
-
-.tag-icon {
-  font-size: 0.85rem;
-  line-height: 1;
 }
 
 .tag-name {

@@ -82,7 +82,7 @@ onBeforeUnmount(() => {
       <video ref="videoRef" controls playsinline preload="auto" />
       <CanvasOverlay v-if="videoRef && overlaysActive && meta" :video-el="videoRef" :meta="meta" />
       <div v-if="loading" class="player__overlay">Cargando clip…</div>
-      <div v-else-if="error" class="player__overlay error">⚠️ {{ error }}</div>
+      <div v-else-if="error" class="player__overlay error">{{ error }}</div>
     </div>
   </div>
 </template>

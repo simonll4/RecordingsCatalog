@@ -18,17 +18,17 @@ const selectedColor = ref<string | null>(null)
 
 // Colores comunes detectados por el attribute-enricher
 const colorOptions = [
-  { value: 'rojo', label: 'Rojo', emoji: '🔴' },
-  { value: 'azul', label: 'Azul', emoji: '🔵' },
-  { value: 'verde', label: 'Verde', emoji: '🟢' },
-  { value: 'amarillo', label: 'Amarillo', emoji: '🟡' },
-  { value: 'naranja', label: 'Naranja', emoji: '🟠' },
-  { value: 'morado', label: 'Morado', emoji: '🟣' },
-  { value: 'rosa', label: 'Rosa', emoji: '🌸' },
-  { value: 'marrón', label: 'Marrón', emoji: '🟤' },
-  { value: 'blanco', label: 'Blanco', emoji: '⚪' },
-  { value: 'negro', label: 'Negro', emoji: '⚫' },
-  { value: 'gris', label: 'Gris', emoji: '⚫' },
+  { value: 'rojo', label: 'Rojo' },
+  { value: 'azul', label: 'Azul' },
+  { value: 'verde', label: 'Verde' },
+  { value: 'amarillo', label: 'Amarillo' },
+  { value: 'naranja', label: 'Naranja' },
+  { value: 'morado', label: 'Morado' },
+  { value: 'rosa', label: 'Rosa' }, 
+  { value: 'marrón', label: 'Marrón' },
+  { value: 'blanco', label: 'Blanco' },
+  { value: 'negro', label: 'Negro' },
+  { value: 'gris', label: 'Gris' },
 ]
 
 const selectColor = (color: string) => {
@@ -52,16 +52,15 @@ const isDisabled = computed(() => props.disabled ?? false)
 
 <template>
   <div class="color-filter">
-    <div v-if="selectedColor" class="filter-header">
-      <button 
-        type="button" 
-        class="clear-btn" 
-        @click="clearSelection"
-        :disabled="isDisabled"
-      >
-        ✕ Limpiar selección
-      </button>
-    </div>
+    <button 
+      v-if="selectedColor"
+      type="button" 
+      class="clear-btn clear-btn--floating" 
+      @click="clearSelection"
+      :disabled="isDisabled"
+    >
+      Limpiar selección
+    </button>
     
     <div class="color-chips" :class="{ disabled: isDisabled }">
       <button
@@ -69,18 +68,16 @@ const isDisabled = computed(() => props.disabled ?? false)
         :key="color.value"
         type="button"
         class="color-chip"
-        :class="{ active: selectedColor === color.value }"
+        :class="[{ active: selectedColor === color.value }, `color-${color.value}`]"
         :disabled="isDisabled"
         @click="selectColor(color.value)"
         :title="`Filtrar por ${color.label.toLowerCase()}`"
       >
-        <span class="chip-emoji">{{ color.emoji }}</span>
         <span class="chip-label">{{ color.label }}</span>
       </button>
     </div>
     
     <div v-if="selectedColor" class="selection-info">
-      <span class="info-icon">✓</span>
       <span>
         Buscando sesiones con objetos de color <strong>{{ selectedColor }}</strong>
       </span>
@@ -90,15 +87,11 @@ const isDisabled = computed(() => props.disabled ?? false)
 
 <style scoped>
 .color-filter {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-}
-
-.filter-header {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
+  padding-top: 0.25rem;
 }
 
 .clear-btn {
@@ -125,6 +118,12 @@ const isDisabled = computed(() => props.disabled ?? false)
   cursor: not-allowed;
 }
 
+.clear-btn--floating {
+  position: absolute;
+  top: -2.25rem;
+  right: 0;
+}
+
 .color-chips {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(85px, 1fr));
@@ -138,17 +137,16 @@ const isDisabled = computed(() => props.disabled ?? false)
 
 .color-chip {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
-  padding: 0.65rem 0.4rem;
+  padding: 0.7rem 0.6rem;
   background: rgba(255, 255, 255, 0.06);
   border: 2px solid rgba(255, 255, 255, 0.12);
   border-radius: 0.6rem;
   cursor: pointer;
   transition: all 0.2s ease;
   position: relative;
+  min-height: 42px;
 }
 
 .color-chip:hover:not(:disabled) {
@@ -158,29 +156,148 @@ const isDisabled = computed(() => props.disabled ?? false)
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.color-chip.active {
-  background: rgba(116, 192, 252, 0.2);
-  border-color: #4dabf7;
+/* Estilos activos para cada color */
+.color-chip.color-rojo.active {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: #ef4444;
   border-width: 2.5px;
-  box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.15);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15), 0 0 12px rgba(239, 68, 68, 0.4);
+  transform: scale(1.05);
 }
 
-.color-chip.active::after {
-  content: '✓';
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  background: #4dabf7;
-  color: white;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.7rem;
-  font-weight: bold;
-  box-shadow: 0 2px 8px rgba(77, 171, 247, 0.4);
+.color-chip.color-rojo.active .chip-label {
+  color: #fca5a5;
+  font-weight: 700;
+}
+
+.color-chip.color-azul.active {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: #3b82f6;
+  border-width: 2.5px;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15), 0 0 12px rgba(59, 130, 246, 0.4);
+  transform: scale(1.05);
+}
+
+.color-chip.color-azul.active .chip-label {
+  color: #93c5fd;
+  font-weight: 700;
+}
+
+.color-chip.color-verde.active {
+  background: rgba(34, 197, 94, 0.25);
+  border-color: #22c55e;
+  border-width: 2.5px;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15), 0 0 12px rgba(34, 197, 94, 0.4);
+  transform: scale(1.05);
+}
+
+.color-chip.color-verde.active .chip-label {
+  color: #86efac;
+  font-weight: 700;
+}
+
+.color-chip.color-amarillo.active {
+  background: rgba(234, 179, 8, 0.25);
+  border-color: #eab308;
+  border-width: 2.5px;
+  box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.15), 0 0 12px rgba(234, 179, 8, 0.4);
+  transform: scale(1.05);
+}
+
+.color-chip.color-amarillo.active .chip-label {
+  color: #fde047;
+  font-weight: 700;
+}
+
+.color-chip.color-naranja.active {
+  background: rgba(249, 115, 22, 0.25);
+  border-color: #f97316;
+  border-width: 2.5px;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15), 0 0 12px rgba(249, 115, 22, 0.4);
+  transform: scale(1.05);
+}
+
+.color-chip.color-naranja.active .chip-label {
+  color: #fdba74;
+  font-weight: 700;
+}
+
+.color-chip.color-morado.active {
+  background: rgba(168, 85, 247, 0.25);
+  border-color: #a855f7;
+  border-width: 2.5px;
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.15), 0 0 12px rgba(168, 85, 247, 0.4);
+  transform: scale(1.05);
+}
+
+.color-chip.color-morado.active .chip-label {
+  color: #d8b4fe;
+  font-weight: 700;
+}
+
+.color-chip.color-rosa.active {
+  background: rgba(236, 72, 153, 0.25);
+  border-color: #ec4899;
+  border-width: 2.5px;
+  box-shadow: 0 0 0 3px rgba(236, 72, 153, 0.15), 0 0 12px rgba(236, 72, 153, 0.4);
+  transform: scale(1.05);
+}
+
+.color-chip.color-rosa.active .chip-label {
+  color: #f9a8d4;
+  font-weight: 700;
+}
+
+.color-chip.color-marrón.active {
+  background: rgba(161, 98, 7, 0.25);
+  border-color: #a16207;
+  border-width: 2.5px;
+  box-shadow: 0 0 0 3px rgba(161, 98, 7, 0.15), 0 0 12px rgba(161, 98, 7, 0.4);
+  transform: scale(1.05);
+}
+
+.color-chip.color-marrón.active .chip-label {
+  color: #fbbf24;
+  font-weight: 700;
+}
+
+.color-chip.color-blanco.active {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: #ffffff;
+  border-width: 2.5px;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15), 0 0 12px rgba(255, 255, 255, 0.4);
+  transform: scale(1.05);
+}
+
+.color-chip.color-blanco.active .chip-label {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.color-chip.color-negro.active {
+  background: rgba(30, 30, 30, 0.5);
+  border-color: #3f3f46;
+  border-width: 2.5px;
+  box-shadow: 0 0 0 3px rgba(30, 30, 30, 0.3), 0 0 12px rgba(30, 30, 30, 0.5);
+  transform: scale(1.05);
+}
+
+.color-chip.color-negro.active .chip-label {
+  color: #e4e4e7;
+  font-weight: 700;
+}
+
+.color-chip.color-gris.active {
+  background: rgba(107, 114, 128, 0.25);
+  border-color: #6b7280;
+  border-width: 2.5px;
+  box-shadow: 0 0 0 3px rgba(107, 114, 128, 0.15), 0 0 12px rgba(107, 114, 128, 0.4);
+  transform: scale(1.05);
+}
+
+.color-chip.color-gris.active .chip-label {
+  color: #d1d5db;
+  font-weight: 700;
 }
 
 .color-chip:disabled {
@@ -188,49 +305,25 @@ const isDisabled = computed(() => props.disabled ?? false)
   opacity: 0.4;
 }
 
-.chip-emoji {
-  font-size: 1.75rem;
-  line-height: 1;
-}
-
 .chip-label {
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   color: rgba(255, 255, 255, 0.75);
   text-align: center;
   font-weight: 500;
   line-height: 1.2;
 }
 
-.color-chip.active .chip-label {
-  color: #74c0fc;
-  font-weight: 700;
-}
-
 .selection-info {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
   padding: 0.65rem 0.9rem;
   background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.08) 100%);
   border: 1px solid rgba(34, 197, 94, 0.4);
+  border-left: 3px solid rgba(34, 197, 94, 0.6);
   border-radius: 0.5rem;
   font-size: 0.85rem;
   color: rgba(255, 255, 255, 0.9);
   line-height: 1.4;
-}
-
-.info-icon {
-  font-size: 1.1rem;
-  flex-shrink: 0;
-  color: #22c55e;
-  font-weight: bold;
-  background: rgba(34, 197, 94, 0.2);
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 strong {
@@ -247,15 +340,11 @@ strong {
   }
 
   .color-chip {
-    padding: 0.5rem 0.3rem;
-  }
-
-  .chip-emoji {
-    font-size: 1.5rem;
+    padding: 0.6rem 0.4rem;
   }
 
   .chip-label {
-    font-size: 0.7rem;
+    font-size: 0.75rem;
   }
 }
 

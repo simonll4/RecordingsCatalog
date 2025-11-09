@@ -179,7 +179,7 @@ const showLoading = computed(() => clipLoading.value || !layoutReady.value)
         :error="clipError"
       />
       <div v-if="warnings.length" class="alert" role="status">
-        <p v-for="warn in warnings" :key="warn">⚠️ {{ warn }}</p>
+        <p v-for="warn in warnings" :key="warn">{{ warn }}</p>
       </div>
     </div>
     <aside class="sidebar">
@@ -218,7 +218,7 @@ const showLoading = computed(() => clipLoading.value || !layoutReady.value)
     </aside>
   </section>
   <section v-else class="session-view loading-state">
-    <p v-if="clipError">⚠️ {{ clipError }}</p>
+    <p v-if="clipError">{{ clipError }}</p>
     <p v-else>Cargando sesión…</p>
   </section>
 </template>

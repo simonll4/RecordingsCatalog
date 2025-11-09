@@ -35,6 +35,7 @@ const fromInput = ref(formatInputValue(new Date(now.getTime() - 60 * 60 * 1000))
 const toInput = ref(formatInputValue(now))
 const selectedClasses = ref<string[]>([])
 const selectedColor = ref<string | null>(null)
+const activeTimeButton = ref<string | null>(null) // Rastrear botón activo (ninguno por defecto)
 
 /**
  * Emite el rango solicitado en formato ISO y actualiza los inputs locales.
@@ -53,9 +54,10 @@ const emitRange = (from: Date, to: Date, classes?: string[], color?: string | nu
 /**
  * Aplica un rango rápido (en minutos). No bloqueante.
  */
-const applyQuickRange = (minutes: number) => {
+const applyQuickRange = (minutes: number, buttonId: string) => {
   const to = new Date()
   const from = new Date(to.getTime() - minutes * 60 * 1000)
+  activeTimeButton.value = buttonId
   emitRange(from, to, selectedClasses.value, selectedColor.value)
 }
 
@@ -69,6 +71,7 @@ const submit = () => {
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from >= to) {
     return
   }
+  activeTimeButton.value = 'custom'
   emitRange(from, to, selectedClasses.value, selectedColor.value)
 }
 
@@ -106,11 +109,11 @@ const handleColorFilterChange = (color: string | null) => {
     <!-- Rango Temporal Compacto -->
     <div class="time-filters">
       <div class="quick-buttons">
-        <button type="button" class="time-btn" @click="applyQuickRange(15)">15m</button>
-        <button type="button" class="time-btn" @click="applyQuickRange(60)">1h</button>
-        <button type="button" class="time-btn" @click="applyQuickRange(180)">3h</button>
-        <button type="button" class="time-btn" @click="applyQuickRange(360)">6h</button>
-        <button type="button" class="time-btn all-btn" @click="emit('search-all')">Todas</button>
+        <button type="button" class="time-btn" :class="{ active: activeTimeButton === '15m' }" @click="applyQuickRange(15, '15m')">15m</button>
+        <button type="button" class="time-btn" :class="{ active: activeTimeButton === '1h' }" @click="applyQuickRange(60, '1h')">1h</button>
+        <button type="button" class="time-btn" :class="{ active: activeTimeButton === '3h' }" @click="applyQuickRange(180, '3h')">3h</button>
+        <button type="button" class="time-btn" :class="{ active: activeTimeButton === '6h' }" @click="applyQuickRange(360, '6h')">6h</button>
+        <button type="button" class="time-btn all-btn" :class="{ active: activeTimeButton === 'all' }" @click="activeTimeButton = 'all'; emit('search-all')">Todas</button>
       </div>
       
       <form class="custom-time" @submit.prevent="submit">
@@ -128,7 +131,7 @@ const handleColorFilterChange = (color: string | null) => {
       <!-- Filtro de Clases -->
       <div class="filter-card">
         <div class="filter-header">
-          <h3>🏷️ Tipo de objeto</h3>
+          <h3>Tipo de objeto</h3>
         </div>
         <ClassFilter 
           :available-classes="AVAILABLE_CLASSES"
@@ -139,16 +142,7 @@ const handleColorFilterChange = (color: string | null) => {
       <!-- Filtro de Color -->
       <div class="filter-card">
         <div class="filter-header">
-          <h3>🎨 Color del objeto</h3>
-          <button 
-            v-if="selectedColor"
-            type="button" 
-            class="clear-filter" 
-            @click="handleColorFilterChange(null)"
-            title="Limpiar filtro de color"
-          >
-            ✕
-          </button>
+          <h3>Color del objeto</h3>
         </div>
         <ColorFilter 
           @change="handleColorFilterChange"
@@ -201,16 +195,32 @@ const handleColorFilterChange = (color: string | null) => {
   border-color: rgba(255, 255, 255, 0.25);
 }
 
-.all-btn {
-  background: rgba(77, 171, 247, 0.2);
-  border-color: rgba(77, 171, 247, 0.4);
+.time-btn.active {
+  background: rgba(77, 171, 247, 0.25);
+  border-color: rgba(77, 171, 247, 0.5);
   color: #74c0fc;
   font-weight: 600;
+  box-shadow: 0 0 8px rgba(77, 171, 247, 0.3);
+}
+
+.all-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 500;
 }
 
 .all-btn:hover {
-  background: rgba(77, 171, 247, 0.3);
-  border-color: rgba(77, 171, 247, 0.6);
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.all-btn.active {
+  background: rgba(77, 171, 247, 0.35);
+  border-color: rgba(77, 171, 247, 0.7);
+  color: #74c0fc;
+  font-weight: 600;
+  box-shadow: 0 0 12px rgba(77, 171, 247, 0.5);
 }
 
 .custom-time {
@@ -299,23 +309,6 @@ const handleColorFilterChange = (color: string | null) => {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-}
-
-.clear-filter {
-  background: rgba(239, 68, 68, 0.2);
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  color: #f87171;
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.3rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.clear-filter:hover {
-  background: rgba(239, 68, 68, 0.3);
-  border-color: rgba(239, 68, 68, 0.6);
 }
 
 /* === Responsive === */

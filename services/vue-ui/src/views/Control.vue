@@ -3,7 +3,6 @@
     <header class="control-header">
       <div>
         <h1>Control del Edge Agent</h1>
-        <p class="subtitle">Monitoreá el stream en vivo, gestioná el ciclo de vida del servicio y ajustá las clases a detectar.</p>
       </div>
     </header>
 
@@ -84,14 +83,14 @@
             <div class="info-item">
               <span class="info-label">Clases efectivas</span>
               <div class="pill-list" v-if="effectiveClasses.length">
-                <span v-for="cls in effectiveClasses" :key="cls" class="pill">{{ getClassEmoji(cls) }} {{ cls }}</span>
+                <span v-for="cls in effectiveClasses" :key="cls" class="pill">{{ cls }}</span>
               </div>
               <p v-else class="muted">Sin clases configuradas (el servicio ignorará detecciones).</p>
             </div>
             <div class="info-item">
               <span class="info-label">Override actual</span>
               <div class="pill-list" v-if="selectedClasses.length">
-                <span v-for="cls in selectedClasses" :key="`selected-${cls}`" class="pill pill--accent">{{ getClassEmoji(cls) }} {{ cls }}</span>
+                <span v-for="cls in selectedClasses" :key="`selected-${cls}`" class="pill pill--accent">{{ cls }}</span>
               </div>
               <p v-else class="muted">Sin override: se aplican las clases definidas en <code>config.toml</code>.</p>
             </div>
@@ -150,19 +149,6 @@ import { formatDuration, formatTimestamp } from '@/utils/date'
 type Feedback = {
   type: 'success' | 'error'
   message: string
-}
-
-// Class emoji mapping
-const classEmojiMap: Record<string, string> = {
-  backpack: '🎒',
-  bottle: '🍼',
-  cup: '☕',
-  person: '🧍',
-  shoes: '👟'
-}
-
-function getClassEmoji(className: string): string {
-  return classEmojiMap[className] || '📦'
 }
 
 // WebRTC state for coordinated loading feedback

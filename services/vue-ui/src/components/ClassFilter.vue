@@ -37,15 +37,6 @@ const selectAll = () => {
 
 const hasSelection = computed(() => selectedClasses.value.size > 0)
 const allSelected = computed(() => selectedClasses.value.size === props.availableClasses.length)
-
-// Mapeo de clases a emojis/iconos para mejor UX
-const classIcons: Record<string, string> = {
-  'person': '👤',
-  'backpack': '🎒',
-  'bottle': '🍾',
-  'cup': '☕',
-  'shoes': '👟'
-}
 </script>
 
 <template>
@@ -81,7 +72,6 @@ const classIcons: Record<string, string> = {
         :class="{ active: selectedClasses.has(className) }"
         @click="toggleClass(className)"
       >
-        <span class="chip-icon">{{ classIcons[className] || '📦' }}</span>
         <span class="chip-label">{{ className }}</span>
       </button>
     </div>
@@ -157,11 +147,12 @@ const classIcons: Record<string, string> = {
 .class-chip {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
   background: rgba(255, 255, 255, 0.05);
   border: 2px solid rgba(255, 255, 255, 0.15);
   border-radius: 1.5rem;
-  padding: 0.45rem 0.9rem;
+  padding: 0.5rem 1rem;
   cursor: pointer;
   transition: all 0.2s ease-in-out;
   font-size: 0.9rem;
@@ -184,11 +175,6 @@ const classIcons: Record<string, string> = {
 .class-chip.active:hover {
   background: rgba(77, 171, 247, 0.3);
   border-color: rgba(77, 171, 247, 0.8);
-}
-
-.chip-icon {
-  font-size: 1.1rem;
-  line-height: 1;
 }
 
 .chip-label {

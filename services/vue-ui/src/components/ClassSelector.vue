@@ -11,7 +11,6 @@
         @click="toggleClass(cls.name)"
         :disabled="disabled"
       >
-        <span class="class-chip__emoji">{{ cls.emoji }}</span>
         <span class="class-chip__name">{{ cls.name }}</span>
       </button>
     </div>
@@ -22,14 +21,14 @@
         @click="selectAll"
         :disabled="disabled || allSelected"
       >
-        ✓ Todas
+        Todas
       </button>
       <button
         class="btn-chip btn-chip--small"
         @click="selectNone"
         :disabled="disabled || noneSelected"
       >
-        ✕ Ninguna
+        Ninguna
       </button>
     </div>
   </div>
@@ -40,7 +39,6 @@ import { computed } from 'vue'
 
 interface ClassInfo {
   name: string
-  emoji: string
 }
 
 interface Props {
@@ -59,19 +57,9 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<Emits>()
 
-// Map classes to emojis
-const classEmojiMap: Record<string, string> = {
-  backpack: '🎒',
-  bottle: '🍼',
-  cup: '☕',
-  person: '🧍',
-  shoes: '👟'
-}
-
 const availableClasses = computed<ClassInfo[]>(() => {
   return props.catalog.map(name => ({
-    name,
-    emoji: classEmojiMap[name] || '📦'
+    name
   }))
 })
 
@@ -121,8 +109,8 @@ function selectNone() {
 .class-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
-  padding: 0.5rem 0.875rem;
+  justify-content: center;
+  padding: 0.5rem 1rem;
   border: 2px solid var(--color-border);
   border-radius: 1.5rem;
   background: var(--color-bg-secondary);
@@ -153,11 +141,6 @@ function selectNone() {
 .class-chip:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.class-chip__emoji {
-  font-size: 1.125rem;
-  line-height: 1;
 }
 
 .class-chip__name {

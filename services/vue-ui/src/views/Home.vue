@@ -64,8 +64,12 @@ onMounted(() => {
           Elegí una sesión para reproducir el clip y superponer las anotaciones.
         </p>
       </div>
-      <SessionSearch @search="handleSearch" @search-all="handleSearchAll" />
     </header>
+
+    <SessionSearch
+      @search="handleSearch"
+      @search-all="handleSearchAll"
+    />
 
     <SessionList
       :sessions="sessionsStore.sessions"

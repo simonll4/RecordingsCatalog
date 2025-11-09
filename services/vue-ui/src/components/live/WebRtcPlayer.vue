@@ -3,9 +3,6 @@
     <header class="webrtc-player__header">
       <div>
         <h2>Streaming en vivo</h2>
-        <p class="subtitle">
-          Visualizá el flujo en tiempo real vía WebRTC (WHEP). La conexión se inicia automáticamente cuando el edge agent está en línea.
-        </p>
       </div>
       <div class="status-badges">
         <span class="status" :class="serviceStatusClass">{{ agentStatusText }}</span>
