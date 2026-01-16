@@ -167,6 +167,14 @@ export class SessionStoreHttp implements SessionStore {
     logger.info("Opening session", { module: "session-store-http", sessionId });
 
     try {
+      const configuredClasses = Array.from(
+        new Set(
+          (CONFIG.ai.classesFilter ?? [])
+            .map((cls) => cls.trim())
+            .filter((cls) => cls.length > 0)
+        )
+      );
+
       const res = await fetch(`${CONFIG.store.baseUrl}/sessions/open`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -177,6 +185,7 @@ export class SessionStoreHttp implements SessionStore {
           streamPath: CONFIG.mediamtx.recordPath,
           startTs: actualStartTs,
           reason: "relevance",
+          configuredClasses,
         }),
       });
 

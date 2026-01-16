@@ -12,6 +12,7 @@ import { storeToRefs } from 'pinia'
 import Player from '../components/Player.vue'
 import TrackLegend from '../components/TrackLegend.vue'
 import { playbackService, sessionService } from '@/api'
+import type { SessionSummary } from '@/api'
 import { usePlayerStore } from '../stores/usePlayer'
 import { useSessionsStore } from '../stores/useSessions'
 import { useTracksStore } from '../stores/useTracks'
@@ -27,6 +28,7 @@ const playerStore = usePlayerStore()
 const clipLoading = ref(false)
 const clipError = ref<string | null>(null)
 const playbackUrl = ref<string | null>(null)
+const sessionRecord = ref<SessionSummary | null>(null)
 
 const { meta, index, metaMissing, indexMissing, hasSegments } = storeToRefs(tracksStore)
 
@@ -45,9 +47,21 @@ const warnings = computed(() => {
   return items
 })
 
+const configuredClasses = computed(() => sessionRecord.value?.configured_classes ?? [])
+const detectedClasses = computed(() => sessionRecord.value?.detected_classes ?? [])
+const detectedSet = computed(() => new Set(detectedClasses.value))
+const configuredSet = computed(() => new Set(configuredClasses.value))
+const configuredMissing = computed(() =>
+  configuredClasses.value.filter((cls) => !detectedSet.value.has(cls)),
+)
+const detectedExtra = computed(() =>
+  detectedClasses.value.filter((cls) => !configuredSet.value.has(cls)),
+)
+
 const loadSessionData = async (sessionId: string) => {
   clipError.value = null
   clipLoading.value = true
+  sessionRecord.value = null
   try {
     // Limpiar estado y cache de la sesión anterior
     await tracksStore.resetForSession(sessionId)
@@ -57,6 +71,7 @@ const loadSessionData = async (sessionId: string) => {
       tracksStore.loadMeta(sessionId),
       tracksStore.loadIndex(sessionId),
     ])
+    sessionRecord.value = session
 
     // Intentar construir URL localmente usando media_start_ts
     let clip = playbackService.buildSessionPlaybackUrl(session)
@@ -137,6 +152,7 @@ const loadSessionData = async (sessionId: string) => {
     console.error('Failed to initialize session view', error)
     clipError.value =
       error instanceof Error ? error.message : 'No se pudo cargar la sesión seleccionada.'
+    sessionRecord.value = null
   } finally {
     clipLoading.value = false
   }
@@ -203,11 +219,50 @@ const showLoading = computed(() => clipLoading.value || !layoutReady.value)
               <template v-else> — </template>
             </dd>
           </div>
-          <div>
-            <dt>FPS (tracking)</dt>
-            <dd>{{ index ? index.fps.toFixed(1) : '—' }}</dd>
-          </div>
         </dl>
+      </div>
+      <div
+        v-if="configuredClasses.length || detectedClasses.length"
+        class="meta-card class-card"
+      >
+        <div class="class-card__header">
+          <h2>Objetos relevantes</h2>
+          <p class="class-card__summary">
+            {{ detectedClasses.length }} detectada(s) · {{ configuredClasses.length }} configurada(s)
+          </p>
+        </div>
+        <div v-if="configuredClasses.length" class="class-card__group">
+          <span class="group-label">Configuradas</span>
+          <div class="class-tags">
+            <span
+              v-for="className in configuredClasses"
+              :key="`cfg-${sessionId}-${className}`"
+              class="class-tag"
+              :class="detectedSet.has(className) ? 'class-tag--hit' : 'class-tag--pending'"
+            >
+              <span class="tag-name">{{ className }}</span>
+            </span>
+          </div>
+        </div>
+        <div v-if="detectedClasses.length" class="class-card__group">
+          <span class="group-label">Detectadas</span>
+          <div class="class-tags">
+            <span
+              v-for="className in detectedClasses"
+              :key="`det-${sessionId}-${className}`"
+              class="class-tag"
+              :class="configuredSet.has(className) ? 'class-tag--hit' : 'class-tag--extra'"
+            >
+              <span class="tag-name">{{ className }}</span>
+            </span>
+          </div>
+        </div>
+        <p v-if="configuredMissing.length" class="class-card__note">
+          {{ configuredMissing.length }} clase(s) configurada(s) no se detectaron en esta sesión.
+        </p>
+        <p v-if="detectedExtra.length" class="class-card__note class-card__note--extra">
+          {{ detectedExtra.length }} detección(es) fuera del filtro configurado.
+        </p>
       </div>
       <TrackLegend
         :meta="meta"
@@ -273,6 +328,12 @@ const showLoading = computed(() => clipLoading.value || !layoutReady.value)
   font-size: 1.1rem;
 }
 
+.meta-card h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
 .meta-card dl {
   display: grid;
   gap: 0.5rem;
@@ -288,6 +349,85 @@ const showLoading = computed(() => clipLoading.value || !layoutReady.value)
 
 .meta-card dd {
   margin: 0;
+}
+
+.class-card {
+  gap: 0.75rem;
+}
+
+.class-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.class-card__summary {
+  margin: 0;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.class-card__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.group-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.class-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.class-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(77, 171, 247, 0.15);
+  border: 1px solid rgba(77, 171, 247, 0.3);
+  border-radius: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.75rem;
+  color: #4dabf7;
+}
+
+.class-tag--hit {
+  background: rgba(76, 201, 240, 0.2);
+  border-color: rgba(76, 201, 240, 0.45);
+  color: #40c057;
+}
+
+.class-tag--pending {
+  background: rgba(255, 214, 102, 0.15);
+  border-color: rgba(255, 214, 102, 0.35);
+  color: #ffd43b;
+}
+
+.class-tag--extra {
+  background: rgba(237, 100, 166, 0.18);
+  border-color: rgba(237, 100, 166, 0.4);
+  color: #ff6bcb;
+}
+
+.tag-name {
+  text-transform: capitalize;
+}
+
+.class-card__note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.class-card__note--extra {
+  color: rgba(255, 135, 245, 0.78);
 }
 
 .loading-state {

@@ -55,18 +55,34 @@ export class SessionService {
     const mode = params.mode ?? 'all'
 
     if (mode === 'all') {
+      const queryParams: Record<string, string | number> = {}
+      if (params.limit) {
+        queryParams[QUERY_PARAMS.LIMIT] = params.limit
+      }
+      if (params.classes && params.classes.length > 0) {
+        queryParams[QUERY_PARAMS.CLASSES] = params.classes.join(',')
+      }
+      if (params.color) {
+        queryParams[QUERY_PARAMS.COLOR] = params.color
+      }
+
+      const requestConfig = Object.keys(queryParams).length > 0 ? { params: queryParams } : undefined
+
       const data = await sessionStoreClient.getJson(
         SESSION_ENDPOINTS.LIST,
         listSessionsSchema,
-        params.limit ? { params: { [QUERY_PARAMS.LIMIT]: params.limit } } : undefined
+        requestConfig
       )
       
       return {
         mode: 'all',
         sessions: data.sessions.map(s => ({
           ...s,
-          detected_classes: s.detected_classes ?? []
+          detected_classes: s.detected_classes ?? [],
+          configured_classes: s.configured_classes ?? [],
         })),
+        classes: data.classes,
+        color: data.color,
       }
     }
 
@@ -83,10 +99,10 @@ export class SessionService {
       queryParams[QUERY_PARAMS.LIMIT] = params.limit
     }
     if (params.classes && params.classes.length > 0) {
-      queryParams['classes'] = params.classes.join(',')
+      queryParams[QUERY_PARAMS.CLASSES] = params.classes.join(',')
     }
     if (params.color) {
-      queryParams['color'] = params.color
+      queryParams[QUERY_PARAMS.COLOR] = params.color
     }
     
     const data = await sessionStoreClient.getJson(
@@ -99,7 +115,8 @@ export class SessionService {
       mode: 'range',
       sessions: data.sessions.map(s => ({
         ...s,
-        detected_classes: s.detected_classes ?? []
+        detected_classes: s.detected_classes ?? [],
+        configured_classes: s.configured_classes ?? [],
       })),
       from: data.from,
       to: data.to,
@@ -118,7 +135,8 @@ export class SessionService {
     )
     return {
       ...session,
-      detected_classes: session.detected_classes ?? []
+      detected_classes: session.detected_classes ?? [],
+      configured_classes: session.configured_classes ?? [],
     }
   }
 

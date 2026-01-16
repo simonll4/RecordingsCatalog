@@ -41,6 +41,15 @@ export class SessionController {
 
       // Support both 'path' and 'streamPath' for compatibility
       const path = body.path || body.streamPath || body.devId;
+      const rawConfigured: unknown[] = Array.isArray(body.configuredClasses)
+        ? body.configuredClasses
+        : Array.isArray((body as any).configured_classes)
+        ? (body as any).configured_classes
+        : [];
+
+      const configuredClasses = rawConfigured
+        .map((cls) => (typeof cls === 'string' ? cls.trim() : ''))
+        .filter((cls): cls is string => cls.length > 0);
 
       const { record, created } = await this.sessionService.createSession({
         sessionId: body.sessionId,
@@ -48,6 +57,7 @@ export class SessionController {
         path: path,
         startTs: body.startTs,
         reason: body.reason,
+        configuredClasses,
       });
 
       res.status(created ? 201 : 200).json(record);
@@ -176,9 +186,25 @@ export class SessionController {
   async listSessions(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const limit = parsePositiveInt(req.query.limit) || 50;
-      const sessions = await this.sessionService.listSessions(limit);
+      const { classes, color } = req.query;
 
-      res.json({ sessions });
+      let classFilter: string[] | undefined;
+      if (classes) {
+        if (typeof classes === 'string') {
+          classFilter = classes.split(',').map(c => c.trim()).filter(Boolean);
+        } else if (Array.isArray(classes)) {
+          classFilter = classes.map(c => String(c).trim()).filter(Boolean);
+        }
+      }
+
+      let colorFilter: string | undefined;
+      if (color && typeof color === 'string') {
+        colorFilter = color.trim();
+      }
+
+      const sessions = await this.sessionService.listSessions(limit, classFilter, colorFilter);
+
+      res.json({ sessions, classes: classFilter, color: colorFilter });
     } catch (error) {
       next(error);
     }

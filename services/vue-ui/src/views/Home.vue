@@ -37,9 +37,11 @@ const handleSearch = async (range: { from: string; to: string; classes?: string[
 }
 
 // Handler para cargar todas las sesiones sin filtros
-const handleSearchAll = async () => {
+const handleSearchAll = async (payload?: { classes?: string[]; color?: string }) => {
   await sessionsStore.loadSessions({
     mode: 'all',
+    classes: payload?.classes,
+    color: payload?.color,
   })
 }
 

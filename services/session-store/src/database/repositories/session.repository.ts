@@ -7,14 +7,17 @@ import {
 
 export class SessionRepository {
   async create(input: CreateSessionInput): Promise<{ record: SessionRecord; created: boolean }> {
-    const { sessionId, deviceId, path, startTs, reason } = input;
+    const { sessionId, deviceId, path, startTs, reason, configuredClasses } = input;
+    const normalizedConfigured = Array.isArray(configuredClasses)
+      ? Array.from(new Set(configuredClasses.map((cls) => cls.trim()).filter(Boolean)))
+      : [];
     
     const result = await pool.query<SessionRecord>(
-      `INSERT INTO sessions (session_id, device_id, path, start_ts, reason, status)
-       VALUES ($1, $2, $3, $4::timestamptz, $5, 'open')
+      `INSERT INTO sessions (session_id, device_id, path, start_ts, reason, configured_classes, status)
+       VALUES ($1, $2, $3, $4::timestamptz, $5, $6::text[], 'open')
        ON CONFLICT (session_id) DO NOTHING
        RETURNING *`,
-      [sessionId, deviceId, path, startTs, reason ?? null]
+      [sessionId, deviceId, path, startTs, reason ?? null, normalizedConfigured]
     );
 
     if (result.rows[0]) {
@@ -85,6 +88,50 @@ export class SessionRepository {
        ORDER BY start_ts DESC
        LIMIT $1`,
       [limit]
+    );
+    return result.rows;
+  }
+
+  async listWithClasses(classes: string[], limit = 50): Promise<SessionRecord[]> {
+    const result = await pool.query<SessionRecord>(
+      `SELECT * FROM sessions
+       WHERE detected_classes @> $1::text[]
+         AND array_length(detected_classes, 1) > 0
+       ORDER BY start_ts DESC
+       LIMIT $2`,
+      [classes, limit]
+    );
+    return result.rows;
+  }
+
+  async listWithColor(color: string, limit = 50): Promise<SessionRecord[]> {
+    const result = await pool.query<SessionRecord>(
+      `SELECT DISTINCT s.*
+       FROM sessions s
+       INNER JOIN detections d ON d.session_id = s.session_id
+       WHERE d.enriched = true
+         AND d.attributes->>'color' IS NOT NULL
+         AND LOWER(d.attributes->'color'->>'name') LIKE LOWER($1)
+       ORDER BY s.start_ts DESC
+       LIMIT $2`,
+      [`%${color}%`, limit]
+    );
+    return result.rows;
+  }
+
+  async listWithClassesAndColor(classes: string[], color: string, limit = 50): Promise<SessionRecord[]> {
+    const result = await pool.query<SessionRecord>(
+      `SELECT DISTINCT s.*
+       FROM sessions s
+       INNER JOIN detections d ON d.session_id = s.session_id
+       WHERE s.detected_classes @> $1::text[]
+         AND array_length(s.detected_classes, 1) > 0
+         AND d.enriched = true
+         AND d.attributes->>'color' IS NOT NULL
+         AND LOWER(d.attributes->'color'->>'name') LIKE LOWER($2)
+       ORDER BY s.start_ts DESC
+       LIMIT $3`,
+      [classes, `%${color}%`, limit]
     );
     return result.rows;
   }

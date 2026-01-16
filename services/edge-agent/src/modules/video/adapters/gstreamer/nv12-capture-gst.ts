@@ -174,6 +174,7 @@ export class NV12CaptureGst {
   private currentMode: "idle" | "active" = "idle"; // FPS mode (legacy, v1 uses window-based backpressure)
   private stoppedManually = false; // Manual stop flag (prevents auto-restart)
   private lastLoggedSeam: number | null = null; // Tracks last seam logged to avoid spam
+  private lastFrameSeam: number | null = null; // Persists detected seam for fallback normalization
   private frameCount = 0; // DEBUG: Frame counter
   private lastDataLog = Date.now(); // DEBUG: Last data received log timestamp
   private _isRunning = false; // Liveness flag for external checks
@@ -214,6 +215,7 @@ export class NV12CaptureGst {
     this.stoppedManually = false;
     this.consecutiveFailures = 0;
     this._isRunning = true;
+  this.lastFrameSeam = null;
 
     const fps = this.getFps();
     await this.launch(fps);
@@ -501,13 +503,15 @@ export class NV12CaptureGst {
       };
 
       try {
-        const { buffer: normalizedData, seam } = normalizeNV12SplitFrame(
-          frameData,
-          width,
-          height
-        );
+        const { buffer: normalizedData, seam, detected, confidence } =
+          normalizeNV12SplitFrame(frameData, width, height, this.lastFrameSeam);
 
-        if (seam !== this.lastLoggedSeam) {
+        if (seam !== null) {
+          this.lastFrameSeam = seam;
+        }
+
+        const logSeam = seam !== this.lastLoggedSeam;
+        if (logSeam) {
           this.lastLoggedSeam = seam;
           if (seam !== null) {
             logger.debug("Corrected split NV12 frame", {
@@ -515,6 +519,15 @@ export class NV12CaptureGst {
               seam,
               width,
               height,
+              source: detected ? "detected" : "fallback",
+              confidence,
+            });
+          } else {
+            logger.debug("No NV12 seam detected for current frame", {
+              module: "nv12-capture-gst",
+              width,
+              height,
+              confidence,
             });
           }
         }

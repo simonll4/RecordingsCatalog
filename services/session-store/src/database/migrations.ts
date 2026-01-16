@@ -24,13 +24,14 @@ export async function ensureSchema(): Promise<void> {
         media_start_ts TIMESTAMPTZ,
         media_end_ts TIMESTAMPTZ,
         recommended_start_offset_ms INTEGER,
+        configured_classes TEXT[] NOT NULL DEFAULT '{}'::text[],
         detected_classes TEXT[] DEFAULT '{}',
         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       )
     `);
     
-    // Add detected_classes column if it doesn't exist (migration)
+    // Add detected_classes and configured_classes columns if they don't exist (migration)
     await client.query(`
       DO $$ 
       BEGIN
@@ -38,7 +39,14 @@ export async function ensureSchema(): Promise<void> {
           SELECT 1 FROM information_schema.columns 
           WHERE table_name = 'sessions' AND column_name = 'detected_classes'
         ) THEN
-          ALTER TABLE sessions ADD COLUMN detected_classes TEXT[] DEFAULT '{}';
+          ALTER TABLE sessions ADD COLUMN detected_classes TEXT[] DEFAULT '{}'::text[];
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'sessions' AND column_name = 'configured_classes'
+        ) THEN
+          ALTER TABLE sessions ADD COLUMN configured_classes TEXT[] NOT NULL DEFAULT '{}'::text[];
         END IF;
       END $$
     `);

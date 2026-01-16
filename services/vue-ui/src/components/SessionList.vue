@@ -72,17 +72,42 @@ const formattedSessions = computed(() =>
           </div>
         </dl>
         
-        <!-- Mostrar clases detectadas -->
-        <div v-if="session.detected_classes && session.detected_classes.length > 0" class="detected-classes">
-          <span class="classes-label">Detectadas:</span>
-          <div class="class-tags">
-            <span 
-              v-for="className in session.detected_classes" 
-              :key="className"
-              class="class-tag"
-            >
-              <span class="tag-name">{{ className }}</span>
-            </span>
+        <div
+          v-if="(session.configured_classes && session.configured_classes.length > 0) || (session.detected_classes && session.detected_classes.length > 0)"
+          class="classes-card"
+        >
+          <div
+            v-if="session.configured_classes && session.configured_classes.length > 0"
+            class="classes-block"
+          >
+            <span class="classes-label">Configuradas:</span>
+            <div class="class-tags">
+              <span
+                v-for="className in session.configured_classes"
+                :key="`cfg-${session.session_id}-${className}`"
+                class="class-tag"
+                :class="session.detected_classes?.includes(className) ? 'class-tag--hit' : 'class-tag--pending'"
+              >
+                <span class="tag-name">{{ className }}</span>
+              </span>
+            </div>
+          </div>
+
+          <div
+            v-if="session.detected_classes && session.detected_classes.length > 0"
+            class="classes-block"
+          >
+            <span class="classes-label">Detectadas:</span>
+            <div class="class-tags">
+              <span
+                v-for="className in session.detected_classes"
+                :key="`det-${session.session_id}-${className}`"
+                class="class-tag"
+                :class="session.configured_classes?.includes(className) ? 'class-tag--hit' : 'class-tag--extra'"
+              >
+                <span class="tag-name">{{ className }}</span>
+              </span>
+            </div>
           </div>
         </div>
       </article>
@@ -186,12 +211,18 @@ dd {
   color: rgba(255, 255, 255, 0.9);
 }
 
-.detected-classes {
+.classes-card {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
   padding-top: 0.5rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.classes-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
 }
 
 .classes-label {
@@ -217,6 +248,24 @@ dd {
   padding: 0.3rem 0.6rem;
   font-size: 0.75rem;
   color: #4dabf7;
+}
+
+.class-tag--hit {
+  background: rgba(76, 201, 240, 0.2);
+  border-color: rgba(76, 201, 240, 0.45);
+  color: #40c057;
+}
+
+.class-tag--pending {
+  background: rgba(255, 214, 102, 0.15);
+  border-color: rgba(255, 214, 102, 0.35);
+  color: #ffd43b;
+}
+
+.class-tag--extra {
+  background: rgba(237, 100, 166, 0.18);
+  border-color: rgba(237, 100, 166, 0.4);
+  color: #ff6bcb;
 }
 
 .tag-name {

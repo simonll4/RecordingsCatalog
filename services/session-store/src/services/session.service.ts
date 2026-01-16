@@ -39,7 +39,22 @@ export class SessionService {
   /**
    * List all sessions
    */
-  async listSessions(limit?: number): Promise<SessionRecord[]> {
+  async listSessions(limit?: number, classes?: string[], color?: string): Promise<SessionRecord[]> {
+    const normalizedClasses = classes?.map((cls) => cls.trim()).filter(Boolean);
+    const normalizedColor = color?.trim();
+
+    if (normalizedClasses && normalizedClasses.length > 0 && normalizedColor) {
+      return this.sessionRepository.listWithClassesAndColor(normalizedClasses, normalizedColor, limit);
+    }
+
+    if (normalizedClasses && normalizedClasses.length > 0) {
+      return this.sessionRepository.listWithClasses(normalizedClasses, limit);
+    }
+
+    if (normalizedColor) {
+      return this.sessionRepository.listWithColor(normalizedColor, limit);
+    }
+
     return this.sessionRepository.list(limit);
   }
 

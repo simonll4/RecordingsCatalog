@@ -18,7 +18,7 @@ const AVAILABLE_CLASSES = ['backpack', 'bottle', 'cup', 'person', 'shoes']
 
 const emit = defineEmits<{
   (e: 'search', payload: { from: string; to: string; classes?: string[]; color?: string }): void
-  (e: 'search-all'): void
+  (e: 'search-all', payload?: { classes?: string[]; color?: string }): void
 }>()
 
 // Formatea una Date para `input[type=datetime-local]` (no incluye segundos)
@@ -36,11 +36,22 @@ const toInput = ref(formatInputValue(now))
 const selectedClasses = ref<string[]>([])
 const selectedColor = ref<string | null>(null)
 const activeTimeButton = ref<string | null>(null) // Rastrear botón activo (ninguno por defecto)
+const searchMode = ref<'range' | 'all'>('range')
+
+const emitAll = (classes: string[] = selectedClasses.value, color: string | null = selectedColor.value) => {
+  const normalizedClasses = classes.length > 0 ? classes : undefined
+  const normalizedColor = color ?? undefined
+  emit('search-all', {
+    classes: normalizedClasses,
+    color: normalizedColor,
+  })
+}
 
 /**
  * Emite el rango solicitado en formato ISO y actualiza los inputs locales.
  */
 const emitRange = (from: Date, to: Date, classes?: string[], color?: string | null) => {
+  searchMode.value = 'range'
   emit('search', { 
     from: from.toISOString(), 
     to: to.toISOString(),
@@ -75,6 +86,12 @@ const submit = () => {
   emitRange(from, to, selectedClasses.value, selectedColor.value)
 }
 
+const showAllSessions = () => {
+  searchMode.value = 'all'
+  activeTimeButton.value = 'all'
+  emitAll(selectedClasses.value, selectedColor.value)
+}
+
 /**
  * Handler cuando cambia la selección de clases
  */
@@ -84,6 +101,10 @@ const handleClassFilterChange = (classes: string[]) => {
   // Auto-buscar cuando cambian las clases (usando el rango actual)
   const from = new Date(fromInput.value)
   const to = new Date(toInput.value)
+  if (searchMode.value === 'all') {
+    emitAll(classes, selectedColor.value)
+    return
+  }
   if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime()) && from < to) {
     emitRange(from, to, classes, selectedColor.value)
   }
@@ -98,6 +119,10 @@ const handleColorFilterChange = (color: string | null) => {
   // Auto-buscar cuando cambia el color (usando el rango actual)
   const from = new Date(fromInput.value)
   const to = new Date(toInput.value)
+  if (searchMode.value === 'all') {
+    emitAll(selectedClasses.value, color)
+    return
+  }
   if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime()) && from < to) {
     emitRange(from, to, selectedClasses.value, color)
   }
@@ -111,9 +136,9 @@ const handleColorFilterChange = (color: string | null) => {
       <div class="quick-buttons">
         <button type="button" class="time-btn" :class="{ active: activeTimeButton === '15m' }" @click="applyQuickRange(15, '15m')">15m</button>
         <button type="button" class="time-btn" :class="{ active: activeTimeButton === '1h' }" @click="applyQuickRange(60, '1h')">1h</button>
-        <button type="button" class="time-btn" :class="{ active: activeTimeButton === '3h' }" @click="applyQuickRange(180, '3h')">3h</button>
-        <button type="button" class="time-btn" :class="{ active: activeTimeButton === '6h' }" @click="applyQuickRange(360, '6h')">6h</button>
-        <button type="button" class="time-btn all-btn" :class="{ active: activeTimeButton === 'all' }" @click="activeTimeButton = 'all'; emit('search-all')">Todas</button>
+  <button type="button" class="time-btn" :class="{ active: activeTimeButton === '3h' }" @click="applyQuickRange(180, '3h')">3h</button>
+  <button type="button" class="time-btn" :class="{ active: activeTimeButton === '6h' }" @click="applyQuickRange(360, '6h')">6h</button>
+  <button type="button" class="time-btn all-btn" :class="{ active: activeTimeButton === 'all' }" @click="showAllSessions">Todas</button>
       </div>
       
       <form class="custom-time" @submit.prevent="submit">

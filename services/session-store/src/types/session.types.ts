@@ -11,6 +11,7 @@ export interface SessionRecord {
   media_end_ts: string | null;
   recommended_start_offset_ms: number | null;
   reason: string | null;
+  configured_classes: string[];
   detected_classes: string[];
   created_at: string;
   updated_at: string;
@@ -22,6 +23,7 @@ export interface CreateSessionInput {
   path: string;
   startTs: string;
   reason?: string;
+  configuredClasses?: string[];
 }
 
 export interface CloseSessionInput {
@@ -38,6 +40,7 @@ export interface OpenSessionRequest {
   streamPath?: string;
   startTs: string;
   reason?: string;
+  configuredClasses?: string[];
 }
 
 export interface CloseSessionRequest {

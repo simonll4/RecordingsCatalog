@@ -19,6 +19,7 @@ const sessionSummaryBaseSchema = z.object({
   media_end_ts: z.string().nullable().optional(),
   recommended_start_offset_ms: z.number().nullable().optional(),
   reason: z.string().nullable().optional(),
+  configured_classes: z.array(z.string()).optional(),
   detected_classes: z.array(z.string()).optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
@@ -27,6 +28,7 @@ const sessionSummaryBaseSchema = z.object({
 // Transform to ensure detected_classes is always an array
 export const sessionSummarySchema = sessionSummaryBaseSchema.transform((data) => ({
   ...data,
+  configured_classes: data.configured_classes ?? [],
   detected_classes: data.detected_classes ?? [],
 }))
 
@@ -41,6 +43,8 @@ export const rangeSessionsSchema = z.object({
 
 export const listSessionsSchema = z.object({
   sessions: z.array(sessionSummarySchema),
+  classes: z.array(z.string()).optional(),
+  color: z.string().optional(),
 })
 
 // Track metadata (meta.json) produced by worker-ai SessionWriter

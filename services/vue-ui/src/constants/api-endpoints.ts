@@ -52,6 +52,8 @@ export const QUERY_PARAMS = {
   LIMIT: 'limit',
   FROM: 'from',
   TO: 'to',
+  CLASSES: 'classes',
+  COLOR: 'color',
   PATH: 'path',
   START: 'start',
   DURATION: 'duration',
