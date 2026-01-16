@@ -1,0 +1,239 @@
+syntax = "proto3";
+
+package ai;
+
+// ============================================================================
+// Envelope v1 - Root message for TCP framing
+// ============================================================================
+message Envelope {
+  uint32 protocol_version = 1;  // MUST be 1
+  string stream_id = 2;          // Source identifier (constant per connection)
+  MsgType msg_type = 3;          // Message type (must match oneof)
+  
+  oneof msg {
+    Request req = 10;
+    Response res = 11;
+    Heartbeat hb = 12;
+  }
+}
+
+// ============================================================================
+// Enums
+// ============================================================================
+enum MsgType {
+  MT_UNKNOWN = 0;
+  MT_INIT = 1;
+  MT_INIT_OK = 2;
+  MT_WINDOW_UPDATE = 3;
+  MT_FRAME = 4;
+  MT_RESULT = 5;
+  MT_HEARTBEAT = 6;
+  MT_ERROR = 7;
+  MT_END = 8;
+}
+
+enum PixelFormat {
+  PF_UNKNOWN = 0;
+  PF_I420 = 1;
+  PF_NV12 = 2;
+  PF_RGB8 = 3;
+}
+
+enum Codec {
+  CODEC_UNKNOWN = 0;
+  CODEC_NONE = 1;   // RAW
+  CODEC_JPEG = 2;
+  CODEC_H264 = 3;
+}
+
+enum Policy {
+  POLICY_UNKNOWN = 0;
+  LATEST_WINS = 1;
+  FIFO = 2;
+}
+
+enum ErrorCode {
+  ERR_UNKNOWN = 0;
+  VERSION_UNSUPPORTED = 1;
+  BAD_MESSAGE = 2;
+  BAD_SEQUENCE = 3;
+  UNSUPPORTED_FORMAT = 4;
+  INVALID_FRAME = 5;
+  FRAME_TOO_LARGE = 6;
+  MODEL_NOT_READY = 7;
+  OOM = 8;
+  BACKPRESSURE_TIMEOUT = 9;
+  INTERNAL = 10;
+}
+
+// ============================================================================
+// Request - Agent → Worker
+// ============================================================================
+message Request {
+  oneof kind {
+    Init init = 1;
+    Frame frame = 2;
+    End end = 3;
+  }
+}
+
+message Init {
+  string model = 1;
+  Capabilities caps = 2;
+  repeated string classes_filter = 3; // Lista de clases a habilitar (opcional)
+  float confidence_threshold = 4; // Umbral mínimo de confianza (opcional)
+}
+
+message Capabilities {
+  repeated PixelFormat accepted_pixel_formats = 1;
+  repeated Codec accepted_codecs = 2;
+  uint32 max_width = 3;
+  uint32 max_height = 4;
+  uint32 max_inflight = 5;           // Suggested window size
+  bool supports_letterbox = 6;
+  bool supports_normalize = 7;
+  
+  // Optional hints
+  string preferred_layout = 8;        // "NCHW" | "NHWC"
+  string preferred_dtype = 9;         // "FP32" | "FP16" | "INT8"
+  uint32 desired_max_frame_bytes = 10;
+}
+
+message Frame {
+  // Identification (all timestamps in ns; ts_utc_ns = epoch)
+  uint64 frame_id = 1;
+  uint64 ts_mono_ns = 2;             // Mandatory
+  uint64 ts_pdt_ns = 3;              // Recommended (pipeline/decoder)
+  uint64 ts_utc_ns = 4;              // Optional (multi-host)
+  
+  // Size/format
+  uint32 width = 5;
+  uint32 height = 6;
+  PixelFormat pixel_format = 7;
+  Codec codec = 8;
+  repeated Plane planes = 9;         // If RAW; empty if compressed
+  bool is_keyframe = 10;             // If H.264
+  
+  // Color (optional)
+  string color_space = 11;           // e.g. "BT.709"
+  string color_range = 12;           // "full" | "limited"
+  
+  // Data
+  bytes data = 13;                   // RAW concatenated planes or compressed bitstream
+  
+  // Context
+  string session_id = 14;
+}
+
+message Plane {
+  uint32 stride = 1;
+  uint32 offset = 2;
+  uint32 size = 3;
+}
+
+message End {
+  // Clean shutdown request
+}
+
+// ============================================================================
+// Response - Worker → Agent
+// ============================================================================
+message Response {
+  oneof kind {
+    InitOk init_ok = 1;
+    WindowUpdate window_update = 2;
+    Result result = 3;
+    Error error = 4;
+  }
+}
+
+message InitOk {
+  Chosen chosen = 1;
+  uint32 max_frame_bytes = 2;        // Operational limit for agent
+}
+
+message Chosen {
+  PixelFormat pixel_format = 1;      // Chosen format (if RAW)
+  Codec codec = 2;                   // Chosen codec
+  uint32 width = 3;
+  uint32 height = 4;
+  float fps_target = 5;              // Target FPS (hint)
+  Policy policy = 6;
+  uint32 initial_credits = 7;        // Initial window size
+  
+  // Optional
+  uint32 gop_ms = 8;                 // GOP duration for H.264 (ms)
+  string color_space = 9;            // Default color space
+  string color_range = 10;           // Default color range
+}
+
+message WindowUpdate {
+  uint32 new_window_size = 1;        // Replaces current window (not additive)
+}
+
+message Result {
+  uint64 frame_id = 1;
+  FrameRef frame_ref = 2;
+  
+  // Model info
+  string model_family = 3;
+  string model_name = 4;
+  string model_version = 5;
+  
+  // Latency breakdown
+  Latency lat = 6;
+  
+  // Output (model-agnostic)
+  oneof out {
+    DetectionSet detections = 10;
+  }
+}
+
+message FrameRef {
+  uint64 ts_mono_ns = 1;
+  uint64 ts_utc_ns = 2;
+  string session_id = 3;
+}
+
+message Latency {
+  float pre_ms = 1;      // Preprocessing
+  float infer_ms = 2;    // Inference
+  float post_ms = 3;     // Postprocessing
+  float total_ms = 4;    // Total
+}
+
+message DetectionSet {
+  repeated Detection items = 1;
+}
+
+message Detection {
+  BBox bbox = 1;         // xyxy in pixels (over Chosen width/height)
+  float conf = 2;
+  string cls = 3;
+  string track_id = 4;
+}
+
+message BBox {
+  float x1 = 1;
+  float y1 = 2;
+  float x2 = 3;
+  float y2 = 4;
+}
+
+// ============================================================================
+// Error
+// ============================================================================
+message Error {
+  ErrorCode code = 1;
+  string message = 2;
+  uint32 retry_after_ms = 3;         // Optional mitigation hint
+}
+
+// ============================================================================
+// Heartbeat - Bidirectional keepalive
+// ============================================================================
+message Heartbeat {
+  uint64 last_frame_id = 1;
+  uint64 tx = 2;                     // Transmitted messages count
+  uint64 rx = 3;                     // Received messages count
+}

@@ -1,0 +1,1 @@
+"""Core - Configuración y logging"""

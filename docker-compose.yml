@@ -13,7 +13,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./services/session-store/migrations:/docker-entrypoint-initdb.d:ro
-      # Sincronización de TZ con el host
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     healthcheck:
@@ -23,7 +22,8 @@ services:
       retries: 5
 
   mediamtx:
-    image: bluenviron/mediamtx:latest-ffmpeg
+    build:
+      context: ./services/mediamtx
     container_name: tpfinalv3-mediamtx
     restart: unless-stopped
     depends_on:
@@ -31,13 +31,18 @@ services:
         condition: service_started
     environment:
       TZ: UTC
+      SESSION_STORE_URL: http://session-store:8080
     ports:
       - "8554:8554" # RTSP ingest
       - "9996:9996" # Playback API (recordings)
+      - "8889:8889" # WebRTC (WHEP/WHIP)
+      - "8888:8888" # HLS (opcional)
+      - "8189:8189/udp" # WebRTC ICE UDP
+      - "8189:8189/tcp" # WebRTC ICE TCP (fallback)
     volumes:
       - ./services/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+      - ./services/mediamtx/hooks:/hooks:ro
       - ./data/recordings:/recordings
-      # Sincronización de TZ con el host
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
 
@@ -47,65 +52,100 @@ services:
     container_name: tpfinalv3-session-store
     restart: unless-stopped
     environment:
-      PORT: 8080
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/session_store
-      MEDIAMTX_PLAYBACK_BASE_URL: http://localhost:9996
       TZ: UTC
     ports:
       - "8080:8080"
     volumes:
-      # Sincronización de TZ con el host
+      - ./data/frames:/data/frames
+      - ./data/tracks:/data/tracks
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     depends_on:
       postgres:
         condition: service_healthy
-
-  # edge-agent:
-  #   build:
-  #     context: ./services/edge-agent
-  #   container_name: tpfinalv3-edge-agent
-  #   restart: on-failure
-  #   depends_on:
-  #     mediamtx:
-  #       condition: service_started
-  #     session-store:
-  #       condition: service_started
-  #   environment:
-  #     SESSION_STORE_URL: http://session-store:8080
-  #     MEDIAMTX_HOST: mediamtx
-  #     MEDIAMTX_RTSP_PORT: 8554
-  #     EDGE_DEVICE_ID: cam-local
-  #     CAMERA_DEVICE: /dev/video0
-  #     SESSION_DURATION_SECONDS: 0
-  #     SESSION_POST_ROLL_SECONDS: 5
-  #     CAMERA_FALLBACK: testsrc
-  #     TZ: UTC
-  #   volumes:
-  #     # Sincronización de TZ con el host
-  #     - /etc/timezone:/etc/timezone:ro
-  #     - /etc/localtime:/etc/localtime:ro
-  #   command: ["node", "dist/index.js", "simulate"]
-  #   profiles: [edge]
-
-  web-ui:
+  
+  attribute-enricher:
     build:
-      context: ./services/web-ui
-    container_name: tpfinalv3-web-ui
+      context: ./services/attribute-enricher
+    container_name: tpfinalv3-attribute-enricher
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      session-store:
+        condition: service_started
     environment:
-      PORT: 3000
-      SESSION_STORE_URL: http://session-store:8080
       TZ: UTC
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: session_store
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      POLL_INTERVAL_SEC: 5
+      BATCH_SIZE: 10
+      FRAMES_BASE_PATH: /data/frames
     volumes:
-      # Sincronización de TZ con el host
+      - ./data/frames:/data/frames
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
+
+  # worker-ai:
+  #   build:
+  #     context: ./services/worker-ai
+  #   container_name: tpfinalv3-worker-ai
+  #   restart: unless-stopped
+  #   environment:
+  #     TZ: UTC
+  #   volumes:
+  #     - ./services/worker-ai/data/tracks:/data/tracks  # Tracks persistidos
+  #     - ./services/worker-ai/models:/models:ro        # Modelos ONNX
+  #     - /etc/timezone:/etc/timezone:ro
+  #     - /etc/localtime:/etc/localtime:ro
+  #   healthcheck:
+  #     test: ["CMD", "python3", "healthcheck.py"]
+  #     interval: 10s
+  #     timeout: 2s
+  #     retries: 3
+
+  edge-agent:
+    build:
+      context: ./services/edge-agent
+    container_name: tpfinalv3-edge-agent
+    restart: unless-stopped
+    shm_size: "512m" # Shared memory para SHM pipeline (necesario para HD/1080p)
+    depends_on:
+      mediamtx:
+        condition: service_started
+      session-store:
+        condition: service_started
+      #worker-ai:
+      #condition: service_healthy
+    environment:
+      TZ: UTC
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # Permite conectar al worker-ai local
+    ports:
+      - "7080:7080" # Status API
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    profiles: [edge]
+
+  ui-vue:
+    build:
+      context: ./services/vue-ui
+    container_name: tpfinalv3-ui-vue
+    restart: unless-stopped
     depends_on:
       session-store:
         condition: service_started
+    environment:
+      TZ: UTC
     ports:
       - "3000:3000"
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
 
 volumes:
   postgres_data:

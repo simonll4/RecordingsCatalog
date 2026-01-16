@@ -1,0 +1,49 @@
+# Worker AI Configuration
+# ========================
+# Este archivo es la fuente única de verdad para la configuración del worker-ai.
+# Todas las configuraciones deben definirse aquí, no mediante variables de entorno.
+
+# Configuración del servidor TCP
+[server]
+# Host de escucha (0.0.0.0 para aceptar conexiones externas)
+bind_host = "0.0.0.0"
+# Puerto de escucha
+bind_port = 7001
+# Timeout de inactividad en segundos (cierra conexión si no hay actividad)
+idle_timeout_sec = 60
+
+# Configuración del modelo y la inferencia
+[model]
+conf_threshold = 0.5
+nms_iou = 0.6
+class_catalog_path = "/models/class_catalog.json"
+classes = []
+
+## Se eliminan secciones de modelo/bootstrap (no usadas en worker_new)
+
+# Configuración de visualización (debugging)
+[visualization]
+# Habilitar ventana de visualización con detecciones (solo para debugging)
+enabled = true
+# Nombre de la ventana
+window_name = "AI Worker - Detections"
+
+# Configuración del tracker
+[tracker]
+# Habilitar tracking (true/false)
+enabled = true
+# Tipo de tracker ("botsort" por ahora)
+type = "botsort"
+# Ruta al archivo de configuración del tracker
+config_path = "botsort.yaml"
+
+# Configuración de persistencia de sesiones
+[sessions]
+# Directorio base para almacenar archivos de tracking por sesión
+# Para desarrollo local: "./data/tracks"
+# Para Docker: "/data/tracks" (mapeado en docker-compose.yml)
+output_dir = "/data/tracks"
+# FPS objetivo para calcular timestamps (se puede sobrescribir por sesión)
+default_fps = 10.0
+# Duración objetivo de cada segmento NDJSON en segundos
+segment_duration_s = 10.0

@@ -1,0 +1,55 @@
+# Configuración del Attribute Enricher Service
+
+# Configuración de la base de datos
+database:
+  host: ${DB_HOST:postgres}
+  port: ${DB_PORT:5432}
+  name: ${DB_NAME:session_store}
+  user: ${DB_USER:postgres}
+  password: ${DB_PASSWORD:postgres}
+
+# Configuración del worker
+worker:
+  # Intervalo de polling en segundos
+  poll_interval_sec: ${POLL_INTERVAL_SEC:5}
+  # Cantidad de detecciones a procesar por lote
+  batch_size: ${BATCH_SIZE:10}
+  # Ruta base donde se encuentran los frames
+  frames_base_path: ${FRAMES_BASE_PATH:/data/frames}
+
+# Configuración del color provider
+color_provider:
+  # Incluir detalles de clustering en el output
+  include_details: false
+  # Guardar imágenes de debug con clusters
+  save_cluster_images: false
+  # Usar nombres CSS3 o nombres descriptivos en español
+  use_css3_names: false
+  
+  # Filtrado de píxeles
+  s_min: 0.05
+  v_min: 0.02
+  v_max: 0.98
+  
+  # Preprocesamiento
+  gamma: 1.0
+  equalize: false
+  white_balance: true
+  blur_radius: 1.0
+  
+  # Refinamiento de máscara
+  mask_erode_px: 2
+  
+  # Clustering
+  min_k: 1
+  max_k: 3
+  sample_pixels: 5000
+  
+  # Decisión acromática
+  achro_s_th: 0.18
+  achro_frac_th: 0.60
+  white_v_th: 0.78
+  white_v_strong_th: 0.90
+  black_v_th: 0.25
+  achro_margin: 0.08
+

@@ -1,0 +1,80 @@
+# ========================
+# Edge Agent Configuration
+# ========================
+
+# Identificador único del dispositivo edge
+[device]
+id = "cam-local"
+
+# Nivel de logging (debug, info, warn, error)
+[logging]
+level = "debug"
+
+# Configuración de la fuente de video (RTSP)
+[source]
+kind = "rtsp"
+uri = "rtsp://admin:KBXBIN@192.168.1.82:554/Streaming/Channels/1"
+# Resolución de captura
+width = 640
+height = 480
+# FPS constante de captura
+fps_hub = 15
+# Path del socket de memoria compartida
+socket_path = "/dev/shm/cam_raw.sock"
+# Tamaño del buffer de memoria compartida (MB)
+shm_size_mb = 50
+
+# Configuración del servidor MediaMTX (RTSP)
+[mediamtx]
+host = "mediamtx"
+port = 8554
+# Path de grabación por sesión (rtsp://mediamtx:8554/{record_path})
+record_path = "cam-local"
+# Path de streaming continuo para live view (rtsp://mediamtx:8554/{live_path})
+live_path = "cam-local-live"
+
+# Configuración de la máquina de estados (FSM)
+[fsm]
+# Tiempo mínimo de permanencia en estado ACTIVE antes de poder salir (ms)
+dwell_ms = 500
+# Tiempo sin detecciones para salir de ACTIVE → IDLE (ms)
+silence_ms = 3000
+# Tiempo de grabación adicional después de última detección (ms)
+postroll_ms = 5000
+
+# Configuración del modelo de IA (YOLO)
+[ai]
+# Ruta al modelo ONNX que carga el worker-ai
+# Docker/Producción: el contenedor del worker monta /models → services/worker-ai/models
+model_name = "./models/yolo11s-custom.onnx"
+# Desarrollo local (si el worker corre fuera de Docker):
+# usar una ruta ABSOLUTA válida en el host hacia services/worker-ai/models/yolo11s.onnx
+# por ejemplo: 
+# model_name = "/home/usuario/proyecto/services/worker-ai/models/yolo11s.onnx"
+# Umbral de confianza para las detecciones
+umbral = 0.5
+# Resolución de entrada del modelo
+width = 640
+height = 640
+# Clases a detectar (filtro, separadas por comas)
+# Deben coincidir con services/worker-ai/models/class_catalog.json
+classes_filter = "backpack,bottle,cup,person,shoes"
+# FPS de procesamiento en estado IDLE
+fps_idle = 5
+# FPS de procesamiento en estado ACTIVE
+fps_active = 12
+# Configuración del worker de IA
+# ===== DESARROLLO LOCAL (worker-ai corriendo fuera de Docker) =====
+worker_host = "host.docker.internal"  # Usar host.docker.internal para worker-ai local
+worker_port = 7001
+# ===== PRODUCCIÓN (worker-ai en Docker Compose) =====
+# worker_host = "worker-ai"  # Descomentar para usar worker en Docker
+# worker_port = 7001
+
+# Configuración del Session Store (backend)
+[store]
+# URL base del servicio session-store
+base_url = "http://session-store:8080"
+
+[status]
+port = 7080

@@ -4,17 +4,24 @@
   "description": "Edge Agent simple para publicar sesiones en MediaMTX",
   "type": "module",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "dev": "node scripts/dev-manager.mjs",
+    "dev:manager": "node scripts/dev-manager.mjs",
+    "dev:agent": "ts-node-dev --respawn --transpile-only --esm src/app/main.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
-    "simulate": "node dist/index.js simulate"
+    "start": "node dist/manager/main.js",
+    "start:agent": "node dist/app/main.js",
+    "proto:gen": "npm run proto:js",
+    "proto:js": "pbjs -t static-module -w commonjs -o src/proto/ai_pb.cjs ../../proto/ai.proto"
   },
   "dependencies": {
-    "dotenv": "^16.3.1",
-    "net": "^1.0.2"
+    "@iarna/toml": "^2.2.5",
+    "long": "^5.2.3",
+    "protobufjs": "^7.2.5",
+    "sharp": "^0.34.4"
   },
   "devDependencies": {
     "@types/node": "^20.9.0",
+    "protobufjs-cli": "^1.1.1",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.2.2"
   }

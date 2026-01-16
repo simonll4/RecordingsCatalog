@@ -1,0 +1,33 @@
+# ===========================
+# Session Store Configuration
+# ===========================
+
+# Configuración del servidor HTTP
+[server]
+port = 8080
+# Entorno de ejecución (development, production)
+node_env = "production"
+
+# Configuración de la base de datos PostgreSQL
+[database]
+# URL de conexión a PostgreSQL
+# Formato: postgres://usuario:password@host:puerto/database
+url = "postgres://postgres:postgres@postgres:5432/session_store"
+
+# Configuración de MediaMTX (servidor de playback)
+[mediamtx]
+# Token opcional para validar hooks (dejar vacío para desactivar)
+# hook_token = "your-secret-token"
+
+# Configuración de playback de grabaciones
+# [playback] (eliminado - no utilizado)
+
+# Configuración de frames (imágenes de detecciones)
+[frames]
+# Directorio donde se guardan los frames con detecciones
+storage_path = "/data/frames"
+
+# Configuración de tracks persistidos por el worker
+[tracks]
+# Directorio base que contiene meta/index y segmentos NDJSON por sesión
+storage_path = "/data/tracks"

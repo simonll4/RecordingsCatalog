@@ -1,3 +1,11 @@
 node_modules
 dist
 npm-debug.log
+*.log
+.env
+.git
+.gitignore
+docs/
+*.md
+!README.md
+validate.sh

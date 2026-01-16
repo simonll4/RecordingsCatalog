@@ -6,9 +6,18 @@
     "outDir": "dist",
     "rootDir": "src",
     "strict": true,
+    "allowJs": true,
     "esModuleInterop": true,
     "skipLibCheck": true
   },
   "include": ["src/**/*"],
-  "exclude": ["dist", "node_modules"]
+  "exclude": [
+    "dist",
+    "node_modules",
+    "**/*.example.ts",
+    "**/*.legacy.ts",
+    "src/modules/_legacy/**/*",
+    "src/legacy/**/*",
+    "src/proto/legacy/**/*"
+  ]
 }

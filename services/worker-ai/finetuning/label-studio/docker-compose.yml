@@ -1,0 +1,21 @@
+services:
+  labelstudio:
+    image: heartexlabs/label-studio:latest
+    container_name: labelstudio
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./data:/label-studio/data
+    environment:
+      LABEL_STUDIO_USERNAME: admin@example.com
+      LABEL_STUDIO_PASSWORD: admin123
+      LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED: "true"
+      # Ejecutar como usuario con permisos
+      LABEL_STUDIO_USER_TOKEN: "default-token"
+    user: "${UID:-1000}:${GID:-1000}"
+    command: >
+      label-studio start
+      --host 0.0.0.0
+      --port 8080
+      --log-level INFO

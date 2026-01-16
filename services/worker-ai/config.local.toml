@@ -1,0 +1,49 @@
+# Worker AI Configuration - LOCAL DEVELOPMENT
+# ========================
+# Este archivo es para desarrollo local (fuera de Docker).
+# Para usar: mv config.toml config.docker.toml && mv config.local.toml config.toml
+
+# Configuración del servidor TCP
+[server]
+# Host de escucha (0.0.0.0 para aceptar conexiones externas)
+bind_host = "0.0.0.0"
+# Puerto de escucha
+bind_port = 7001
+# Timeout de inactividad en segundos (cierra conexión si no hay actividad)
+idle_timeout_sec = 60
+
+# Configuración del modelo y la inferencia
+[model]
+conf_threshold = 0.5
+nms_iou = 0.6
+# Catálogo de clases (ruta relativa o absoluta)
+class_catalog_path = "models/class_catalog.json"
+# Filtro de clases por defecto (vacío → todas las clases del catálogo)
+classes = []
+
+# Configuración del tracker
+[tracker]
+# Habilitar tracking (true/false)
+enabled = true
+# Tipo de tracker ("botsort" por ahora)
+type = "botsort"
+# Ruta al archivo de configuración del tracker
+config_path = "botsort.yaml"
+# Habilitar Kalman Filter para suavizado de bounding boxes
+use_kalman = true
+
+# Configuración de persistencia de sesiones
+[sessions]
+# Directorio base para almacenar archivos de tracking por sesión (relativo a este archivo)
+output_dir = "../../data/tracks"
+# FPS objetivo para calcular timestamps (se puede sobrescribir por sesión)
+default_fps = 10.0
+# Duración objetivo de cada segmento NDJSON en segundos
+segment_duration_s = 10.0
+
+# Configuración de visualización (debugging)
+[visualization]
+# Habilitar ventana de visualización con detecciones (solo para debugging)
+enabled = true
+# Nombre de la ventana
+window_name = "AI Worker - Detections"
